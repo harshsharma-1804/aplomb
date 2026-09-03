@@ -37,6 +37,7 @@ export function AppDetailPage() {
   const [editEndpoint, setEditEndpoint] = useState<Endpoint | null>(null);
   const [deleteEndpoint, setDeleteEndpoint] = useState<Endpoint | null>(null);
   const [showCloneApp, setShowCloneApp] = useState(false);
+  const [endpointSettingsOpen, setEndpointSettingsOpen] = useState(false);
 
   async function load() {
     if (!appId) return;
@@ -54,6 +55,7 @@ export function AppDetailPage() {
   }
 
   useEffect(() => { load(); }, [appId]);
+  useEffect(() => { setEndpointSettingsOpen(false); }, [selectedEndpoint?._id]);
 
   async function handleDeleteEndpoint(ep: Endpoint) {
     try {
@@ -77,9 +79,9 @@ export function AppDetailPage() {
   if (!app) return null;
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* ── App header ─────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 12, flexShrink: 0 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <button onClick={() => navigate("/apps")} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 13, padding: 0 }}>← Apps</button>
@@ -105,7 +107,7 @@ export function AppDetailPage() {
       </div>
 
       {/* ── Top-level tabs: Endpoints | Settings ───────────────────────── */}
-      <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16 }}>
+      <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, flexShrink: 0 }}>
         {([{ key: "endpoints", label: "Endpoints" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
           <button key={t.key} onClick={() => setTopTab(t.key)} style={{
             padding: "8px 16px", background: "none", border: "none", cursor: "pointer",
@@ -119,99 +121,122 @@ export function AppDetailPage() {
 
       {/* ── Settings tab ───────────────────────────────────────────────── */}
       {topTab === "settings" && (
-        <SettingsTab
-          app={app}
-          appId={appId!}
-          onAppUpdated={updated => setApp(updated)}
-          onDeleteApp={async () => {
-            await api.del(`/__config/apps/${appId}`);
-            navigate("/apps");
-          }}
-          onCloneApp={() => setShowCloneApp(true)}
-        />
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <SettingsTab
+            app={app}
+            appId={appId!}
+            onAppUpdated={updated => setApp(updated)}
+            onDeleteApp={async () => {
+              await api.del(`/__config/apps/${appId}`);
+              navigate("/apps");
+            }}
+            onCloneApp={() => setShowCloneApp(true)}
+          />
+        </div>
       )}
 
       {/* ── Endpoints two-column layout ────────────────────────────────── */}
-      {topTab === "endpoints" && <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "start" }}>
+      {topTab === "endpoints" && <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "stretch", flex: 1, minHeight: 0 }}>
 
         {/* ── Endpoint sidebar ─────────────────────────────────────────── */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: `1px solid ${C.border}`, background: C.bg }}>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: `1px solid ${C.border}`, background: C.bg, flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>ENDPOINTS ({endpoints.length})</span>
             {can("edit:endpoints") && <Btn size="sm" onClick={() => setShowAddEndpoint(true)}>+</Btn>}
           </div>
 
-          {endpoints.length === 0
-            ? <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>No endpoints yet</div>
-            : endpoints.map(ep => (
-              <div key={ep._id}
-                onClick={() => setSelectedEndpoint(ep)}
-                style={{ padding: "9px 10px", cursor: "pointer", borderBottom: `1px solid ${C.border}`, background: selectedEndpoint?._id === ep._id ? C.primary + "10" : "", display: "flex", alignItems: "center", gap: 6 }}>
-                <MethodBadge method={ep.method} />
-                <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
-                  {ep.path}
-                </span>
-
-                {/* Active toggle */}
-                {can("edit:endpoints") && (
-                  <button onClick={e => { e.stopPropagation(); handleToggleActive(ep); }}
-                    title={ep.is_active ? "Deactivate" : "Activate"}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: ep.is_active ? C.success : C.muted, padding: 0, flexShrink: 0 }}>
-                    {ep.is_active ? "●" : "○"}
-                  </button>
-                )}
-
-                {/* Edit endpoint icon */}
-                {can("edit:endpoints") && (
-                  <button onClick={e => { e.stopPropagation(); setEditEndpoint(ep); }}
-                    title="Edit method / path / name"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 13, padding: "0 1px", flexShrink: 0 }}>
-                    ✎
-                  </button>
-                )}
-
-                {/* Delete icon */}
-                {can("edit:endpoints") && (
-                  <button onClick={e => { e.stopPropagation(); setDeleteEndpoint(ep); }}
-                    title="Delete endpoint"
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.danger, padding: "0 1px", flexShrink: 0 }}>×</button>
-                )}
-              </div>
-            ))}
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {endpoints.length === 0
+              ? <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>No endpoints yet</div>
+              : endpoints.map(ep => (
+                <div key={ep._id}
+                  onClick={() => setSelectedEndpoint(ep)}
+                  style={{ padding: "9px 10px", cursor: "pointer", borderBottom: `1px solid ${C.border}`, background: selectedEndpoint?._id === ep._id ? C.primary + "10" : "", display: "flex", alignItems: "center", gap: 6 }}>
+                  <MethodBadge method={ep.method} />
+                  <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
+                    {ep.path}
+                  </span>
+                </div>
+              ))}
+          </div>
         </div>
 
         {/* ── Endpoint detail / tabs ────────────────────────────────────── */}
-        <div>
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
           {!selectedEndpoint ? (
             <div style={{ padding: 32, textAlign: "center", color: C.muted, background: C.surface, borderRadius: C.radius, border: `1px solid ${C.border}` }}>
               Select an endpoint from the list or create one to get started.
             </div>
           ) : (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+              {/* ── Endpoint headline ───────────────────────────────────── */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexShrink: 0 }}>
                 <MethodBadge method={selectedEndpoint.method} />
                 <span style={{ fontWeight: 600 }}>{selectedEndpoint.path}</span>
                 <span style={{ fontSize: 12, color: C.muted }}>{selectedEndpoint.name}</span>
+                {!selectedEndpoint.is_active && (
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "#f3f4f6", color: C.muted, border: `1px solid ${C.border}` }}>INACTIVE</span>
+                )}
+                <div style={{ flex: 1 }} />
+                {can("edit:endpoints") && (
+                  <button
+                    onClick={() => setEndpointSettingsOpen(o => !o)}
+                    title="Endpoint settings"
+                    style={{
+                      background: endpointSettingsOpen ? C.primary + "15" : "none",
+                      border: `1px solid ${endpointSettingsOpen ? C.primary : C.border}`,
+                      borderRadius: C.radius,
+                      cursor: "pointer",
+                      color: endpointSettingsOpen ? C.primary : C.muted,
+                      fontSize: 14,
+                      padding: "3px 8px",
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}>
+                    ✎
+                  </button>
+                )}
               </div>
 
-              <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, overflowX: "auto" }}>
-                {TABS.map(t => (
-                  <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-                    padding: "8px 14px", background: "none", border: "none", cursor: "pointer",
-                    fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-                    color: activeTab === t.key ? C.primary : C.muted,
-                    borderBottom: activeTab === t.key ? `2px solid ${C.primary}` : "2px solid transparent",
-                    marginBottom: -2,
-                  }}>{t.label}</button>
-                ))}
-              </div>
+              {/* ── Inline endpoint settings panel ──────────────────────── */}
+              {endpointSettingsOpen ? (
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                  <EndpointSettingsPanel
+                    key={selectedEndpoint._id}
+                    appId={appId!}
+                    endpoint={selectedEndpoint}
+                    onSaved={ep => {
+                      setSelectedEndpoint(ep);
+                      setEndpoints(prev => prev.map(e => e._id === ep._id ? ep : e));
+                    }}
+                    onDelete={() => setDeleteEndpoint(selectedEndpoint)}
+                    onToggleActive={() => handleToggleActive(selectedEndpoint)}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, overflowX: "auto", flexShrink: 0 }}>
+                    {TABS.map(t => (
+                      <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                        padding: "8px 14px", background: "none", border: "none", cursor: "pointer",
+                        fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                        color: activeTab === t.key ? C.primary : C.muted,
+                        borderBottom: activeTab === t.key ? `2px solid ${C.primary}` : "2px solid transparent",
+                        marginBottom: -2,
+                      }}>{t.label}</button>
+                    ))}
+                  </div>
 
-              {activeTab === "request-schema"  && <RequestSchemaTab  key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
-              {activeTab === "response-schema" && <ResponseSchemaTab key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
-              {activeTab === "upstream"        && <UpstreamTab        key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} app={app} onSaved={ep => setSelectedEndpoint(ep)} />}
-              {activeTab === "sample"          && <SampleTab          key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
-              {activeTab === "mapping"         && <MappingTab         key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
-              {activeTab === "test"            && <TestTab            key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} app={app} />}
+                  <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                    {activeTab === "request-schema"  && <RequestSchemaTab  key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
+                    {activeTab === "response-schema" && <ResponseSchemaTab key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
+                    {activeTab === "upstream"        && <UpstreamTab        key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} app={app} onSaved={ep => setSelectedEndpoint(ep)} />}
+                    {activeTab === "sample"          && <SampleTab          key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
+                    {activeTab === "mapping"         && <MappingTab         key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
+                    {activeTab === "test"            && <TestTab            key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} app={app} />}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -256,6 +281,109 @@ export function AppDetailPage() {
           onCancel={() => setDeleteEndpoint(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ── EndpointSettingsPanel ─────────────────────────────────────────────────────
+
+function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleActive }: {
+  appId: string;
+  endpoint: Endpoint;
+  onSaved: (ep: Endpoint) => void;
+  onDelete: () => void;
+  onToggleActive: () => void;
+}) {
+  const [form, setForm] = useState({
+    name:        endpoint.name,
+    method:      endpoint.method,
+    path:        endpoint.path,
+    description: endpoint.description ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    setForm(f => ({ ...f, [k]: e.target.value }));
+    setSaved(false);
+  };
+
+  const methodChanged = form.method !== endpoint.method;
+  const pathChanged   = form.path   !== endpoint.path;
+  const breakingChange = methodChanged || pathChanged;
+
+  async function submit(ev: React.FormEvent) {
+    ev.preventDefault();
+    setSaving(true); setError(""); setSaved(false);
+    try {
+      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}`, form);
+      onSaved(ep);
+      setSaved(true);
+    } catch (e) { setError(String(e)); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, padding: 20 }}>
+      <form onSubmit={submit}>
+        {error && <ErrorBanner message={error} />}
+
+        {breakingChange && (
+          <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 14 }}>
+            <strong>⚠ Breaking change:</strong> Changing the{" "}
+            {[methodChanged && "method", pathChanged && "path"].filter(Boolean).join(" and ")}{" "}
+            will break any frontend client currently calling{" "}
+            <code>{endpoint.method} {endpoint.path}</code>.
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: "0 12px" }}>
+          <Field label="Method">
+            <select style={{ ...inputStyle, borderColor: methodChanged ? C.warning : C.border }} value={form.method} onChange={set("method")}>
+              {["GET","POST","PUT","DELETE","PATCH"].map(m => <option key={m}>{m}</option>)}
+            </select>
+          </Field>
+          <Field label="Path">
+            <input style={{ ...inputStyle, borderColor: pathChanged ? C.warning : C.border }} value={form.path} onChange={set("path")} placeholder="/claims" required />
+          </Field>
+        </div>
+
+        <Field label="Name">
+          <input style={inputStyle} value={form.name} onChange={set("name")} required />
+        </Field>
+
+        <Field label="Description">
+          <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 56 }} value={form.description} onChange={set("description")} />
+        </Field>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, marginBottom: 16 }}>
+          <span style={{ fontSize: 13, color: C.text }}>Status</span>
+          <button type="button" onClick={onToggleActive} style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 12px", borderRadius: 99, cursor: "pointer", fontSize: 12, fontWeight: 600,
+            background: endpoint.is_active ? "#e8f5e9" : "#f3f4f6",
+            color: endpoint.is_active ? C.success : C.muted,
+            border: `1px solid ${endpoint.is_active ? C.success : C.border}`,
+          }}>
+            <span style={{ fontSize: 10 }}>{endpoint.is_active ? "●" : "○"}</span>
+            {endpoint.is_active ? "Active" : "Inactive"}
+          </button>
+          <span style={{ fontSize: 11, color: C.muted }}>{endpoint.is_active ? "Serving traffic" : "Not serving traffic"}</span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+          <Btn variant="ghost" type="button" onClick={onDelete} style={{ color: C.danger }}>
+            Delete Endpoint
+          </Btn>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {saved && <span style={{ fontSize: 12, color: C.success }}>✓ Saved</span>}
+            <Btn type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Btn>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

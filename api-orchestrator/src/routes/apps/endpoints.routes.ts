@@ -237,11 +237,41 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
 
     // Resolve {{ENV_VAR}} references using the parent app's environment
     const appDoc = await App.findById(param(ps["appId"])).lean();
+    const orgId = appDoc ? String((appDoc as any).org_id ?? "") : "";
+
+    const scriptMode = (ep as any).script_mode ?? "none";
+    const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
+    const pp = path_params as Record<string, string>;
+
+    // ── script_full: skip all upstream plumbing entirely ──────────────────────
+    if (scriptMode === "script_full") {
+      const scriptFileId = (ep as any).script_file_id;
+      const scriptDoc = scriptFileId ? await AppScript.findById(scriptFileId).lean() : null;
+      if (!scriptDoc) {
+        res.status(400).json({ error: "No script file assigned to this endpoint", code: "SCRIPT_LOAD_ERROR" }); return;
+      }
+      const ctx = buildContext(appDoc as any, orgId, request_body ?? {}, pp, query_params as Record<string, string>, null, scriptLogs);
+      try {
+        const scriptResult = await runScript(scriptDoc as any, ctx, "script_full");
+        if (!scriptResult || scriptResult.body === undefined) {
+          res.status(502).json({ error: "Script did not return a valid response", code: "SCRIPT_INVALID_RESPONSE" }); return;
+        }
+        let transformed: Record<string, unknown> = {};
+        let transformError: string | null = null;
+        try { transformed = applyTransform(scriptResult.body, (ep as any).output_schema ?? [], (ep as any).field_mappings ?? []); }
+        catch (e: any) { transformError = e.message; }
+        res.json({ upstreamRequest: { mode: "script_full", script: (scriptDoc as any).filename }, upstream: scriptResult.body, transformed, validation: [], transformError, upstreamStatus: scriptResult.status ?? 200, scriptLogs });
+      } catch (e: any) {
+        res.status(502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR", scriptLogs });
+      }
+      return;
+    }
+
+    // ── HTTP upstream path ────────────────────────────────────────────────────
     let urlTemplate = ep.upstream.url;
     if (appDoc) urlTemplate = await resolveEnvVars(urlTemplate, appDoc as any);
 
     // Case-insensitive path param substitution — non-destructive (leaves {param} if not found)
-    const pp = path_params as Record<string, string>;
     const ppLower: Record<string, string> = {};
     for (const [k, v] of Object.entries(pp)) ppLower[k.toLowerCase()] = v;
 
@@ -252,9 +282,6 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
 
     if (upstreamQuery.toString()) resolvedUrl += "?" + upstreamQuery.toString();
 
-    // Use org-scoped DB allowlist (same as runtime). Also skip if URL still
-    // contains {{VAR}} — means env var was not resolved (key not in app_env).
-    const orgId = appDoc ? String((appDoc as any).org_id ?? "") : "";
     if (!isHostAllowedForOrg(resolvedUrl, orgId)) {
       res.status(400).json({
         error: "Upstream host is not in your organization's allowlist. Add it under Tenant Settings → Host Allowlist.",
@@ -266,7 +293,6 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
     // Build headers: static → forwarded rules (simulated via test_headers) → test overrides → auth
     const upstreamHeaders: Record<string, string> = {};
 
-    // Step 1: Static headers from config; resolve {{ENV_VAR}} in values
     for (const sh of (ep.upstream as any).static_headers ?? []) {
       if (sh.name) {
         const val = appDoc ? await resolveEnvVars(sh.value ?? "", appDoc as any) : (sh.value ?? "");
@@ -274,7 +300,6 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
       }
     }
 
-    // Step 2: Forwarding rules — resolve from test_headers (simulate what the real frontend sends)
     const testHeadersObj = test_headers as Record<string, string>;
     for (const fh of (ep.upstream as any).forwarded_headers ?? []) {
       const fromNameClean = (fh.from_name ?? "").trim().toLowerCase();
@@ -294,52 +319,22 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
       upstreamHeaders[targetName] = incomingValue;
     }
 
-    // Step 3: Additional test-time header overrides (merged last so they win over static)
     for (const [k, v] of Object.entries(testHeadersObj)) {
       if (k) upstreamHeaders[k] = v;
     }
 
-    // Body
     let upstreamBody: string | null = null;
     if (request_body !== null && request_body !== undefined) {
       upstreamBody = typeof request_body === "string" ? request_body : JSON.stringify(request_body);
       upstreamHeaders["Content-Type"] = ep.upstream.body_content_type;
     }
 
-    // Record what we're about to send (for the "Upstream Request" panel in the UI)
     const upstreamRequestPreview = {
       url: resolvedUrl,
       method: ep.upstream.method,
       headers: { ...upstreamHeaders },
       body: upstreamBody,
     };
-
-    const scriptMode = (ep as any).script_mode ?? "none";
-    const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
-
-    if (scriptMode === "script_full") {
-      const orgId = appDoc ? String((appDoc as any).org_id ?? "") : "";
-      const ctx = buildContext(appDoc as any, orgId, request_body ?? {}, pp, query_params as Record<string, string>, null, scriptLogs);
-      const scriptFileId = (ep as any).script_file_id;
-      const scriptDoc = scriptFileId ? await AppScript.findById(scriptFileId).lean() : null;
-      if (!scriptDoc) {
-        res.status(400).json({ error: "No script file assigned to this endpoint", code: "SCRIPT_LOAD_ERROR" }); return;
-      }
-      try {
-        const scriptResult = await runScript(scriptDoc as any, ctx, "script_full");
-        if (!scriptResult || scriptResult.body === undefined) {
-          res.status(502).json({ error: "Script did not return a valid response", code: "SCRIPT_INVALID_RESPONSE" }); return;
-        }
-        let transformed: Record<string, unknown> = {};
-        let transformError: string | null = null;
-        try { transformed = applyTransform(scriptResult.body, (ep as any).output_schema ?? [], (ep as any).field_mappings ?? []); }
-        catch (e: any) { transformError = e.message; }
-        res.json({ upstreamRequest: { mode: "script_full", language: (ep as any).script_language }, upstream: scriptResult.body, transformed, validation: [], transformError, upstreamStatus: scriptResult.status ?? 200, scriptLogs });
-      } catch (e: any) {
-        res.status(502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR", scriptLogs });
-      }
-      return;
-    }
 
     const result = await callUpstream(ep as any, resolvedUrl, ep.upstream.method, upstreamHeaders, upstreamBody, null);
 

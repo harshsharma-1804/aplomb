@@ -11,6 +11,7 @@ import { SampleTab } from "./tabs/SampleTab";
 import { MappingTab } from "./tabs/MappingTab";
 import { TestTab } from "./tabs/TestTab";
 import { SettingsTab } from "./tabs/SettingsTab";
+import { ScriptsTab } from "./tabs/ScriptsTab";
 
 const TABS = [
   { key: "request-schema",  label: "Request Schema" },
@@ -30,7 +31,7 @@ export function AppDetailPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [activeTab, setActiveTab] = useState("response-schema");
-  const [topTab, setTopTab] = useState<"endpoints" | "settings">("endpoints");
+  const [topTab, setTopTab] = useState<"endpoints" | "scripts" | "settings">("endpoints");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddEndpoint, setShowAddEndpoint] = useState(false);
@@ -108,7 +109,7 @@ export function AppDetailPage() {
 
       {/* ── Top-level tabs: Endpoints | Settings ───────────────────────── */}
       <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, flexShrink: 0 }}>
-        {([{ key: "endpoints", label: "Endpoints" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
+        {([{ key: "endpoints", label: "Endpoints" }, { key: "scripts", label: "Scripts" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
           <button key={t.key} onClick={() => setTopTab(t.key)} style={{
             padding: "8px 16px", background: "none", border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 600,
@@ -118,6 +119,13 @@ export function AppDetailPage() {
           }}>{t.label}</button>
         ))}
       </div>
+
+      {/* ── Scripts tab ────────────────────────────────────────────────── */}
+      {topTab === "scripts" && (
+        <div style={{ flex: 1, minHeight: 0, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden", background: C.surface }}>
+          <ScriptsTab appId={appId!} />
+        </div>
+      )}
 
       {/* ── Settings tab ───────────────────────────────────────────────── */}
       {topTab === "settings" && (
@@ -154,7 +162,7 @@ export function AppDetailPage() {
                   style={{ padding: "9px 10px", cursor: "pointer", borderBottom: `1px solid ${C.border}`, background: selectedEndpoint?._id === ep._id ? C.primary + "10" : "", display: "flex", alignItems: "center", gap: 6 }}>
                   <MethodBadge method={ep.method} />
                   <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
-                    {ep.path}
+                    {ep.name}
                   </span>
                 </div>
               ))}

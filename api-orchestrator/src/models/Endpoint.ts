@@ -86,6 +86,8 @@ export interface IRequest {
   input_schema: ISchemaField[];
 }
 
+export type ScriptMode = "none" | "script_full" | "script_pre" | "script_post" | "script_pre_post";
+
 export interface IEndpoint extends Document {
   app_id: Types.ObjectId;
   name: string;
@@ -100,6 +102,8 @@ export interface IEndpoint extends Document {
   sample_response: { json: Record<string, unknown>; captured_at: Date } | null;
   output_schema: ISchemaField[];
   field_mappings: IFieldMapping[];
+  script_mode: ScriptMode;
+  script_file_id: Types.ObjectId | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -189,6 +193,9 @@ const EndpointSchema = new Schema<IEndpoint>(
 
     output_schema:  { type: Schema.Types.Mixed, default: [] },
     field_mappings: { type: Schema.Types.Mixed, default: [] },
+
+    script_mode:    { type: String, enum: ["none","script_full","script_pre","script_post","script_pre_post"], default: "none" },
+    script_file_id: { type: Schema.Types.ObjectId, ref: "AppScript", default: null },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
 );

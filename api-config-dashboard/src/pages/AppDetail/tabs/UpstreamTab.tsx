@@ -1,15 +1,57 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
-import type { App, Endpoint, QueryParam, PathParam, StaticHeader, ForwardedHeader } from "../../../api/types";
+import type { App, Endpoint, QueryParam, PathParam, StaticHeader, ForwardedHeader, AppScript, ScriptMode } from "../../../api/types";
 import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 interface Props { appId: string; endpoint: Endpoint; app: App | null; onSaved: (ep: Endpoint) => void; }
 
+const SCRIPT_MODE_LABELS: Record<ScriptMode, string> = {
+  none:            "None",
+  script_full:     "Full Handler",
+  script_pre:      "Pre-hook",
+  script_post:     "Post-hook",
+  script_pre_post: "Pre + Post",
+};
+
+const SCRIPT_MODE_HINTS: Record<ScriptMode, string> = {
+  none:            "No script — upstream config below is used as normal.",
+  script_full:     "Script replaces the upstream entirely. Upstream config below is ignored.",
+  script_pre:      "Script runs before the upstream call. Can modify the request or return early.",
+  script_post:     "Script runs after the upstream call. Can modify or replace the response.",
+  script_pre_post: "Pre-hook runs before the upstream call, post-hook runs after.",
+};
+
 export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
   const { can } = useSession();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const [scriptMode, setScriptMode] = useState<ScriptMode>(endpoint.script_mode ?? "none");
+  const [scriptFileId, setScriptFileId] = useState<string>(endpoint.script_file_id ?? "");
+  const [scripts, setScripts] = useState<AppScript[]>([]);
+  const [scriptSaving, setScriptSaving] = useState(false);
+  const [scriptSaveOk, setScriptSaveOk] = useState(false);
+  const [scriptError, setScriptError] = useState("");
+
+  useEffect(() => {
+    api.get<{ count: number; results: AppScript[] }>(`/__config/apps/${appId}/scripts`)
+      .then(r => setScripts(r.results))
+      .catch(() => {});
+  }, [appId]);
+
+  async function saveScriptConfig() {
+    setScriptSaving(true); setScriptError(""); setScriptSaveOk(false);
+    try {
+      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}/script-config`, {
+        script_mode: scriptMode,
+        script_file_id: scriptFileId || null,
+      });
+      onSaved(ep);
+      setScriptSaveOk(true);
+    } catch (e) { setScriptError(String(e)); }
+    finally { setScriptSaving(false); }
+  }
 
   const [url, setUrl] = useState(endpoint.upstream?.url ?? "");
   const [method, setMethod] = useState(endpoint.upstream?.method ?? endpoint.method);
@@ -53,9 +95,77 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
 
   const readonly = !can("edit:endpoints");
 
+  const scriptActive = scriptMode !== "none";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {error && <ErrorBanner message={error} />}
+
+      {/* ── Script Configuration ────────────────────────────────────────── */}
+      <Card>
+        <SectionHead
+          title="Script"
+          action={!readonly ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {scriptSaveOk && <span style={{ fontSize: 12, color: C.success }}>✓ Saved</span>}
+              {scriptError && <span style={{ fontSize: 12, color: C.danger }}>{scriptError}</span>}
+              <Btn size="sm" onClick={saveScriptConfig} disabled={scriptSaving}>{scriptSaving ? "Saving…" : "Save"}</Btn>
+            </div>
+          ) : undefined}
+        />
+        <div style={{ padding: 16 }}>
+          <Field label="Script Mode" hint={SCRIPT_MODE_HINTS[scriptMode]}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {(Object.keys(SCRIPT_MODE_LABELS) as ScriptMode[]).map(m => (
+                <button key={m} onClick={() => { if (!readonly) { setScriptMode(m); setScriptSaveOk(false); } }}
+                  style={{
+                    padding: "5px 12px", fontSize: 12, borderRadius: C.radius, cursor: readonly ? "default" : "pointer", fontWeight: 500, border: "1px solid",
+                    borderColor: scriptMode === m ? C.primary : C.border,
+                    background: scriptMode === m ? C.primary + "12" : C.surface,
+                    color: scriptMode === m ? C.primary : C.muted,
+                  }}>
+                  {SCRIPT_MODE_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {scriptMode !== "none" && (
+            <Field label="Script File" hint={scripts.length === 0 ? "No scripts yet — go to the Scripts tab to create one." : "Select a script file from this app's Scripts library."}>
+              <select
+                style={{ ...inputStyle, borderColor: scriptActive && !scriptFileId ? C.danger : C.border }}
+                value={scriptFileId}
+                onChange={e => { setScriptFileId(e.target.value); setScriptSaveOk(false); }}
+                disabled={readonly}
+              >
+                <option value="">— select a script file —</option>
+                {scripts.map(s => (
+                  <option key={s._id} value={s._id}>{s.filename}</option>
+                ))}
+              </select>
+              {scriptActive && !scriptFileId && (
+                <p style={{ margin: "4px 0 0", fontSize: 11, color: C.danger }}>A script file must be selected when a script mode is active.</p>
+              )}
+            </Field>
+          )}
+
+          {scriptMode === "script_full" && (
+            <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #ffe082", fontSize: 12, color: "#5d4037" }}>
+              Full Handler mode is active. The upstream configuration below is <strong>not used</strong> — your script is solely responsible for fetching data and returning a response.
+            </div>
+          )}
+          {(scriptMode === "script_pre" || scriptMode === "script_pre_post") && (
+            <div style={{ padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af" }}>
+              Pre-hook is active. Your script's <code>preHook</code> runs before the upstream call below. Return a response to short-circuit, or return nothing to proceed.
+            </div>
+          )}
+          {(scriptMode === "script_post" || scriptMode === "script_pre_post") && (
+            <div style={{ padding: "8px 12px", background: "#f0fff4", borderRadius: C.radius, border: "1px solid #9ae6b4", fontSize: 12, color: "#276749" }}>
+              Post-hook is active. Your script's <code>postHook(ctx, upstreamBody)</code> runs after the upstream call and can reshape the response before the output transform.
+            </div>
+          )}
+        </div>
+      </Card>
 
       <Card>
         <SectionHead title="Upstream Connection" action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn> : undefined} />

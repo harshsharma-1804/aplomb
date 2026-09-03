@@ -5,6 +5,7 @@ import { authRoutes } from "./auth.routes.js";
 import { runtimeRoutes } from "./runtime.routes.js";
 import appsRouter from "./apps/apps.routes.js";
 import endpointsRouter from "./apps/endpoints.routes.js";
+import scriptsRouter from "./apps/scripts.routes.js";
 import usersRouter from "./admin/users.routes.js";
 import providersRouter from "./admin/providers.routes.js";
 import secretsRouter from "./admin/secrets.routes.js";
@@ -47,9 +48,10 @@ configRouter.use(async (req: Request, _res: Response, next: NextFunction) => {
   next();
 });
 
-// Apps + Endpoints
+// Apps + Endpoints + Scripts
 configRouter.use("/apps", appsRouter);
 configRouter.use("/apps/:appId/endpoints", endpointsRouter);
+configRouter.use("/apps/:appId/scripts", scriptsRouter);
 
 // Admin scoped routes
 configRouter.use("/admin/users", usersRouter);

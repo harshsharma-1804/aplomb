@@ -44,8 +44,22 @@ function validateField(
     return;
   }
 
+  if (field.type === "object") {
+    if (typeof value !== "object" || Array.isArray(value)) {
+      errors.push({ field_path: fullPath, message: `Expected object, got ${typeof value}` });
+      return;
+    }
+    if (field.item_schema && field.item_schema.length > 0) {
+      field.item_schema.forEach(childField => {
+        const childValue = getByPath(value, childField.field_path);
+        validateField(childValue, childField, fullPath, errors);
+      });
+    }
+    return;
+  }
+
   const typeMap: Record<string, string> = {
-    string: "string", number: "number", boolean: "boolean", object: "object",
+    string: "string", number: "number", boolean: "boolean",
   };
   const expected = typeMap[field.type];
   if (expected && typeof value !== expected) {

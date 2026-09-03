@@ -1,0 +1,71 @@
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodata:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: orchestrator
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api-orchestrator:
+    build:
+      context: ./api-orchestrator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MONGO_URL: mongodb://mongodb:27017/orchestrator
+      REDIS_URL: redis://redis:6379
+      PORT: "3002"
+      NODE_ENV: ${NODE_ENV:-development}
+      SESSION_SECRET: ${SESSION_SECRET:-orchestrator-dev-secret-change-in-prod}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-00000000000000000000000000000000}
+      UPSTREAM_HOST_ALLOWLIST: ${UPSTREAM_HOST_ALLOWLIST:-mock-server,localhost,host.docker.internal}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-Admin@1234567890}
+      OKTA_ADMIN_GROUP: ${OKTA_ADMIN_GROUP:-orchestrator-admin}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/__health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 45s
+      retries: 6
+
+  api-config-dashboard:
+    build:
+      context: ./api-config-dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    depends_on:
+      api-orchestrator:
+        condition: service_healthy
+
+volumes:
+  mongodata:

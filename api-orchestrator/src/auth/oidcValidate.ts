@@ -1,0 +1,81 @@
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import type { IIdentityProvider } from "../models/IdentityProvider.js";
+
+export interface NormalisedPrincipal {
+  sub: string;
+  email: string | null;
+  roles: string[];
+  issuer: string;
+}
+
+const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+const jwksUriCache = new Map<string, string>();
+
+function getJWKS(provider: IIdentityProvider): ReturnType<typeof createRemoteJWKSet> {
+  const key = String(provider._id);
+  if (jwksCache.has(key)) return jwksCache.get(key)!;
+
+  const uri = provider.jwks_uri ?? jwksUriCache.get(provider.issuer);
+  if (!uri) throw new Error(`No jwks_uri for provider: ${provider.issuer} — discovery needed`);
+
+  const jwks = createRemoteJWKSet(new URL(uri), { cacheMaxAge: 15 * 60 * 1000 });
+  jwksCache.set(key, jwks);
+  return jwks;
+}
+
+export function invalidateProviderCache(providerId: string): void {
+  jwksCache.delete(providerId);
+}
+
+export async function discoverJwksUri(issuer: string): Promise<string> {
+  if (jwksUriCache.has(issuer)) return jwksUriCache.get(issuer)!;
+
+  const discoveryUrl = `${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`;
+  const res = await fetch(discoveryUrl);
+  if (!res.ok) throw new Error(`OIDC discovery failed for ${issuer}: ${res.status}`);
+  const config = await res.json() as { jwks_uri?: string };
+  if (!config.jwks_uri) throw new Error(`No jwks_uri in OIDC discovery for ${issuer}`);
+
+  jwksUriCache.set(issuer, config.jwks_uri);
+  return config.jwks_uri;
+}
+
+export async function validateToken(
+  token: string,
+  provider: IIdentityProvider
+): Promise<NormalisedPrincipal> {
+  let jwksUri = provider.jwks_uri;
+  if (!jwksUri) {
+    jwksUri = await discoverJwksUri(provider.issuer);
+  }
+
+  const jwks = getJWKS({ ...provider.toObject(), jwks_uri: jwksUri });
+
+  const { payload } = await jwtVerify(token, jwks, {
+    issuer: provider.issuer,
+    audience: provider.audience.length > 0 ? provider.audience : undefined,
+    algorithms: provider.algorithms as Parameters<typeof jwtVerify>[2] extends { algorithms?: (infer A)[] } ? A[] : string[],
+    clockTolerance: provider.clock_tolerance_sec,
+  });
+
+  const cm = provider.claim_mappings;
+  const rawPayload = payload as JWTPayload & Record<string, unknown>;
+
+  return {
+    sub:    String(rawPayload[cm.subject] ?? rawPayload["sub"] ?? ""),
+    email:  rawPayload[cm.email] ? String(rawPayload[cm.email]) : null,
+    roles:  Array.isArray(rawPayload[cm.roles]) ? (rawPayload[cm.roles] as string[]) : [],
+    issuer: provider.issuer,
+  };
+}
+
+export function readIssuerFromToken(token: string): string | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8")) as { iss?: string };
+    return payload.iss ?? null;
+  } catch {
+    return null;
+  }
+}

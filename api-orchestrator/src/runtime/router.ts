@@ -11,6 +11,9 @@ import { callUpstream } from "./upstream.js";
 import { writeLog, hashSub, type RequestLogEntry } from "./logger.js";
 import { resolveSecret } from "../secrets/resolver.js";
 import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
+import { buildContext } from "./ctxBuilder.js";
+import { runScript } from "./scriptRunner.js";
+import { AppScript } from "../models/AppScript.js";
 import type { IApp } from "../models/App.js";
 
 /**
@@ -234,6 +237,49 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     if (val !== undefined) upstreamQuery.set(qp.upstream_param, val);
   }
 
+  const scriptMode = (endpoint as any).script_mode ?? "none";
+  const orgId = String((app as any).org_id ?? "");
+
+  const scriptFileId = (endpoint as any).script_file_id ?? null;
+
+  async function resolveScript() {
+    if (!scriptFileId) throw Object.assign(new Error("No script file assigned to this endpoint"), { code: "SCRIPT_LOAD_ERROR" });
+    const script = await AppScript.findById(scriptFileId).lean();
+    if (!script) throw Object.assign(new Error("Assigned script file not found"), { code: "SCRIPT_LOAD_ERROR" });
+    return script;
+  }
+
+  if (scriptMode === "script_full") {
+    const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
+    const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    let scriptResult;
+    try {
+      const script = await resolveScript();
+      scriptResult = await runScript(script as any, ctx, "script_full");
+    } catch (e: any) {
+      const statusMap: Record<string, number> = { SCRIPT_TIMEOUT: 504, SCRIPT_LOAD_ERROR: 502, SCRIPT_FETCH_HOST_NOT_ALLOWED: 403 };
+      res.status(statusMap[e.code] ?? 502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR" });
+      return;
+    }
+    if (!scriptResult || scriptResult.body === undefined) {
+      res.status(502).json({ error: "Script did not return a valid response", code: "SCRIPT_INVALID_RESPONSE" });
+      return;
+    }
+    const status = scriptResult.status ?? 200;
+    if (scriptResult.headers) {
+      for (const [k, v] of Object.entries(scriptResult.headers)) res.setHeader(k, v);
+    }
+    res.setHeader("X-Orchestrator-App", String(app.name));
+    res.setHeader("X-Orchestrator-Version", app.base_path);
+    res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
+    let transformed: Record<string, unknown>;
+    try { transformed = applyTransform(scriptResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+    catch { transformed = scriptResult.body as Record<string, unknown>; }
+    res.status(status).json(transformed);
+    writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: 0, total_latency_ms: Date.now() - startTime, status, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
+    return;
+  }
+
   const { body: upstreamBody } = hasBody && !endpoint.upstream.body_passthrough
     ? buildBody(
         endpoint.upstream.body_mappings ?? [],
@@ -254,7 +300,6 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     pathParams
   );
 
-  const orgId = String((app as any).org_id ?? "");
   if (!isHostAllowedForOrg(resolvedUrl, orgId)) {
     res.status(403).json({ error: "Upstream host is not in your organization's allowlist", code: "HOST_NOT_ALLOWED" });
     return;
@@ -312,6 +357,32 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const idempotencyKey = req.headers["idempotency-key"] as string | undefined ?? null;
 
+  const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
+
+  if (scriptMode === "script_pre" || scriptMode === "script_pre_post") {
+    const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    try {
+      const script = await resolveScript();
+      const earlyReturn = await runScript(script as any, ctx, "script_pre");
+      if (earlyReturn) {
+        if (earlyReturn.headers) for (const [k, v] of Object.entries(earlyReturn.headers)) res.setHeader(k, v);
+        res.setHeader("X-Orchestrator-App", String(app.name));
+        res.setHeader("X-Orchestrator-Version", app.base_path);
+        res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
+        let transformed: Record<string, unknown>;
+        try { transformed = applyTransform(earlyReturn.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        catch { transformed = earlyReturn.body as Record<string, unknown>; }
+        res.status(earlyReturn.status ?? 200).json(transformed);
+        return;
+      }
+      if (ctx.upstreamOverrides.url) Object.assign(upstreamHeaders, ctx.upstreamOverrides.headers ?? {});
+    } catch (e: any) {
+      const statusMap: Record<string, number> = { SCRIPT_TIMEOUT: 504, SCRIPT_LOAD_ERROR: 502, SCRIPT_FETCH_HOST_NOT_ALLOWED: 403 };
+      res.status(statusMap[e.code] ?? 502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR" });
+      return;
+    }
+  }
+
   let upstreamResult;
   let upstreamLatency = 0;
   try {
@@ -347,6 +418,19 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   } catch {
     res.status(502).json({ error: "Upstream returned non-JSON", code: "UPSTREAM_PARSE_ERROR" });
     return;
+  }
+
+  if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
+    const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    try {
+      const script = await resolveScript();
+      const postResult = await runScript(script as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamJson);
+      if (postResult) upstreamJson = postResult.body;
+    } catch (e: any) {
+      const statusMap: Record<string, number> = { SCRIPT_TIMEOUT: 504, SCRIPT_LOAD_ERROR: 502, SCRIPT_FETCH_HOST_NOT_ALLOWED: 403 };
+      res.status(statusMap[e.code] ?? 502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR" });
+      return;
+    }
   }
 
   let transformed: Record<string, unknown>;

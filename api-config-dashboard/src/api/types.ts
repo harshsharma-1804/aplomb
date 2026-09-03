@@ -141,6 +141,21 @@ export interface RequestConfig {
   input_schema: SchemaField[];
 }
 
+export type ScriptMode = "none" | "script_full" | "script_pre" | "script_post" | "script_pre_post";
+export type ScriptLanguage = "javascript" | "typescript";
+
+export interface AppScript {
+  _id: string;
+  app_id: string;
+  filename: string;
+  language: ScriptLanguage;
+  source: string;
+  compiled?: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Endpoint {
   _id: string;
   app_id: string;
@@ -156,6 +171,8 @@ export interface Endpoint {
   sample_response: { json: unknown; captured_at: string } | null;
   output_schema: SchemaField[];
   field_mappings: FieldMapping[];
+  script_mode: ScriptMode;
+  script_file_id: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -9,6 +9,9 @@ import { callUpstream } from "../../runtime/upstream.js";
 import { applyTransform } from "../../runtime/transform.js";
 import { isHostAllowedForOrg } from "../../cache/allowlistCache.js";
 import { resolveEnvVars } from "../../runtime/router.js";
+import { runScript } from "../../runtime/scriptRunner.js";
+import { buildContext } from "../../runtime/ctxBuilder.js";
+import { AppScript } from "../../models/AppScript.js";
 
 type EP = Request<{ appId: string; endId?: string }>;
 
@@ -192,6 +195,24 @@ router.put(
   subResourceUpdate("upstream")
 );
 
+// ── PUT /:endId/script-config — set script_mode + script_file_id ──────────────
+
+router.put("/:endId/script-config", requirePermission("edit:endpoints"), async (req, res) => {
+  try {
+    const { script_mode, script_file_id } = req.body as { script_mode: string; script_file_id: string | null };
+    const ep = await Endpoint.findOneAndUpdate(
+      { _id: param(req.params["endId"]), app_id: param(req.params["appId"]) },
+      { $set: { script_mode: script_mode ?? "none", script_file_id: script_file_id ?? null } },
+      { new: true, runValidators: false }
+    ).lean();
+    if (!ep) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    await writeHistory(param(req.params["appId"]), "endpoint_modified", `Script config updated for endpoint ${(ep as any).method} ${(ep as any).path}`, req);
+    res.json(ep);
+  } catch (err: any) {
+    handleDbError(err, res, "PUT script-config");
+  }
+});
+
 // ── POST /:endId/test — execute a live test run ────────────────────────────────
 
 router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
@@ -293,10 +314,53 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
       body: upstreamBody,
     };
 
+    const scriptMode = (ep as any).script_mode ?? "none";
+    const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
+
+    if (scriptMode === "script_full") {
+      const orgId = appDoc ? String((appDoc as any).org_id ?? "") : "";
+      const ctx = buildContext(appDoc as any, orgId, request_body ?? {}, pp, query_params as Record<string, string>, null, scriptLogs);
+      const scriptFileId = (ep as any).script_file_id;
+      const scriptDoc = scriptFileId ? await AppScript.findById(scriptFileId).lean() : null;
+      if (!scriptDoc) {
+        res.status(400).json({ error: "No script file assigned to this endpoint", code: "SCRIPT_LOAD_ERROR" }); return;
+      }
+      try {
+        const scriptResult = await runScript(scriptDoc as any, ctx, "script_full");
+        if (!scriptResult || scriptResult.body === undefined) {
+          res.status(502).json({ error: "Script did not return a valid response", code: "SCRIPT_INVALID_RESPONSE" }); return;
+        }
+        let transformed: Record<string, unknown> = {};
+        let transformError: string | null = null;
+        try { transformed = applyTransform(scriptResult.body, (ep as any).output_schema ?? [], (ep as any).field_mappings ?? []); }
+        catch (e: any) { transformError = e.message; }
+        res.json({ upstreamRequest: { mode: "script_full", language: (ep as any).script_language }, upstream: scriptResult.body, transformed, validation: [], transformError, upstreamStatus: scriptResult.status ?? 200, scriptLogs });
+      } catch (e: any) {
+        res.status(502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR", scriptLogs });
+      }
+      return;
+    }
+
     const result = await callUpstream(ep as any, resolvedUrl, ep.upstream.method, upstreamHeaders, upstreamBody, null);
 
     let upstreamJson: unknown;
     try { upstreamJson = JSON.parse(result.body); } catch { upstreamJson = result.body; }
+
+    if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
+      const orgId = appDoc ? String((appDoc as any).org_id ?? "") : "";
+      const ctx = buildContext(appDoc as any, orgId, request_body ?? {}, pp, query_params as Record<string, string>, null, scriptLogs);
+      const scriptFileId = (ep as any).script_file_id;
+      const scriptDoc = scriptFileId ? await AppScript.findById(scriptFileId).lean() : null;
+      if (!scriptDoc) {
+        res.status(400).json({ error: "No script file assigned to this endpoint", code: "SCRIPT_LOAD_ERROR" }); return;
+      }
+      try {
+        const postResult = await runScript(scriptDoc as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamJson);
+        if (postResult) upstreamJson = postResult.body;
+      } catch (e: any) {
+        res.status(502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR", scriptLogs }); return;
+      }
+    }
 
     let transformed: Record<string, unknown> = {};
     let transformError: string | null = null;
@@ -330,6 +394,7 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
       validation,
       transformError,
       upstreamStatus: result.status,
+      scriptLogs,
     });
   } catch (err: any) {
     console.error("[test endpoint]", err);

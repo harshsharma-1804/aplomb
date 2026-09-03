@@ -44,7 +44,8 @@ function loadModule(script: IAppScript): Record<string, unknown> {
     Promise, JSON, Math, Date, Error, Array, Object, String, Number, Boolean, RegExp, Map, Set,
   });
 
-  vmScript.runInContext(ctx, { timeout: SCRIPT_TIMEOUT_MS });
+  const factory = vmScript.runInContext(ctx, { timeout: SCRIPT_TIMEOUT_MS }) as (m: unknown, e: unknown, r: unknown) => void;
+  factory(mod, mod.exports, req);
 
   const exports = (mod.exports ?? {}) as Record<string, unknown>;
   moduleCache.set(id, { exports, updatedAt: cacheKey });

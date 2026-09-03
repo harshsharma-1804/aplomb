@@ -14,8 +14,8 @@ const NAV = [
 function Shell() {
   const { user, logout } = useSession();
   return (
-    <div style={{ minHeight: "100vh", background: C.bg }}>
-      <nav style={{ background: "#1a1a2e", height: 48, display: "flex", alignItems: "center", padding: "0 20px", gap: 0 }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: C.bg, overflow: "hidden" }}>
+      <nav style={{ background: "#1a1a2e", height: 48, flexShrink: 0, display: "flex", alignItems: "center", padding: "0 20px", gap: 0 }}>
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 14, marginRight: 28, letterSpacing: "-.2px" }}>⚡ Orchestrator</span>
         {NAV.map(n => (
           <NavLink key={n.to} to={n.to} style={({ isActive }) => ({
@@ -33,14 +33,16 @@ function Shell() {
           </button>
         </div>
       </nav>
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 16px" }}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/apps" replace />} />
-          <Route path="/apps" element={<AppsPage />} />
-          <Route path="/apps/:appId/*" element={<AppDetailPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/settings/:tab" element={<SettingsPage />} />
-        </Routes>
+      <main style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "20px 16px", display: "flex", flexDirection: "column" }}>
+        <div style={{ width: "100%", maxWidth: 1200, margin: "0 auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/apps" replace />} />
+            <Route path="/apps" element={<AppsPage />} />
+            <Route path="/apps/:appId/*" element={<AppDetailPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/:tab" element={<SettingsPage />} />
+          </Routes>
+        </div>
       </main>
     </div>
   );

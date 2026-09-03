@@ -17,6 +17,38 @@ function queryOne(json: unknown, path: string): unknown {
   return result[0];
 }
 
+/**
+ * Strip the array ancestor prefix from an absolute upstream path so it becomes
+ * relative to a single array element.
+ *
+ * Examples:
+ *   stripArrayPrefix("$.members[*].id",              "$.members")  → "$.id"
+ *   stripArrayPrefix("$.members[*].name.first_name", "$.members")  → "$.name.first_name"
+ *   stripArrayPrefix("$.members[*].addresses[*].street","$.members") → "$.addresses[*].street"
+ *
+ * If the path does not start with the expected prefix it is returned unchanged
+ * so mixed absolute/relative mappings on the same array both work safely.
+ */
+function stripArrayPrefix(upstreamPath: string, arrayPath: string): string {
+  const prefix = arrayPath.replace(/\[\*\]$/, "") + "[*].";
+  if (upstreamPath.startsWith(prefix)) {
+    return "$." + upstreamPath.slice(prefix.length);
+  }
+  return upstreamPath;
+}
+
+/**
+ * Relativize all upstream_path values in a set of item mappings by stripping
+ * the array ancestor prefix. Applied recursively for nested arrays.
+ */
+function relativizeMappings(mappings: IFieldMapping[], arrayPath: string): IFieldMapping[] {
+  return mappings.map(m => ({
+    ...m,
+    upstream_path: m.upstream_path ? stripArrayPrefix(m.upstream_path, arrayPath) : m.upstream_path,
+    item_mappings: m.item_mappings ? relativizeMappings(m.item_mappings, arrayPath) : m.item_mappings,
+  }));
+}
+
 function applyMappings(
   upstream: unknown,
   schema: ISchemaField[],
@@ -30,21 +62,18 @@ function applyMappings(
   for (const field of sorted) {
     const mapping = mappingById.get(field.id);
 
-    // ── Object fields — recurse into item_schema ───────────────────────────
-    // Object fields are containers. Child mappings use absolute JSONPath from
-    // the root upstream document (e.g. $.patient.name.first_name). We always
-    // pass the original full upstream to the recursive call so absolute paths
-    // continue to work correctly regardless of nesting depth.
-    // The mapping on the object field itself (e.g. patient → $.patient) is
-    // informational in the UI but not used for resolution here.
+    // ── Object fields — scope to the object subtree then recurse ──────────
+    // Extract the subtree at this field's path from the current upstream context
+    // so child mappings (relative or absolute within this level) resolve correctly.
     if (field.type === "object" && field.item_schema && field.item_schema.length > 0) {
-      const childOutput = applyMappings(upstream, field.item_schema, mappings, field.field_path);
+      const subtree = queryOne(upstream, `$.${field.field_path}`) ?? upstream;
+      const childOutput = applyMappings(subtree, field.item_schema, mappings, field.field_path);
       setByPath(output, field.field_path, childOutput);
       continue;
     }
 
-    // ── Array fields — iterate and recurse ────────────────────────────────
-    if (mapping?.mapping_type === "array") {
+    // ── Array fields with explicit mapping ────────────────────────────────
+    if (field.type === "array" && mapping?.mapping_type === "array") {
       if (!mapping.upstream_path) {
         console.warn(`[transform] Array mapping for ${field.field_path} has no upstream_path`);
         setByPath(output, field.field_path, []);
@@ -54,9 +83,7 @@ function applyMappings(
       const rawResult = JSONPath({ path: mapping.upstream_path, json: upstream as object, wrap: true }) as unknown[];
 
       if (rawResult.length !== 1 || !Array.isArray(rawResult[0])) {
-        console.error(
-          `[transform] Array mapping "${mapping.upstream_path}" must resolve to exactly one array — got ${rawResult.length} result(s)`
-        );
+        console.error(`[transform] Array mapping "${mapping.upstream_path}" must resolve to exactly one array — got ${rawResult.length} result(s)`);
         throw Object.assign(
           new Error(`Array mapping "${mapping.upstream_path}" resolved to ${rawResult.length} node(s), expected 1 array`),
           { code: "TRANSFORM_ARRAY_PATH_ERROR" }
@@ -64,35 +91,46 @@ function applyMappings(
       }
 
       const sourceArray = rawResult[0] as unknown[];
+      const itemSchema = field.item_schema ?? [];
       const itemMappings = mapping.item_mappings ?? [];
-      const itemSchema   = field.item_schema ?? [];
 
       const outputArray = sourceArray.map((element) => {
-        if (itemSchema.length === 0 || itemMappings.length === 0) return element;
-        return applyMappings(element, itemSchema, itemMappings);
+        if (itemSchema.length === 0) return element;
+        if (itemMappings.length === 0) {
+          // No item mappings — auto-passthrough each element field by name
+          return applyMappings(element, itemSchema, []);
+        }
+        // Relativize absolute item mapping paths so they resolve against the element
+        const relMappings = relativizeMappings(itemMappings, mapping.upstream_path!);
+        return applyMappings(element, itemSchema, relMappings);
       });
 
       setByPath(output, field.field_path, outputArray);
       continue;
     }
 
-    // ── No mapping — auto-passthrough by field_path from current upstream context ──
-    if (!mapping) {
-      if (field.type === "array") {
-        const value = queryOne(upstream, `$.${field.field_path}`);
-        if (Array.isArray(value)) {
-          if (field.item_schema && field.item_schema.length > 0) {
-            setByPath(output, field.field_path, (value as unknown[]).map(el =>
-              applyMappings(el, field.item_schema!, mappings)
-            ));
-          } else {
-            setByPath(output, field.field_path, value);
-          }
+    // ── Array fields with no mapping — auto-passthrough ───────────────────
+    if (field.type === "array" && !mapping) {
+      const value = queryOne(upstream, `$.${field.field_path}`);
+      if (Array.isArray(value)) {
+        const itemSchema = field.item_schema ?? [];
+        if (itemSchema.length > 0) {
+          // Recurse into each element with auto-passthrough (empty mappings)
+          setByPath(output, field.field_path, (value as unknown[]).map(el =>
+            applyMappings(el, itemSchema, [])
+          ));
         } else {
-          setByPath(output, field.field_path, []);
+          // Primitive array — passthrough as-is
+          setByPath(output, field.field_path, value);
         }
-        continue;
+      } else {
+        setByPath(output, field.field_path, []);
       }
+      continue;
+    }
+
+    // ── No mapping — auto-passthrough scalar/object by field name ─────────
+    if (!mapping) {
       const value = queryOne(upstream, `$.${field.field_path}`);
       if (value !== undefined) {
         setByPath(output, field.field_path, value);
@@ -102,19 +140,17 @@ function applyMappings(
       continue;
     }
 
-    // ── Static value ────────────────────────────────────────────────────────
+    // ── Static value ──────────────────────────────────────────────────────
     if (mapping.mapping_type === "static") {
       setByPath(output, field.field_path, mapping.static_value ?? null);
       continue;
     }
 
-    // ── Direct mapping — resolve JSONPath from upstream ────────────────────
+    // ── Direct mapping — resolve JSONPath from current upstream context ────
     if (mapping.upstream_path) {
       const value = queryOne(upstream, mapping.upstream_path);
       if ((value === undefined || value === null) && !field.nullable) {
-        console.warn(
-          `[transform] Non-nullable field "${parentPath ? parentPath + "." : ""}${field.field_path}" has no value`
-        );
+        console.warn(`[transform] Non-nullable field "${parentPath ? parentPath + "." : ""}${field.field_path}" has no value`);
       }
       setByPath(output, field.field_path, value ?? null);
     }

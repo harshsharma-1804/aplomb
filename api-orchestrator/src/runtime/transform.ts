@@ -76,9 +76,27 @@ function applyMappings(
       continue;
     }
 
-    // ── Skip container fields that have no mapping and no item_schema ───────
+    // ── No mapping — auto-passthrough by field_path from current upstream context ──
     if (!mapping) {
-      if (!field.nullable) {
+      if (field.type === "array") {
+        const value = queryOne(upstream, `$.${field.field_path}`);
+        if (Array.isArray(value)) {
+          if (field.item_schema && field.item_schema.length > 0) {
+            setByPath(output, field.field_path, (value as unknown[]).map(el =>
+              applyMappings(el, field.item_schema!, mappings)
+            ));
+          } else {
+            setByPath(output, field.field_path, value);
+          }
+        } else {
+          setByPath(output, field.field_path, []);
+        }
+        continue;
+      }
+      const value = queryOne(upstream, `$.${field.field_path}`);
+      if (value !== undefined) {
+        setByPath(output, field.field_path, value);
+      } else if (!field.nullable) {
         console.warn(`[transform] No mapping for non-nullable field: ${parentPath ? parentPath + "." : ""}${field.field_path}`);
       }
       continue;

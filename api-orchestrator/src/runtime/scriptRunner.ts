@@ -13,6 +13,14 @@ interface CacheEntry {
 
 const moduleCache = new Map<string, CacheEntry>();
 
+function esmToCjs(code: string): string {
+  return code
+    .replace(/export\s+async\s+function\s+(\w+)/g, "exports.$1 = async function $1")
+    .replace(/export\s+function\s+(\w+)/g,          "exports.$1 = function $1")
+    .replace(/export\s+const\s+(\w+)\s*=/g,         "exports.$1 =")
+    .replace(/export\s+default\s+/g,                "exports.default = ");
+}
+
 function loadModule(script: IAppScript): Record<string, unknown> {
   const id = String(script._id);
   const updatedAt = (script.updated_at ?? script.created_at)?.toISOString() ?? id;
@@ -21,9 +29,10 @@ function loadModule(script: IAppScript): Record<string, unknown> {
   const cached = moduleCache.get(id);
   if (cached && cached.updatedAt === cacheKey) return cached.exports;
 
-  const code = script.compiled || script.source || "";
-  if (!code.trim()) throw Object.assign(new Error(`Script "${script.filename}" has no compiled source`), { code: "SCRIPT_LOAD_ERROR" });
+  const raw = script.compiled || script.source || "";
+  if (!raw.trim()) throw Object.assign(new Error(`Script "${script.filename}" has no compiled source`), { code: "SCRIPT_LOAD_ERROR" });
 
+  const code = esmToCjs(raw);
   const wrapped = `(function(module, exports, require) {\n${code}\n})`;
   const vmScript = new vm.Script(wrapped, { filename: script.filename });
 

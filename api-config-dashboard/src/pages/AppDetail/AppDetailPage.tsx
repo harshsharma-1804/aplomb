@@ -162,7 +162,7 @@ export function AppDetailPage() {
                   style={{ padding: "9px 10px", cursor: "pointer", borderBottom: `1px solid ${C.border}`, background: selectedEndpoint?._id === ep._id ? C.primary + "10" : "", display: "flex", alignItems: "center", gap: 6 }}>
                   <MethodBadge method={ep.method} />
                   <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
-                    {ep.path}
+                    {ep.name}
                   </span>
                 </div>
               ))}

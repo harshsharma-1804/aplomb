@@ -1,6 +1,6 @@
 # API Orchestrator
 
-A self-hosted API gateway and configuration platform built for the Insurance Portal. It consists of two services that work together to provide secure, audited, and configurable upstream API proxying.
+A self-hosted, generic API gateway and configuration platform. It consists of two services that work together to provide secure, audited, and configurable upstream API proxying.
 
 ---
 

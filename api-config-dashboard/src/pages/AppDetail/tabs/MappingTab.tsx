@@ -67,9 +67,10 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
   };
   const typeColor = TYPE_COLORS[field.type] ?? C.muted;
 
-  // Object and primitive-array fields are containers — they don't need a direct mapping
-  const isContainer = field.type === "object" ||
-    (field.type === "array" && (!field.item_type || field.item_type === "object"));
+  // Object fields are containers — no direct mapping needed
+  // Array-of-object fields are semi-containers — show optional upstream path input
+  const isContainer = field.type === "object";
+  const isArrayContainer = field.type === "array" && (!field.item_type || field.item_type === "object");
 
   return (
     <div style={{
@@ -82,7 +83,7 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
       paddingLeft: 8 + field.depth * 16,
       borderRadius: C.radius,
       border: `1px solid ${!isContainer && !isMapped ? C.danger + "44" : C.border}`,
-      background: isContainer ? "#f0f7ff" : (isMapped ? C.bg : "#fff9f9"),
+      background: isContainer ? "#f0f7ff" : isArrayContainer ? "#f5f0ff" : (isMapped ? C.bg : "#fff9f9"),
       opacity: isContainer ? 0.85 : 1,
     }}>
       {/* Field path */}
@@ -105,6 +106,8 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
       {/* Mapping type */}
       {isContainer ? (
         <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic", textAlign: "center" }}>object</div>
+      ) : isArrayContainer ? (
+        <div style={{ fontSize: 10, color: "#6f42c1", fontStyle: "italic", textAlign: "center" }}>array</div>
       ) : (
         <select
           value={current.mapping_type}
@@ -118,10 +121,27 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
         </select>
       )}
 
-      {/* Upstream path — object containers show info only, no input needed */}
+      {/* Upstream path */}
       {isContainer ? (
         <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
           child fields mapped individually below ↓
+        </div>
+      ) : isArrayContainer ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <input
+            value={current.upstream_path ?? ""}
+            onChange={e => onChange({ ...current, upstream_path: e.target.value, mapping_type: "array" })}
+            disabled={readOnly}
+            placeholder="$.member.addresses  (optional — leave empty to infer from child mappings)"
+            list={`paths-${field.id}`}
+            style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${current.upstream_path ? "#6f42c1" : C.border}`, borderRadius: C.radius, width: "100%" }}
+          />
+          <datalist id={`paths-${field.id}`}>
+            {samplePaths.map(p => <option key={p} value={p} />)}
+          </datalist>
+          <span style={{ fontSize: 10, color: C.muted }}>
+            {current.upstream_path ? "explicit array path set" : "auto-inferred from child mappings ↓"}
+          </span>
         </div>
       ) : current.mapping_type === "static" ? (
         <input
@@ -183,10 +203,7 @@ export function MappingTab({ appId, endpoint, onSaved }: Props) {
     finally { setSaving(false); }
   }
 
-  const mappableFields = flatSchema.filter(f =>
-    f.type !== "object" &&
-    !(f.type === "array" && (!f.item_type || f.item_type === "object"))
-  );
+  const mappableFields = flatSchema.filter(f => f.type !== "object");
   const unmapped = mappableFields.filter(f => !getMapping(f.id)?.upstream_path && !getMapping(f.id)?.static_value).length;
 
   return (

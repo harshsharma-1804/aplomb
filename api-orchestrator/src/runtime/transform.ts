@@ -72,60 +72,78 @@ function applyMappings(
       continue;
     }
 
-    // ── Array fields with explicit mapping ────────────────────────────────
-    if (field.type === "array" && mapping?.mapping_type === "array") {
-      if (!mapping.upstream_path) {
-        console.warn(`[transform] Array mapping for ${field.field_path} has no upstream_path`);
+    // ── Array fields — 3-step resolution ─────────────────────────────────
+    if (field.type === "array") {
+      const itemSchema = field.item_schema ?? [];
+
+      // Step 1 — explicit top-level mapping with upstream_path
+      // Operator explicitly configured where the array lives in upstream.
+      let arrayPath: string | null = null;
+      let topLevelItemMappings: IFieldMapping[] = [];
+
+      if (mapping?.upstream_path) {
+        arrayPath = mapping.upstream_path;
+        topLevelItemMappings = mapping.item_mappings ?? [];
+      }
+
+      // Step 2 — infer from child mappings when no explicit top-level mapping
+      // Look through all top-level field_mappings for entries belonging to
+      // children of this array field. If any child mapping has [*] in its path,
+      // strip from [*] onwards to get the parent array path.
+      if (!arrayPath && itemSchema.length > 0) {
+        const childIds = new Set(itemSchema.map(f => f.id));
+        // Also collect ids from nested item_schemas (for nested objects inside array)
+        function collectIds(fields: ISchemaField[]) {
+          for (const f of fields) {
+            childIds.add(f.id);
+            if (f.item_schema) collectIds(f.item_schema);
+          }
+        }
+        collectIds(itemSchema);
+
+        for (const [, m] of mappingById) {
+          if (childIds.has(m.schema_field_id) && m.upstream_path && m.upstream_path.includes("[*]")) {
+            const bracketIdx = m.upstream_path.indexOf("[*]");
+            arrayPath = m.upstream_path.slice(0, bracketIdx);
+            break;
+          }
+        }
+      }
+
+      // Step 3 — fallback to $.fieldName from current upstream context
+      if (!arrayPath) {
+        arrayPath = `$.${field.field_path}`;
+      }
+
+      const rawResult = JSONPath({ path: arrayPath, json: upstream as object, wrap: true }) as unknown[];
+
+      if (rawResult.length === 0 || !Array.isArray(rawResult[0])) {
+        // Not found or not an array — return empty
         setByPath(output, field.field_path, []);
         continue;
       }
 
-      const rawResult = JSONPath({ path: mapping.upstream_path, json: upstream as object, wrap: true }) as unknown[];
+      const sourceArray = rawResult[0] as unknown[];
 
-      if (rawResult.length !== 1 || !Array.isArray(rawResult[0])) {
-        console.error(`[transform] Array mapping "${mapping.upstream_path}" must resolve to exactly one array — got ${rawResult.length} result(s)`);
-        throw Object.assign(
-          new Error(`Array mapping "${mapping.upstream_path}" resolved to ${rawResult.length} node(s), expected 1 array`),
-          { code: "TRANSFORM_ARRAY_PATH_ERROR" }
-        );
+      if (itemSchema.length === 0) {
+        // Primitive array — passthrough as-is
+        setByPath(output, field.field_path, sourceArray);
+        continue;
       }
 
-      const sourceArray = rawResult[0] as unknown[];
-      const itemSchema = field.item_schema ?? [];
-      const itemMappings = mapping.item_mappings ?? [];
-
       const outputArray = sourceArray.map((element) => {
-        if (itemSchema.length === 0) return element;
-        if (itemMappings.length === 0) {
-          // No item mappings — auto-passthrough each element field by name
-          return applyMappings(element, itemSchema, []);
+        if (topLevelItemMappings.length > 0) {
+          // Explicit item mappings provided — relativize and recurse
+          const relMappings = relativizeMappings(topLevelItemMappings, arrayPath!);
+          return applyMappings(element, itemSchema, relMappings);
         }
-        // Relativize absolute item mapping paths so they resolve against the element
-        const relMappings = relativizeMappings(itemMappings, mapping.upstream_path!);
+        // No explicit item mappings — relativize top-level mappings using inferred array path
+        // so that $.member.addresses[*].street_name_1 → $.street_name_1 against element
+        const relMappings = relativizeMappings([...mappingById.values()], arrayPath!);
         return applyMappings(element, itemSchema, relMappings);
       });
 
       setByPath(output, field.field_path, outputArray);
-      continue;
-    }
-
-    // ── Array fields with no mapping — auto-passthrough ───────────────────
-    if (field.type === "array" && !mapping) {
-      const value = queryOne(upstream, `$.${field.field_path}`);
-      if (Array.isArray(value)) {
-        const itemSchema = field.item_schema ?? [];
-        if (itemSchema.length > 0) {
-          // Recurse into each element with auto-passthrough (empty mappings)
-          setByPath(output, field.field_path, (value as unknown[]).map(el =>
-            applyMappings(el, itemSchema, [])
-          ));
-        } else {
-          // Primitive array — passthrough as-is
-          setByPath(output, field.field_path, value);
-        }
-      } else {
-        setByPath(output, field.field_path, []);
-      }
       continue;
     }
 

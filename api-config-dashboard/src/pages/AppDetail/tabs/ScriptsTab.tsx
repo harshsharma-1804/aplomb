@@ -147,8 +147,11 @@ export function ScriptsTab({ appId }: Props) {
       const updated = await api.put<AppScript>(`/__config/apps/${appId}/scripts/${selected._id}`, {
         filename, language, source, description,
       });
-      setScripts(prev => prev.map(s => s._id === updated._id ? updated : s));
-      setSelected(updated);
+      // Preserve folder from selected — the PUT only touches filename/language/source/description
+      // The server returns the full doc but we guard here in case it ever comes back without folder
+      const withFolder = { ...updated, folder: updated.folder ?? selected.folder ?? null };
+      setScripts(prev => prev.map(s => s._id === withFolder._id ? withFolder : s));
+      setSelected(withFolder);
       setSaveOk(true);
     } catch (e) { setSaveError(String(e)); }
     finally { setSaving(false); }

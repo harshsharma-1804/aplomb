@@ -1,10 +1,10 @@
 import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
 import { getAppByPath } from "../cache/appCache.js";
-import { Endpoint } from "../models/Endpoint.js";
+import { getDb } from "../db/client.js";
+import { endpointRepo } from "../db/repos/endpointRepo.js";
 import { resolveEnvVars } from "./router.js";
 import { applyTransform } from "./transform.js";
 import { callUpstream } from "./upstream.js";
-import type { IApp } from "../models/App.js";
 import type { NormalisedPrincipal } from "../auth/oidcValidate.js";
 
 export interface HandlerResponse {
@@ -39,7 +39,7 @@ export interface EndpointContext {
 }
 
 export function buildContext(
-  app: IApp,
+  app: any,
   orgId: string,
   requestBody: Record<string, unknown>,
   pathParams: Record<string, string>,
@@ -71,7 +71,8 @@ export function buildContext(
     if (!targetApp) throw Object.assign(new Error(`ctx.call: no app found for base path "${appBasePath}"`), { code: "SCRIPT_CALL_NOT_FOUND" });
 
     const method = (options.method ?? "GET").toUpperCase();
-    const allEndpoints = await Endpoint.find({ app_id: targetApp._id, method }).lean();
+    const targetAppId = String((targetApp as any).id ?? (targetApp as any)._id);
+    const allEndpoints = endpointRepo.findByAppAndMethod(getDb(), targetAppId, method);
 
     let targetEndpoint = null;
     let innerPathParams: Record<string, string> = {};
@@ -102,7 +103,7 @@ export function buildContext(
       if (val !== undefined) innerQuery.set(qp.upstream_param, val);
     }
 
-    const urlTemplate = await resolveEnvVars(targetEndpoint.upstream.url, targetApp as unknown as IApp);
+    const urlTemplate = await resolveEnvVars((targetEndpoint.upstream as any).url ?? "", targetApp as any);
     const resolvedUrl = urlTemplate.replace(/\{([^}]+)\}/g, (m, name) => {
       const v = innerPathParams[name] ?? innerPathParams[name.toLowerCase()];
       return v !== undefined ? encodeURIComponent(v) : m;
@@ -111,7 +112,7 @@ export function buildContext(
     const upstreamResult = await callUpstream(
       targetEndpoint as any,
       resolvedUrl,
-      targetEndpoint.upstream.method,
+      (targetEndpoint.upstream as any).method ?? "GET",
       {},
       options.body ? JSON.stringify(options.body) : null,
       null

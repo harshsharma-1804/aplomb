@@ -1,0 +1,37 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+# better-sqlite3 needs python + make + g++ for native build
+RUN apk add --no-cache python3 make g++
+COPY package.json ./
+RUN npm install --frozen-lockfile 2>/dev/null || npm install
+RUN npm install-scripts approve better-sqlite3
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN apk add --no-cache python3 make g++
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN apk add --no-cache libstdc++ libgcc \
+  && addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 appuser
+
+COPY --from=builder --chown=appuser:nodejs /app/dist ./dist
+COPY --from=builder --chown=appuser:nodejs /app/src/db/migrations ./dist/db/migrations
+COPY --from=deps --chown=appuser:nodejs /app/node_modules ./node_modules
+COPY --chown=appuser:nodejs package.json ./
+
+RUN mkdir -p /app/data && chown appuser:nodejs /app/data
+
+USER appuser
+EXPOSE 3002
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
+  CMD node -e "require('http').get('http://localhost:3002/__health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+
+CMD ["node", "dist/index.js"]

@@ -1,19 +1,4 @@
 import { createHash } from "crypto";
-import mongoose from "mongoose";
-import { config } from "../config/appConfig.js";
-
-const LOG_COLLECTION = "request_logs";
-
-export function initLogger(): void {
-  mongoose.connection.once("open", () => {
-    const db = mongoose.connection.db;
-    if (!db) return;
-    db.createCollection(LOG_COLLECTION, {
-      timeseries: { timeField: "ts", granularity: "seconds" },
-      expireAfterSeconds: config.telemetry.logRetentionSeconds,
-    }).catch(() => {});
-  });
-}
 
 export interface RequestLogEntry {
   app: string;
@@ -31,14 +16,16 @@ export interface RequestLogEntry {
   output_warning_count: number;
 }
 
+export function initLogger(): void {
+  console.log("[logger] SQLite-mode: request logs written to stdout only");
+}
+
 export function hashSub(sub: string): string {
   return createHash("sha256").update(sub).digest("hex");
 }
 
 export function writeLog(entry: RequestLogEntry): void {
-  const db = mongoose.connection.db;
-  if (!db) return;
-  db.collection(LOG_COLLECTION).insertOne({ ts: new Date(), ...entry }).catch((err) => {
-    console.error("[logger] Failed to write log:", err);
-  });
+  if (process.env["LOG_REQUESTS"] === "true") {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), ...entry }));
+  }
 }

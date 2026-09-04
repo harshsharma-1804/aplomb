@@ -1,58 +1,44 @@
+import { param } from "../../utils/params.js";
 import { Router } from "express";
-import { IdentityProvider } from "../../models/IdentityProvider.js";
+import { getDb } from "../../db/client.js";
+import { identityProviderRepo } from "../../db/repos/identityProviderRepo.js";
 import { requirePermission } from "../../auth/rbac.js";
+import { refreshProviderCache } from "../../cache/providerCache.js";
 
 const router = Router();
 
-// ── GET /admin/identity-providers ─────────────────────────────────────────────
-
-router.get("/", async (_req, res) => {
-  const providers = await IdentityProvider.find().lean();
+router.get("/", (_req, res) => {
+  const providers = identityProviderRepo.list(getDb());
   res.json({ count: providers.length, results: providers });
 });
 
-// ── POST /admin/identity-providers ────────────────────────────────────────────
-
-router.post("/", requirePermission("manage:providers"), async (req, res) => {
+router.post("/", requirePermission("manage:providers"), (req, res) => {
   try {
-    const provider = await IdentityProvider.create({
-      ...req.body,
-      created_by: req.dashboardUser?.id,
-    });
+    const provider = identityProviderRepo.create(getDb(), { ...req.body, created_by: req.dashboardUser?.id });
+    refreshProviderCache();
     res.status(201).json(provider);
   } catch (err: any) {
-    if (err.code === 11000) {
-      res.status(409).json({ error: "Issuer already exists", code: "DUPLICATE_ISSUER" });
-      return;
-    }
+    if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "Issuer already exists", code: "DUPLICATE_ISSUER" }); return; }
     res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
   }
 });
 
-// ── GET /admin/identity-providers/:id ─────────────────────────────────────────
-
-router.get("/:id", async (req, res) => {
-  const provider = await IdentityProvider.findById(req.params["id"]).lean();
+router.get("/:id", (req, res) => {
+  const provider = identityProviderRepo.findById(getDb(), param(param(req.params["id"])));
   if (!provider) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
   res.json(provider);
 });
 
-// ── PUT /admin/identity-providers/:id ─────────────────────────────────────────
-
-router.put("/:id", requirePermission("manage:providers"), async (req, res) => {
-  const provider = await IdentityProvider.findByIdAndUpdate(
-    req.params["id"],
-    req.body,
-    { new: true }
-  ).lean();
+router.put("/:id", requirePermission("manage:providers"), (req, res) => {
+  const provider = identityProviderRepo.update(getDb(), param(param(req.params["id"])), req.body);
   if (!provider) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  refreshProviderCache();
   res.json(provider);
 });
 
-// ── DELETE /admin/identity-providers/:id ──────────────────────────────────────
-
-router.delete("/:id", requirePermission("manage:providers"), async (req, res) => {
-  await IdentityProvider.findByIdAndDelete(req.params["id"]);
+router.delete("/:id", requirePermission("manage:providers"), (req, res) => {
+  identityProviderRepo.delete(getDb(), param(param(req.params["id"])));
+  refreshProviderCache();
   res.json({ success: true });
 });
 

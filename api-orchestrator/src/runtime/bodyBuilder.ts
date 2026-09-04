@@ -1,6 +1,12 @@
 import { JSONPath } from "jsonpath-plus";
-import type { IBodyMapping, IFormEncoding } from "../models/Endpoint.js";
 import type { NormalisedPrincipal } from "../auth/oidcValidate.js";
+
+export interface IFormEncoding { nested: string; array: string; boolean: string; null: string; }
+export interface IBodyMapping {
+  upstream_path: string; mapping_type: string; source?: string;
+  input_path?: string; query_param?: string; path_param?: string;
+  claim?: string; static_value?: string; item_mappings?: IBodyMapping[];
+}
 
 function setByPath(obj: Record<string, unknown>, dotPath: string, value: unknown): void {
   const parts = dotPath.split(".").filter(Boolean);

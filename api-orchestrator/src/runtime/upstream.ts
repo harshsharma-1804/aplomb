@@ -1,6 +1,5 @@
 import { fetch as undiciFetch } from "undici";
 import CircuitBreaker from "opossum";
-import type { IEndpoint } from "../models/Endpoint.js";
 import { resolveSecret } from "../secrets/resolver.js";
 import { config } from "../config/appConfig.js";
 
@@ -37,7 +36,7 @@ function jitter(base: number): number {
 }
 
 export async function callUpstream(
-  endpoint: IEndpoint,
+  endpoint: any,
   upstreamUrl: string,
   upstreamMethod: string,
   headers: Record<string, string>,
@@ -53,7 +52,7 @@ export async function callUpstream(
   if (endpoint.upstream.auth_type !== "none" && endpoint.upstream.auth_type !== "forward_cookie") {
     const secretRef = endpoint.upstream.auth_config?.secret_ref;
     if (secretRef) {
-      const secretValue = await resolveSecret(secretRef);
+      const secretValue = resolveSecret(String(secretRef));
       if (endpoint.upstream.auth_type === "bearer") {
         reqHeaders["Authorization"] = `Bearer ${secretValue}`;
       } else if (endpoint.upstream.auth_type === "apikey") {

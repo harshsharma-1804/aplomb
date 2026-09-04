@@ -1,8 +1,9 @@
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import type { IAppScript } from "../models/AppScript.js";
-import type { ScriptMode } from "../models/Endpoint.js";
+import type { AppScript } from "../db/schema.js";
 import type { EndpointContext, HandlerResponse } from "./ctxBuilder.js";
+
+type ScriptMode = "none" | "script_full" | "script_pre" | "script_post" | "script_pre_post";
 
 const SCRIPT_TIMEOUT_MS = 30_000;
 
@@ -21,9 +22,9 @@ function esmToCjs(code: string): string {
     .replace(/export\s+default\s+/g,                "exports.default = ");
 }
 
-function loadModule(script: IAppScript): Record<string, unknown> {
-  const id = String(script._id);
-  const updatedAt = (script.updated_at ?? script.created_at)?.toISOString() ?? id;
+function loadModule(script: AppScript): Record<string, unknown> {
+  const id = script.id;
+  const updatedAt = script.updated_at ?? script.created_at ?? id;
   const cacheKey = `${id}:${updatedAt}`;
 
   const cached = moduleCache.get(id);
@@ -85,7 +86,7 @@ export async function compileTypeScript(source: string): Promise<{ js: string; e
 }
 
 export async function runScript(
-  script: IAppScript,
+  script: AppScript,
   ctx: EndpointContext,
   mode: ScriptMode,
   upstreamBody?: unknown

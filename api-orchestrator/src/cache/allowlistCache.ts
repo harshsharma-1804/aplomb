@@ -1,35 +1,28 @@
-import { HostAllowlist } from "../models/HostAllowlist.js";
+import { getDb } from "../db/client.js";
+import { hostAllowlistRepo } from "../db/repos/hostAllowlistRepo.js";
 import { config } from "../config/appConfig.js";
 
 interface AllowlistEntry { hostname: string; is_wildcard: boolean; }
 
-const cache = new Map<string, AllowlistEntry[]>();
+let entries: AllowlistEntry[] = [];
+let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-async function reload(): Promise<void> {
-  const entries = await HostAllowlist.find().lean();
-  cache.clear();
-  for (const e of entries) {
-    const orgKey = String(e.org_id);
-    if (!cache.has(orgKey)) cache.set(orgKey, []);
-    cache.get(orgKey)!.push({ hostname: e.hostname, is_wildcard: e.is_wildcard });
-  }
+function reload(): void {
+  entries = hostAllowlistRepo.list(getDb()).map(e => ({ hostname: e.hostname, is_wildcard: e.is_wildcard }));
 }
 
-export async function initAllowlistCache(): Promise<void> {
-  await reload();
-  console.log(`[cache] Host allowlist loaded: ${[...cache.values()].flat().length} entries`);
+export function initAllowlistCache(): void {
+  reload();
+  console.log(`[cache] Host allowlist loaded: ${entries.length} entries`);
 
-  try {
-    const cs = HostAllowlist.watch([], { fullDocument: "updateLookup" });
-    cs.on("change", async () => { await reload(); });
-    cs.on("error", () => {});
-  } catch {
-    console.info("[cache] Allowlist change stream unavailable (standalone MongoDB).");
-  }
+  pollInterval = setInterval(() => { try { reload(); } catch {} }, 30_000);
+  pollInterval.unref();
 }
 
-export async function refreshAllowlistCache(): Promise<void> {
-  await reload();
+export function refreshAllowlistCache(): void { reload(); }
+
+export function stopAllowlistCachePolling(): void {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
 }
 
 const PRIVATE_RANGES = [
@@ -48,45 +41,23 @@ function isPrivate(hostname: string): boolean {
 
 function matchesEntry(hostname: string, entry: AllowlistEntry): boolean {
   if (entry.is_wildcard) {
-    const domain = entry.hostname.slice(2); // strip "*."
+    const domain = entry.hostname.slice(2);
     return hostname === domain || hostname.endsWith("." + domain);
   }
   return hostname === entry.hostname;
 }
 
-/**
- * Check whether a URL's hostname is allowed for the given organization.
- *
- * Resolution order:
- *  1. If the URL contains {{VAR}} template syntax → allow (runtime will re-check
- *     after env var resolution with the actual hostname).
- *  2. DB host_allowlist for the org.
- *  3. If the DB list is empty → fall back to UPSTREAM_HOST_ALLOWLIST env var
- *     (deprecated bootstrap path, used only on fresh installs before any DB
- *     entries have been added).
- */
-export function isHostAllowedForOrg(url: string, orgId: string): boolean {
-  // Template URL — skip check, runtime resolves and re-checks
+export function isHostAllowedForOrg(url: string, _orgId: string): boolean {
   if (url.includes("{{")) return true;
 
   let hostname: string;
-  try {
-    hostname = new URL(url).hostname;
-  } catch {
-    return false;
+  try { hostname = new URL(url).hostname; } catch { return false; }
+
+  if (entries.length > 0) {
+    return entries.some(e => matchesEntry(hostname, e));
   }
 
-  const orgEntries = cache.get(orgId) ?? [];
-
-  if (orgEntries.length > 0) {
-    const matched = orgEntries.some(e => matchesEntry(hostname, e));
-    if (!matched) return false;
-    // Even if allowlisted, block plain private ranges unless explicitly added
-    // (host.docker.internal etc. must be explicitly in the DB list)
-    return true;
-  }
-
-  // DB list empty — fall back to env var (deprecated bootstrap)
+  // No DB entries yet — fall back to env var (bootstrap path)
   const envList = config.upstream.hostAllowlist;
   if (envList.length === 0) return true;
 
@@ -99,12 +70,10 @@ export function isHostAllowedForOrg(url: string, orgId: string): boolean {
   });
 
   if (!matchesEnv) return false;
-  if (config.upstream.blockPrivateRanges && isPrivate(hostname)) {
-    return envList.includes(hostname);
-  }
+  if (config.upstream.blockPrivateRanges && isPrivate(hostname)) return envList.includes(hostname);
   return true;
 }
 
-export function getOrgAllowlist(orgId: string): AllowlistEntry[] {
-  return cache.get(orgId) ?? [];
+export function getAllowlistEntries(): AllowlistEntry[] {
+  return [...entries];
 }

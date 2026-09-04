@@ -1,5 +1,13 @@
 import { JSONPath } from "jsonpath-plus";
-import type { ISchemaField, IFieldMapping } from "../models/Endpoint.js";
+
+export interface ISchemaField {
+  id: string; field_path: string; type: string; nullable: boolean;
+  description: string; sort_order: number; item_schema?: ISchemaField[];
+}
+export interface IFieldMapping {
+  schema_field_id: string; upstream_path?: string; static_value?: string;
+  mapping_type: string; item_mappings?: IFieldMapping[];
+}
 
 function setByPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".").filter(Boolean);

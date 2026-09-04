@@ -38,8 +38,7 @@ export const config = {
   },
 
   db: {
-    mongoUrl: optional("MONGO_URL", "mongodb://localhost:27017/orchestrator"),
-    redisUrl: optional("REDIS_URL", "redis://localhost:6379"),
+    path: optional("DB_PATH", "./data/orchestrator.db"),
   },
 
   // [KMS candidate] — session signing secret

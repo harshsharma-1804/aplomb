@@ -1,6 +1,6 @@
 import { createDecipheriv, createCipheriv, randomBytes } from "crypto";
-import { Secret } from "../models/Secret.js";
-import type { Types } from "mongoose";
+import { getDb } from "../db/client.js";
+import { secretRepo } from "../db/repos/secretRepo.js";
 import { config } from "../config/appConfig.js";
 
 function getKey(): Buffer {
@@ -11,9 +11,10 @@ function getKey(): Buffer {
   return Buffer.from(keyEnv, "utf8");
 }
 
-export async function resolveSecret(secretRef: Types.ObjectId | string): Promise<string> {
-  const secret = await Secret.findById(secretRef).lean();
-  if (!secret) throw new Error(`Secret not found: ${String(secretRef)}`);
+export function resolveSecret(secretRef: string): string {
+  const db = getDb();
+  const secret = secretRepo.findById(db, secretRef);
+  if (!secret) throw new Error(`Secret not found: ${secretRef}`);
 
   const key = getKey();
   const iv = Buffer.from(secret.iv, "base64");
@@ -24,7 +25,7 @@ export async function resolveSecret(secretRef: Types.ObjectId | string): Promise
   decipher.setAuthTag(authTag);
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 
-  Secret.findByIdAndUpdate(secretRef, { last_used_at: new Date() }).catch(() => {});
+  secretRepo.touchLastUsed(db, secret.id);
 
   return plaintext.toString("utf8");
 }

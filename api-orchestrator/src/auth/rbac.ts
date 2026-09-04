@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import type { UserRole } from "../models/User.js";
+
+export type UserRole = "admin" | "sub_admin" | "viewer";
 
 export interface DashboardUser {
   id: string;

@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { Endpoint } from "../models/Endpoint.js";
+import { getDb } from "../db/client.js";
+import { endpointRepo } from "../db/repos/endpointRepo.js";
+import { scriptRepo } from "../db/repos/scriptRepo.js";
 import { config } from "../config/appConfig.js";
 import { getAppByPath } from "../cache/appCache.js";
 import { getProviderByIssuer } from "../cache/providerCache.js";
@@ -13,8 +15,6 @@ import { resolveSecret } from "../secrets/resolver.js";
 import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
 import { buildContext } from "./ctxBuilder.js";
 import { runScript } from "./scriptRunner.js";
-import { AppScript } from "../models/AppScript.js";
-import type { IApp } from "../models/App.js";
 
 /**
  * Resolves {{KEY}} template references in a string using the app's environment variables.
@@ -22,14 +22,14 @@ import type { IApp } from "../models/App.js";
  * Secret values are resolved from the secrets store (plaintext in memory only).
  * Unknown keys are left as-is with a warning.
  */
-export async function resolveEnvVars(template: string, app: IApp): Promise<string> {
+export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
   if (!matches) return template;
 
   let result = template;
   for (const match of matches) {
     const key = match.slice(2, -2).trim();
-    const envVar = (app.app_env ?? []).find((e) => e.key === key);
+    const envVar = (app.app_env ?? []).find((e: any) => e.key === key);
     if (!envVar) {
       console.warn(`[env] App "${app.name}": no env var found for key "{{${key}}}" — leaving as-is`);
       continue;
@@ -37,7 +37,7 @@ export async function resolveEnvVars(template: string, app: IApp): Promise<strin
     if (envVar.value_type === "plain") {
       result = result.replaceAll(match, envVar.plain_value ?? "");
     } else if (envVar.value_type === "secret" && envVar.secret_id) {
-      const plaintext = await resolveSecret(envVar.secret_id);
+      const plaintext = resolveSecret(String(envVar.secret_id));
       result = result.replaceAll(match, plaintext);
     }
   }
@@ -165,14 +165,14 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
     if (app.allowed_provider_ids.length > 0) {
       const allowed = app.allowed_provider_ids.map(String);
-      if (!allowed.includes(String(provider._id))) {
+      if (!allowed.includes(String(provider.id))) {
         res.status(401).json({ error: "Unauthorized", code: "PROVIDER_NOT_ALLOWED_FOR_APP" });
         return;
       }
     }
 
     try {
-      principal = await validateToken(token, provider);
+      principal = await validateToken(token, provider as any);
     } catch {
       res.status(401).json({ error: "Unauthorized", code: "INVALID_TOKEN" });
       return;
@@ -181,7 +181,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const relativePath = requestPath.slice(app.base_path.length) || "/";
 
-  const allEndpoints = await Endpoint.find({ app_id: app._id, method }).lean();
+  const allEndpoints = endpointRepo.findByAppAndMethod(getDb(), String((app as any).id ?? (app as any)._id), method);
   let endpoint = null;
   let pathParams: Record<string, string> = {};
 
@@ -205,7 +205,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   }
 
   if (app.status === "deprecated" && app.deprecated_at) {
-    const rfcDate = app.deprecated_at.toUTCString();
+    const rfcDate = new Date(app.deprecated_at).toUTCString();
     res.setHeader("Deprecation", rfcDate);
     res.setHeader("Sunset", rfcDate);
   }
@@ -242,16 +242,16 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const scriptFileId = (endpoint as any).script_file_id ?? null;
 
-  async function resolveScript() {
+  function resolveScript() {
     if (!scriptFileId) throw Object.assign(new Error("No script file assigned to this endpoint"), { code: "SCRIPT_LOAD_ERROR" });
-    const script = await AppScript.findById(scriptFileId).lean();
+    const script = scriptRepo.findById(getDb(), String(scriptFileId));
     if (!script) throw Object.assign(new Error("Assigned script file not found"), { code: "SCRIPT_LOAD_ERROR" });
     return script;
   }
 
   if (scriptMode === "script_full") {
     const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
-    const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    const ctx = buildContext(app , orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
     let scriptResult;
     try {
       const script = await resolveScript();
@@ -294,7 +294,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     : { body: null };
 
   // ── Resolve {{VAR}} env references in URL template before path param substitution ──
-  const urlTemplate = await resolveEnvVars(endpoint.upstream.url, app as unknown as IApp);
+  const urlTemplate = await resolveEnvVars(endpoint.upstream.url, app );
   const resolvedUrl = substitutePathParams(
     urlTemplate + (upstreamQuery.toString() ? "?" + upstreamQuery.toString() : ""),
     pathParams
@@ -310,7 +310,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   // Step 1 — static headers (always sent); resolve {{VAR}} in values
   for (const sh of endpoint.upstream.static_headers ?? []) {
     if (sh.name) {
-      const resolvedValue = await resolveEnvVars(sh.value ?? "", app as unknown as IApp);
+      const resolvedValue = await resolveEnvVars(sh.value ?? "", app );
       upstreamHeaders[sh.name] = resolvedValue;
     }
   }
@@ -360,7 +360,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
 
   if (scriptMode === "script_pre" || scriptMode === "script_pre_post") {
-    const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    const ctx = buildContext(app , orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
     try {
       const script = await resolveScript();
       const earlyReturn = await runScript(script as any, ctx, "script_pre");
@@ -421,7 +421,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   }
 
   if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
-    const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    const ctx = buildContext(app , orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
     try {
       const script = await resolveScript();
       const postResult = await runScript(script as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamJson);

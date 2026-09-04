@@ -1,4 +1,7 @@
-import type { ISchemaField } from "../models/Endpoint.js";
+export interface ISchemaField {
+  id: string; field_path: string; type: string; nullable: boolean;
+  description: string; sort_order: number; item_schema?: ISchemaField[];
+}
 
 export interface ValidationError {
   field_path: string;

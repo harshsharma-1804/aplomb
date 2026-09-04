@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import type { App, Endpoint, ListResult } from "../../api/types";
@@ -39,6 +39,11 @@ export function AppDetailPage() {
   const [deleteEndpoint, setDeleteEndpoint] = useState<Endpoint | null>(null);
   const [showCloneApp, setShowCloneApp] = useState(false);
   const [endpointSettingsOpen, setEndpointSettingsOpen] = useState(false);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [showAddFolder, setShowAddFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [dragEndpointId, setDragEndpointId] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
 
   async function load() {
     if (!appId) return;
@@ -147,25 +152,177 @@ export function AppDetailPage() {
       {topTab === "endpoints" && <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "stretch", flex: 1, minHeight: 0 }}>
 
         {/* ── Endpoint sidebar ─────────────────────────────────────────── */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: `1px solid ${C.border}`, background: C.bg, flexShrink: 0 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>ENDPOINTS ({endpoints.length})</span>
-            {can("edit:endpoints") && <Btn size="sm" onClick={() => setShowAddEndpoint(true)}>+</Btn>}
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          {/* Header */}
+          <div style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}`, background: C.bg }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>ENDPOINTS ({endpoints.length})</span>
+              {can("edit:endpoints") && (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button
+                    onClick={() => { setShowAddFolder(f => !f); setNewFolderName(""); }}
+                    title="New folder"
+                    style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: C.radius, cursor: "pointer", color: C.muted, fontSize: 12, padding: "2px 7px", lineHeight: 1.4 }}>
+                    📁
+                  </button>
+                  <Btn size="sm" onClick={() => setShowAddEndpoint(true)}>+</Btn>
+                </div>
+              )}
+            </div>
+            {showAddFolder && (
+              <div style={{ padding: "0 10px 10px" }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input
+                    autoFocus
+                    value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && newFolderName.trim()) {
+                        const name = newFolderName.trim();
+                        const firstUnassigned = endpoints.find(ep => !ep.folder);
+                        if (firstUnassigned) {
+                          api.put(`/__config/apps/${appId}/endpoints/${firstUnassigned._id}`, { folder: name })
+                            .then(() => load()).catch(() => {});
+                        }
+                        setShowAddFolder(false); setNewFolderName("");
+                      }
+                      if (e.key === "Escape") { setShowAddFolder(false); setNewFolderName(""); }
+                    }}
+                    placeholder="Folder name…"
+                    style={{ flex: 1, fontSize: 12, padding: "4px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius }}
+                  />
+                  <button
+                    onClick={() => {
+                      const name = newFolderName.trim();
+                      if (!name) return;
+                      setEndpoints(prev => {
+                        const hasFolder = prev.some(ep => ep.folder === name);
+                        if (hasFolder) return prev;
+                        return prev;
+                      });
+                      setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
+                      setShowAddFolder(false); setNewFolderName("");
+                    }}
+                    style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: "#fff", cursor: "pointer" }}>
+                    Add
+                  </button>
+                </div>
+                <p style={{ fontSize: 10, color: C.muted, margin: "4px 0 0" }}>Drag endpoints into the folder to populate it.</p>
+              </div>
+            )}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {endpoints.length === 0
-              ? <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>No endpoints yet</div>
-              : endpoints.map(ep => (
-                <div key={ep._id}
-                  onClick={() => setSelectedEndpoint(ep)}
-                  style={{ padding: "9px 10px", cursor: "pointer", borderBottom: `1px solid ${C.border}`, background: selectedEndpoint?._id === ep._id ? C.primary + "10" : "", display: "flex", alignItems: "center", gap: 6 }}>
-                  <MethodBadge method={ep.method} />
-                  <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
-                    {ep.name}
-                  </span>
-                </div>
-              ))}
+          {/* Scrollable list */}
+          <div
+            style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
+            onDragOver={e => { e.preventDefault(); setDragOverTarget("__root__"); }}
+            onDrop={e => {
+              e.preventDefault();
+              if (!dragEndpointId) return;
+              api.put(`/__config/apps/${appId}/endpoints/${dragEndpointId}`, { folder: null })
+                .then(() => {
+                  setEndpoints(prev => prev.map(ep => ep._id === dragEndpointId ? { ...ep, folder: null } : ep));
+                }).catch(() => {});
+              setDragEndpointId(null); setDragOverTarget(null);
+            }}
+            onDragLeave={() => setDragOverTarget(null)}
+          >
+            {endpoints.length === 0 ? (
+              <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>No endpoints yet</div>
+            ) : (() => {
+              const folders = Array.from(new Set(endpoints.map(ep => ep.folder).filter(Boolean) as string[])).sort();
+              const rootEndpoints = endpoints.filter(ep => !ep.folder);
+
+              return (
+                <>
+                  {/* Folders */}
+                  {folders.map(folder => {
+                    const folderEps = endpoints.filter(ep => ep.folder === folder);
+                    const isCollapsed = collapsedFolders.has(folder);
+                    const isOver = dragOverTarget === folder;
+                    return (
+                      <div key={folder}>
+                        {/* Folder row */}
+                        <div
+                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverTarget(folder); }}
+                          onDrop={e => {
+                            e.preventDefault(); e.stopPropagation();
+                            if (!dragEndpointId) return;
+                            api.put(`/__config/apps/${appId}/endpoints/${dragEndpointId}`, { folder })
+                              .then(() => {
+                                setEndpoints(prev => prev.map(ep => ep._id === dragEndpointId ? { ...ep, folder } : ep));
+                              }).catch(() => {});
+                            setDragEndpointId(null); setDragOverTarget(null);
+                          }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "7px 10px", cursor: "pointer",
+                            borderBottom: `1px solid ${C.border}`,
+                            background: isOver ? C.primary + "18" : C.bg,
+                            border: isOver ? `1px dashed ${C.primary}` : undefined,
+                          }}>
+                          <span
+                            onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
+                            style={{ fontSize: 10, color: C.muted, userSelect: "none", flexShrink: 0 }}>
+                            {isCollapsed ? "▶" : "▼"}
+                          </span>
+                          <span style={{ fontSize: 11 }}>📁</span>
+                          <span
+                            onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
+                            style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {folder}
+                          </span>
+                          <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>{folderEps.length}</span>
+                        </div>
+                        {/* Folder endpoints */}
+                        {!isCollapsed && folderEps.map(ep => (
+                          <div
+                            key={ep._id}
+                            draggable
+                            onDragStart={() => setDragEndpointId(ep._id)}
+                            onDragEnd={() => { setDragEndpointId(null); setDragOverTarget(null); }}
+                            onClick={() => setSelectedEndpoint(ep)}
+                            style={{
+                              padding: "8px 10px 8px 28px",
+                              cursor: "pointer",
+                              borderBottom: `1px solid ${C.border}`,
+                              background: selectedEndpoint?._id === ep._id ? C.primary + "10" : dragEndpointId === ep._id ? "#f0f0f0" : "",
+                              display: "flex", alignItems: "center", gap: 6,
+                            }}>
+                            <MethodBadge method={ep.method} />
+                            <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
+                              {ep.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+
+                  {/* Root (unfoldered) endpoints */}
+                  {rootEndpoints.map(ep => (
+                    <div
+                      key={ep._id}
+                      draggable
+                      onDragStart={() => setDragEndpointId(ep._id)}
+                      onDragEnd={() => { setDragEndpointId(null); setDragOverTarget(null); }}
+                      onClick={() => setSelectedEndpoint(ep)}
+                      style={{
+                        padding: "9px 10px",
+                        cursor: "pointer",
+                        borderBottom: `1px solid ${C.border}`,
+                        background: selectedEndpoint?._id === ep._id ? C.primary + "10" : dragEndpointId === ep._id ? "#f0f0f0" : "",
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                      <MethodBadge method={ep.method} />
+                      <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
+                        {ep.name}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
           </div>
         </div>
 

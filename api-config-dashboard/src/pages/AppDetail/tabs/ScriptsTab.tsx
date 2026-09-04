@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import { api } from "../../../api/client";
 import type { AppScript, ScriptLanguage } from "../../../api/types";
@@ -64,6 +64,11 @@ export function ScriptsTab({ appId }: Props) {
   const [addError, setAddError] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<AppScript | null>(null);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [showAddFolder, setShowAddFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [dragScriptId, setDragScriptId] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
 
   async function loadScripts() {
     setLoading(true); setError("");
@@ -145,28 +150,72 @@ export function ScriptsTab({ appId }: Props) {
       <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 0, flex: 1, minHeight: 0 }}>
 
         {/* ── File sidebar ─────────────────────────────────────────────── */}
-        <div style={{ borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", background: C.bg }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: ".4px" }}>SCRIPTS ({scripts.length})</span>
-            {!readonly && (
-              <button onClick={() => { setShowAdd(true); setAddError(""); }}
-                style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 18, lineHeight: 1, padding: "0 2px" }}
-                title="New script file">+</button>
+        <div style={{ borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", background: C.bg, minHeight: 0 }}>
+          {/* Header */}
+          <div style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: ".4px" }}>SCRIPTS ({scripts.length})</span>
+              {!readonly && (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button
+                    onClick={() => { setShowAddFolder(f => !f); setNewFolderName(""); }}
+                    title="New folder"
+                    style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: C.radius, cursor: "pointer", color: C.muted, fontSize: 11, padding: "2px 6px" }}>
+                    📁
+                  </button>
+                  <button onClick={() => { setShowAdd(true); setAddError(""); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 18, lineHeight: 1, padding: "0 2px" }}
+                    title="New script file">+</button>
+                </div>
+              )}
+            </div>
+            {showAddFolder && !readonly && (
+              <div style={{ padding: "0 10px 10px" }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input
+                    autoFocus
+                    value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && newFolderName.trim()) {
+                        setShowAddFolder(false); setNewFolderName("");
+                        setCollapsedFolders(f => { const n = new Set(f); n.delete(newFolderName.trim()); return n; });
+                      }
+                      if (e.key === "Escape") { setShowAddFolder(false); setNewFolderName(""); }
+                    }}
+                    placeholder="Folder name…"
+                    style={{ flex: 1, fontSize: 12, padding: "4px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius }}
+                  />
+                  <button
+                    onClick={() => { if (!newFolderName.trim()) return; setShowAddFolder(false); setNewFolderName(""); }}
+                    style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: "#fff", cursor: "pointer" }}>
+                    Add
+                  </button>
+                </div>
+                <p style={{ fontSize: 10, color: C.muted, margin: "4px 0 0" }}>Drag scripts into the folder to populate it.</p>
+              </div>
             )}
           </div>
 
-          {loading && <div style={{ padding: 16, fontSize: 12, color: C.muted }}>Loading…</div>}
+          {loading && <div style={{ padding: 16, fontSize: 12, color: C.muted, flexShrink: 0 }}>Loading…</div>}
 
-          {!loading && scripts.length === 0 && !showAdd && (
-            <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>
-              No scripts yet.<br />
-              {!readonly && <span style={{ color: C.primary, cursor: "pointer" }} onClick={() => setShowAdd(true)}>Create your first script</span>}
-            </div>
-          )}
-
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          {/* Scrollable list */}
+          <div
+            style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
+            onDragOver={e => { e.preventDefault(); setDragOverTarget("__root__"); }}
+            onDrop={e => {
+              e.preventDefault();
+              if (!dragScriptId) return;
+              api.put(`/__config/apps/${appId}/scripts/${dragScriptId}`, { folder: null })
+                .then(() => setScripts(prev => prev.map(s => s._id === dragScriptId ? { ...s, folder: null } : s)))
+                .catch(() => {});
+              setDragScriptId(null); setDragOverTarget(null);
+            }}
+            onDragLeave={() => setDragOverTarget(null)}
+          >
+            {/* New script form */}
             {showAdd && (
-              <div style={{ padding: 12, borderBottom: `1px solid ${C.border}`, background: C.surface }}>
+              <div style={{ padding: 12, borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
                 {addError && <div style={{ fontSize: 11, color: C.danger, marginBottom: 6 }}>{addError}</div>}
                 <input
                   style={{ ...inputStyle, fontSize: 12, marginBottom: 6 }}
@@ -187,27 +236,103 @@ export function ScriptsTab({ appId }: Props) {
               </div>
             )}
 
-            {scripts.map(s => (
-              <div key={s._id}
-                onClick={() => selectScript(s)}
-                style={{
-                  padding: "9px 12px", cursor: "pointer", borderBottom: `1px solid ${C.border}`,
-                  background: selected?._id === s._id ? C.primary + "12" : "transparent",
-                  display: "flex", alignItems: "center", gap: 8,
-                }}>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: s.language === "typescript" ? "#3178c620" : "#f7df1e20", color: s.language === "typescript" ? "#3178c6" : "#b5a000", fontFamily: "monospace" }}>
+            {!loading && scripts.length === 0 && !showAdd && (
+              <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>
+                No scripts yet.<br />
+                {!readonly && <span style={{ color: C.primary, cursor: "pointer" }} onClick={() => setShowAdd(true)}>Create your first script</span>}
+              </div>
+            )}
+
+            {(() => {
+              const folders = Array.from(new Set(scripts.map(s => s.folder).filter(Boolean) as string[])).sort();
+              const rootScripts = scripts.filter(s => !s.folder);
+
+              const langBadge = (s: AppScript) => (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: s.language === "typescript" ? "#3178c620" : "#f7df1e20", color: s.language === "typescript" ? "#3178c6" : "#b5a000", fontFamily: "monospace", flexShrink: 0 }}>
                   {s.language === "typescript" ? "TS" : "JS"}
                 </span>
-                <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text, fontFamily: "monospace" }}>
-                  {s.filename}
-                </span>
-                {!readonly && (
-                  <button onClick={e => { e.stopPropagation(); setDeleteTarget(s); }}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }}
-                    title="Delete script">×</button>
-                )}
-              </div>
-            ))}
+              );
+
+              return (
+                <>
+                  {/* Folders */}
+                  {folders.map(folder => {
+                    const folderScripts = scripts.filter(s => s.folder === folder);
+                    const isCollapsed = collapsedFolders.has(folder);
+                    const isOver = dragOverTarget === folder;
+                    return (
+                      <div key={folder}>
+                        <div
+                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverTarget(folder); }}
+                          onDrop={e => {
+                            e.preventDefault(); e.stopPropagation();
+                            if (!dragScriptId) return;
+                            api.put(`/__config/apps/${appId}/scripts/${dragScriptId}`, { folder })
+                              .then(() => setScripts(prev => prev.map(s => s._id === dragScriptId ? { ...s, folder } : s)))
+                              .catch(() => {});
+                            setDragScriptId(null); setDragOverTarget(null);
+                          }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "7px 10px", cursor: "pointer",
+                            borderBottom: `1px solid ${C.border}`,
+                            background: isOver ? C.primary + "18" : C.bg,
+                            outline: isOver ? `1px dashed ${C.primary}` : undefined,
+                          }}>
+                          <span
+                            onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
+                            style={{ fontSize: 10, color: C.muted, userSelect: "none", flexShrink: 0 }}>
+                            {isCollapsed ? "▶" : "▼"}
+                          </span>
+                          <span style={{ fontSize: 11, flexShrink: 0 }}>📁</span>
+                          <span
+                            onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
+                            style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {folder}
+                          </span>
+                          <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>{folderScripts.length}</span>
+                        </div>
+                        {!isCollapsed && folderScripts.map(s => (
+                          <div key={s._id}
+                            draggable
+                            onDragStart={() => setDragScriptId(s._id)}
+                            onDragEnd={() => { setDragScriptId(null); setDragOverTarget(null); }}
+                            onClick={() => selectScript(s)}
+                            style={{
+                              padding: "8px 10px 8px 26px", cursor: "pointer",
+                              borderBottom: `1px solid ${C.border}`,
+                              background: selected?._id === s._id ? C.primary + "12" : dragScriptId === s._id ? "#f0f0f0" : "transparent",
+                              display: "flex", alignItems: "center", gap: 8,
+                            }}>
+                            {langBadge(s)}
+                            <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text, fontFamily: "monospace" }}>{s.filename}</span>
+                            {!readonly && <button onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+
+                  {/* Root scripts */}
+                  {rootScripts.map(s => (
+                    <div key={s._id}
+                      draggable
+                      onDragStart={() => setDragScriptId(s._id)}
+                      onDragEnd={() => { setDragScriptId(null); setDragOverTarget(null); }}
+                      onClick={() => selectScript(s)}
+                      style={{
+                        padding: "9px 12px", cursor: "pointer", borderBottom: `1px solid ${C.border}`,
+                        background: selected?._id === s._id ? C.primary + "12" : dragScriptId === s._id ? "#f0f0f0" : "transparent",
+                        display: "flex", alignItems: "center", gap: 8,
+                      }}>
+                      {langBadge(s)}
+                      <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text, fontFamily: "monospace" }}>{s.filename}</span>
+                      {!readonly && <button onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>}
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
           </div>
         </div>
 

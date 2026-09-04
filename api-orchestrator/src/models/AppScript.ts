@@ -7,6 +7,7 @@ export interface IAppScript extends Document {
   source: string;
   compiled: string;
   description: string;
+  folder: string | null;
   updated_at: Date;
   created_at: Date;
 }
@@ -19,6 +20,7 @@ const AppScriptSchema = new Schema<IAppScript>(
     source:      { type: String, default: "" },
     compiled:    { type: String, default: "" },
     description: { type: String, default: "" },
+    folder:      { type: String, default: null },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
 );

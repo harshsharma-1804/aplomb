@@ -59,12 +59,14 @@ export function ScriptsTab({ appId }: Props) {
   const [saveOk, setSaveOk] = useState(false);
 
   const [showAdd, setShowAdd] = useState(false);
+  const [addInFolder, setAddInFolder] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({ filename: "", language: "javascript" as ScriptLanguage, description: "" });
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<AppScript | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [scriptFolders, setScriptFolders] = useState<string[]>([]);
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [dragScriptId, setDragScriptId] = useState<string | null>(null);
@@ -75,6 +77,10 @@ export function ScriptsTab({ appId }: Props) {
     try {
       const res = await api.get<{ count: number; results: AppScript[] }>(`/__config/apps/${appId}/scripts`);
       setScripts(res.results);
+      setScriptFolders(prev => {
+        const fromServer = res.results.map(s => s.folder).filter(Boolean) as string[];
+        return Array.from(new Set([...prev, ...fromServer])).sort();
+      });
       if (res.results.length > 0 && !selected) selectScript(res.results[0]!);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
@@ -119,9 +125,12 @@ export function ScriptsTab({ appId }: Props) {
         language: addForm.language,
         description: addForm.description,
         source: STARTER[addForm.language],
+        ...(addInFolder ? { folder: addInFolder } : {}),
       });
       setScripts(prev => [...prev, created]);
+      if (created.folder) setScriptFolders(prev => Array.from(new Set([...prev, created.folder!])).sort());
       setShowAdd(false);
+      setAddInFolder(null);
       setAddForm({ filename: "", language: "javascript", description: "" });
       selectScript(created);
     } catch (e) { setAddError(String(e)); }
@@ -177,9 +186,12 @@ export function ScriptsTab({ appId }: Props) {
                     value={newFolderName}
                     onChange={e => setNewFolderName(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === "Enter" && newFolderName.trim()) {
+                      if (e.key === "Enter") {
+                        const name = newFolderName.trim();
+                        if (!name) return;
+                        setScriptFolders(prev => Array.from(new Set([...prev, name])).sort());
+                        setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                         setShowAddFolder(false); setNewFolderName("");
-                        setCollapsedFolders(f => { const n = new Set(f); n.delete(newFolderName.trim()); return n; });
                       }
                       if (e.key === "Escape") { setShowAddFolder(false); setNewFolderName(""); }
                     }}
@@ -187,12 +199,18 @@ export function ScriptsTab({ appId }: Props) {
                     style={{ flex: 1, fontSize: 12, padding: "4px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius }}
                   />
                   <button
-                    onClick={() => { if (!newFolderName.trim()) return; setShowAddFolder(false); setNewFolderName(""); }}
+                    onClick={() => {
+                      const name = newFolderName.trim();
+                      if (!name) return;
+                      setScriptFolders(prev => Array.from(new Set([...prev, name])).sort());
+                      setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
+                      setShowAddFolder(false); setNewFolderName("");
+                    }}
                     style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: "#fff", cursor: "pointer" }}>
                     Add
                   </button>
                 </div>
-                <p style={{ fontSize: 10, color: C.muted, margin: "4px 0 0" }}>Drag scripts into the folder to populate it.</p>
+                <p style={{ fontSize: 10, color: C.muted, margin: "4px 0 0" }}>Drag scripts into the folder, or use + to create inside it.</p>
               </div>
             )}
           </div>
@@ -213,9 +231,17 @@ export function ScriptsTab({ appId }: Props) {
             }}
             onDragLeave={() => setDragOverTarget(null)}
           >
-            {/* New script form */}
+            {!loading && scripts.length === 0 && scriptFolders.length === 0 && !showAdd && (
+              <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>
+                No scripts yet.<br />
+                {!readonly && <span style={{ color: C.primary, cursor: "pointer" }} onClick={() => setShowAdd(true)}>Create your first script</span>}
+              </div>
+            )}
+
+            {/* New script form (root or in-folder) */}
             {showAdd && (
-              <div style={{ padding: 12, borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+              <div style={{ padding: 12, borderBottom: `1px solid ${C.border}`, background: C.surface }}>
+                {addInFolder && <div style={{ fontSize: 10, color: C.primary, marginBottom: 6, fontWeight: 600 }}>📁 {addInFolder}</div>}
                 {addError && <div style={{ fontSize: 11, color: C.danger, marginBottom: 6 }}>{addError}</div>}
                 <input
                   style={{ ...inputStyle, fontSize: 12, marginBottom: 6 }}
@@ -231,20 +257,12 @@ export function ScriptsTab({ appId }: Props) {
                 </select>
                 <div style={{ display: "flex", gap: 6 }}>
                   <Btn size="sm" onClick={addScript} disabled={adding}>{adding ? "Creating…" : "Create"}</Btn>
-                  <Btn size="sm" variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Btn>
+                  <Btn size="sm" variant="ghost" onClick={() => { setShowAdd(false); setAddInFolder(null); }}>Cancel</Btn>
                 </div>
               </div>
             )}
 
-            {!loading && scripts.length === 0 && !showAdd && (
-              <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>
-                No scripts yet.<br />
-                {!readonly && <span style={{ color: C.primary, cursor: "pointer" }} onClick={() => setShowAdd(true)}>Create your first script</span>}
-              </div>
-            )}
-
             {(() => {
-              const folders = Array.from(new Set(scripts.map(s => s.folder).filter(Boolean) as string[])).sort();
               const rootScripts = scripts.filter(s => !s.folder);
 
               const langBadge = (s: AppScript) => (
@@ -255,8 +273,8 @@ export function ScriptsTab({ appId }: Props) {
 
               return (
                 <>
-                  {/* Folders */}
-                  {folders.map(folder => {
+                  {/* Folders (from state — allows empty folders) */}
+                  {scriptFolders.map(folder => {
                     const folderScripts = scripts.filter(s => s.folder === folder);
                     const isCollapsed = collapsedFolders.has(folder);
                     const isOver = dragOverTarget === folder;
@@ -274,7 +292,7 @@ export function ScriptsTab({ appId }: Props) {
                           }}
                           style={{
                             display: "flex", alignItems: "center", gap: 6,
-                            padding: "7px 10px", cursor: "pointer",
+                            padding: "7px 8px 7px 10px", cursor: "pointer",
                             borderBottom: `1px solid ${C.border}`,
                             background: isOver ? C.primary + "18" : C.bg,
                             outline: isOver ? `1px dashed ${C.primary}` : undefined,
@@ -291,6 +309,14 @@ export function ScriptsTab({ appId }: Props) {
                             {folder}
                           </span>
                           <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>{folderScripts.length}</span>
+                          {!readonly && (
+                            <button
+                              title={`Add script in ${folder}`}
+                              onClick={e => { e.stopPropagation(); setAddInFolder(folder); setShowAdd(true); setAddError(""); }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
+                              +
+                            </button>
+                          )}
                         </div>
                         {!isCollapsed && folderScripts.map(s => (
                           <div key={s._id}
@@ -309,6 +335,11 @@ export function ScriptsTab({ appId }: Props) {
                             {!readonly && <button onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>}
                           </div>
                         ))}
+                        {!isCollapsed && folderScripts.length === 0 && (
+                          <div style={{ padding: "8px 10px 8px 26px", fontSize: 11, color: C.muted, fontStyle: "italic", borderBottom: `1px solid ${C.border}` }}>
+                            Drag scripts here or use +
+                          </div>
+                        )}
                       </div>
                     );
                   })}

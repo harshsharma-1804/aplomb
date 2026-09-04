@@ -7,7 +7,8 @@ const now = () => new Date().toISOString();
 
 export const organizationRepo = {
   get(db: DrizzleDb) {
-    return db.select().from(organization).get() ?? null;
+    const row = db.select().from(organization).get();
+    return row ? { ...row, _id: row.id } : null;
   },
 
   upsert(db: DrizzleDb, input: { name: string; slug: string }) {
@@ -17,12 +18,14 @@ export const organizationRepo = {
         .set({ name: input.name, slug: input.slug.toLowerCase(), updated_at: now() })
         .where(eq(organization.id, existing.id))
         .run();
-      return db.select().from(organization).where(eq(organization.id, existing.id)).get()!;
+      const row = db.select().from(organization).where(eq(organization.id, existing.id)).get()!;
+      return { ...row, _id: row.id };
     }
     const id = randomUUID();
     const t = now();
     db.insert(organization).values({ id, name: input.name, slug: input.slug.toLowerCase(), created_at: t, updated_at: t }).run();
-    return db.select().from(organization).where(eq(organization.id, id)).get()!;
+    const row = db.select().from(organization).where(eq(organization.id, id)).get()!;
+    return { ...row, _id: row.id };
   },
 
   update(db: DrizzleDb, input: { name?: string; slug?: string }) {
@@ -32,6 +35,7 @@ export const organizationRepo = {
     if (input.name !== undefined) patch["name"] = input.name;
     if (input.slug !== undefined) patch["slug"] = input.slug.toLowerCase();
     db.update(organization).set(patch).where(eq(organization.id, existing.id)).run();
-    return db.select().from(organization).where(eq(organization.id, existing.id)).get()!;
+    const row = db.select().from(organization).where(eq(organization.id, existing.id)).get()!;
+    return { ...row, _id: row.id };
   },
 };

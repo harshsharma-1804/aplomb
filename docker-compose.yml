@@ -69,3 +69,7 @@ services:
 
 volumes:
   mongodata:
+
+networks:
+  default:
+    name: orchestrator-mongo-net

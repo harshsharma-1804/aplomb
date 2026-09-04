@@ -25,11 +25,13 @@ export const sessionRepo = {
       user_agent: input.user_agent ?? "",
       created_at: now(),
     }).run();
-    return db.select().from(sessions).where(eq(sessions.id, id)).get()!;
+    const row = db.select().from(sessions).where(eq(sessions.id, id)).get()!;
+    return { ...row, _id: row.id };
   },
 
   findByTokenHash(db: DrizzleDb, token_hash: string) {
-    return db.select().from(sessions).where(eq(sessions.token_hash, token_hash)).get() ?? null;
+    const row = db.select().from(sessions).where(eq(sessions.token_hash, token_hash)).get();
+    return row ? { ...row, _id: row.id } : null;
   },
 
   revoke(db: DrizzleDb, id: string) {

@@ -20,11 +20,13 @@ export const scriptRepo = {
       created_at:  t,
       updated_at:  t,
     }).run();
-    return db.select().from(app_scripts).where(eq(app_scripts.id, id)).get()!;
+    const row = db.select().from(app_scripts).where(eq(app_scripts.id, id)).get()!;
+    return { ...row, _id: row.id };
   },
 
   findById(db: DrizzleDb, id: string) {
-    return db.select().from(app_scripts).where(eq(app_scripts.id, id)).get() ?? null;
+    const row = db.select().from(app_scripts).where(eq(app_scripts.id, id)).get();
+    return row ? { ...row, _id: row.id } : null;
   },
 
   findByAppId(db: DrizzleDb, app_id: string) {
@@ -32,7 +34,8 @@ export const scriptRepo = {
       id: app_scripts.id, app_id: app_scripts.app_id, filename: app_scripts.filename,
       language: app_scripts.language, description: app_scripts.description,
       source: app_scripts.source, created_at: app_scripts.created_at, updated_at: app_scripts.updated_at,
-    }).from(app_scripts).where(eq(app_scripts.app_id, app_id)).all();
+    }).from(app_scripts).where(eq(app_scripts.app_id, app_id)).all()
+      .map(r => ({ ...r, _id: r.id }));
   },
 
   update(db: DrizzleDb, id: string, input: { filename?: string; source?: string; compiled?: string; description?: string; language?: string }) {
@@ -43,7 +46,8 @@ export const scriptRepo = {
     if (input.description !== undefined) patch["description"] = input.description;
     if (input.language    !== undefined) patch["language"]    = input.language;
     db.update(app_scripts).set(patch).where(eq(app_scripts.id, id)).run();
-    return db.select().from(app_scripts).where(eq(app_scripts.id, id)).get()!;
+    const row = db.select().from(app_scripts).where(eq(app_scripts.id, id)).get()!;
+    return { ...row, _id: row.id };
   },
 
   delete(db: DrizzleDb, id: string) {

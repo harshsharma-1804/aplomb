@@ -32,6 +32,7 @@ const now = () => new Date().toISOString();
 function serialize(row: typeof apps.$inferSelect) {
   return {
     ...row,
+    _id:                  row.id,
     app_env:              JSON.parse(row.app_env ?? "[]"),
     allowed_provider_ids: JSON.parse(row.allowed_provider_ids ?? "[]"),
     auth_required:        Boolean(row.auth_required),

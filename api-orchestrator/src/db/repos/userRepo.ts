@@ -29,19 +29,23 @@ export const userRepo = {
       created_at: t,
       updated_at: t,
     }).run();
-    return db.select().from(users).where(eq(users.id, id)).get()!;
+    const row = db.select().from(users).where(eq(users.id, id)).get()!;
+    return { ...row, _id: row.id };
   },
 
   findById(db: DrizzleDb, id: string) {
-    return db.select().from(users).where(eq(users.id, id)).get() ?? null;
+    const row = db.select().from(users).where(eq(users.id, id)).get();
+    return row ? { ...row, _id: row.id } : null;
   },
 
   findByUsername(db: DrizzleDb, username: string) {
-    return db.select().from(users).where(eq(users.username, username.toLowerCase().trim())).get() ?? null;
+    const row = db.select().from(users).where(eq(users.username, username.toLowerCase().trim())).get();
+    return row ? { ...row, _id: row.id } : null;
   },
 
   findByEmail(db: DrizzleDb, email: string) {
-    return db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).get() ?? null;
+    const row = db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).get();
+    return row ? { ...row, _id: row.id } : null;
   },
 
   list(db: DrizzleDb) {
@@ -52,7 +56,7 @@ export const userRepo = {
       failed_login_attempts: users.failed_login_attempts,
       locked_until: users.locked_until, last_login_at: users.last_login_at,
       created_by: users.created_by, created_at: users.created_at, updated_at: users.updated_at,
-    }).from(users).all();
+    }).from(users).all().map(r => ({ ...r, _id: r.id }));
   },
 
   updateRole(db: DrizzleDb, id: string, role: string) {

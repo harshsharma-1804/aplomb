@@ -8,6 +8,7 @@ const now = () => new Date().toISOString();
 function serialize(row: typeof identity_providers.$inferSelect) {
   return {
     ...row,
+    _id:            row.id,
     audience:       JSON.parse(row.audience       ?? "[]"),
     algorithms:     JSON.parse(row.algorithms     ?? '["RS256"]'),
     claim_mappings: JSON.parse(row.claim_mappings ?? "{}"),

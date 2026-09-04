@@ -6,7 +6,7 @@ import type { DrizzleDb } from "./types.js";
 const now = () => new Date().toISOString();
 
 function serialize(row: typeof host_allowlist.$inferSelect) {
-  return { ...row, is_wildcard: Boolean(row.is_wildcard) };
+  return { ...row, _id: row.id, is_wildcard: Boolean(row.is_wildcard) };
 }
 
 export const hostAllowlistRepo = {

@@ -21,6 +21,8 @@ const SAFE_FIELDS = {
   last_used_at: secrets.last_used_at, created_at: secrets.created_at,
 };
 
+function withId<T extends { id: string }>(row: T) { return { ...row, _id: row.id }; }
+
 export const secretRepo = {
   create(db: DrizzleDb, input: CreateSecretInput) {
     const id = randomUUID();
@@ -34,19 +36,21 @@ export const secretRepo = {
       created_by: input.created_by ?? null,
       created_at: now(),
     }).run();
-    return db.select().from(secrets).where(eq(secrets.id, id)).get()!;
+    return withId(db.select().from(secrets).where(eq(secrets.id, id)).get()!);
   },
 
   findById(db: DrizzleDb, id: string) {
-    return db.select().from(secrets).where(eq(secrets.id, id)).get() ?? null;
+    const row = db.select().from(secrets).where(eq(secrets.id, id)).get();
+    return row ? withId(row) : null;
   },
 
   findByName(db: DrizzleDb, name: string) {
-    return db.select().from(secrets).where(eq(secrets.name, name.trim())).get() ?? null;
+    const row = db.select().from(secrets).where(eq(secrets.name, name.trim())).get();
+    return row ? withId(row) : null;
   },
 
   list(db: DrizzleDb) {
-    return db.select(SAFE_FIELDS).from(secrets).all();
+    return db.select(SAFE_FIELDS).from(secrets).all().map(r => ({ ...r, _id: r.id }));
   },
 
   rotate(db: DrizzleDb, id: string, data: { ciphertext: string; iv: string; auth_tag: string }) {

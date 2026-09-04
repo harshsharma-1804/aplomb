@@ -27,6 +27,7 @@ const now = () => new Date().toISOString();
 function serialize(row: typeof endpoints.$inferSelect) {
   return {
     ...row,
+    _id:             row.id,
     path_params:     JSON.parse(row.path_params    ?? "[]"),
     query_params:    JSON.parse(row.query_params   ?? "[]"),
     request:         JSON.parse(row.request        ?? "{}"),

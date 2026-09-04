@@ -8,6 +8,7 @@ const now = () => new Date().toISOString();
 function serialize(row: typeof version_history.$inferSelect) {
   return {
     ...row,
+    _id:        row.id,
     changed_by: JSON.parse(row.changed_by ?? "{}"),
     snapshot:   JSON.parse(row.snapshot   ?? "{}"),
   };

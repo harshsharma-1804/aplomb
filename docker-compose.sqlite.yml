@@ -28,7 +28,7 @@ services:
   api-config-dashboard-sqlite:
     build:
       context: ./api-config-dashboard
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.sqlite
     image: orchestrator-sqlite-dashboard:latest
     restart: unless-stopped
     ports:
@@ -38,3 +38,7 @@ services:
         condition: service_healthy
 
 volumes: {}
+
+networks:
+  default:
+    name: orchestrator-sqlite-net

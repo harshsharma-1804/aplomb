@@ -71,6 +71,31 @@ export function ScriptsTab({ appId }: Props) {
   const [newFolderName, setNewFolderName] = useState("");
   const [dragScriptId, setDragScriptId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  const [folderMenuOpen, setFolderMenuOpen] = useState<string | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameFolderValue, setRenameFolderValue] = useState("");
+
+  function deleteScriptFolder(folder: string) {
+    const toMove = scripts.filter(s => s.folder === folder);
+    Promise.all(toMove.map(s => api.put(`/__config/apps/${appId}/scripts/${s._id}`, { folder: null })))
+      .then(() => {
+        setScripts(prev => prev.map(s => s.folder === folder ? { ...s, folder: null } : s));
+        setScriptFolders(prev => prev.filter(f => f !== folder));
+        setFolderMenuOpen(null);
+      }).catch(() => {});
+  }
+
+  function renameScriptFolder(oldName: string, newName: string) {
+    if (!newName.trim() || newName === oldName) { setRenamingFolder(null); return; }
+    const trimmed = newName.trim();
+    const toRename = scripts.filter(s => s.folder === oldName);
+    Promise.all(toRename.map(s => api.put(`/__config/apps/${appId}/scripts/${s._id}`, { folder: trimmed })))
+      .then(() => {
+        setScripts(prev => prev.map(s => s.folder === oldName ? { ...s, folder: trimmed } : s));
+        setScriptFolders(prev => Array.from(new Set(prev.map(f => f === oldName ? trimmed : f))).sort());
+        setRenamingFolder(null); setFolderMenuOpen(null);
+      }).catch(() => {});
+  }
 
   async function loadScripts() {
     setLoading(true); setError("");
@@ -278,6 +303,8 @@ export function ScriptsTab({ appId }: Props) {
                     const folderScripts = scripts.filter(s => s.folder === folder);
                     const isCollapsed = collapsedFolders.has(folder);
                     const isOver = dragOverTarget === folder;
+                    const isMenuOpen = folderMenuOpen === folder;
+                    const isRenaming = renamingFolder === folder;
                     return (
                       <div key={folder}>
                         <div
@@ -303,21 +330,64 @@ export function ScriptsTab({ appId }: Props) {
                             {isCollapsed ? "▶" : "▼"}
                           </span>
                           <span style={{ fontSize: 11, flexShrink: 0 }}>📁</span>
-                          <span
-                            onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
-                            style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {folder}
-                          </span>
+                          {isRenaming ? (
+                            <input
+                              autoFocus
+                              value={renameFolderValue}
+                              onChange={e => setRenameFolderValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") renameScriptFolder(folder, renameFolderValue);
+                                if (e.key === "Escape") { setRenamingFolder(null); setFolderMenuOpen(null); }
+                              }}
+                              onBlur={() => renameScriptFolder(folder, renameFolderValue)}
+                              onClick={e => e.stopPropagation()}
+                              style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "1px 4px", border: `1px solid ${C.primary}`, borderRadius: 3 }}
+                            />
+                          ) : (
+                            <span
+                              onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
+                              style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {folder}
+                            </span>
+                          )}
                           <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>{folderScripts.length}</span>
-                          {!readonly && (
-                            <button
-                              title={`Add script in ${folder}`}
-                              onClick={e => { e.stopPropagation(); setAddInFolder(folder); setShowAdd(true); setAddError(""); }}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
-                              +
-                            </button>
+                          {!readonly && !isRenaming && (
+                            <>
+                              <button
+                                title={`Add script in ${folder}`}
+                                onClick={e => { e.stopPropagation(); setAddInFolder(folder); setShowAdd(true); setAddError(""); }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
+                                +
+                              </button>
+                              <button
+                                title="Folder options"
+                                onClick={e => { e.stopPropagation(); setFolderMenuOpen(isMenuOpen ? null : folder); }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
+                                ⋯
+                              </button>
+                            </>
                           )}
                         </div>
+                        {/* Folder context menu */}
+                        {isMenuOpen && (
+                          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, margin: "0 8px 4px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); setRenamingFolder(folder); setRenameFolderValue(folder); setFolderMenuOpen(null); }}
+                              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, borderBottom: `1px solid ${C.border}` }}
+                              onMouseEnter={el => (el.currentTarget.style.background = C.bg)}
+                              onMouseLeave={el => (el.currentTarget.style.background = "none")}>
+                              ✏️ Rename folder
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteScriptFolder(folder); }}
+                              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.danger }}
+                              onMouseEnter={el => (el.currentTarget.style.background = "#fff5f5")}
+                              onMouseLeave={el => (el.currentTarget.style.background = "none")}>
+                              🗑 Delete folder{folderScripts.length > 0 ? ` (moves ${folderScripts.length} script${folderScripts.length > 1 ? "s" : ""} to root)` : ""}
+                            </button>
+                          </div>
+                        )}
+                        
                         {!isCollapsed && folderScripts.map(s => (
                           <div key={s._id}
                             draggable

@@ -46,6 +46,32 @@ export function AppDetailPage() {
   const [dragEndpointId, setDragEndpointId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
   const [addingInFolder, setAddingInFolder] = useState<string | null>(null);
+  const [folderMenuOpen, setFolderMenuOpen] = useState<string | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameFolderValue, setRenameFolderValue] = useState("");
+
+  function deleteEndpointFolder(folder: string) {
+    // Move all endpoints in folder to root, then remove folder from state
+    const toMove = endpoints.filter(ep => ep.folder === folder);
+    Promise.all(toMove.map(ep => api.put(`/__config/apps/${appId}/endpoints/${ep._id}`, { folder: null })))
+      .then(() => {
+        setEndpoints(prev => prev.map(ep => ep.folder === folder ? { ...ep, folder: null } : ep));
+        setEndpointFolders(prev => prev.filter(f => f !== folder));
+        setFolderMenuOpen(null);
+      }).catch(() => {});
+  }
+
+  function renameEndpointFolder(oldName: string, newName: string) {
+    if (!newName.trim() || newName === oldName) { setRenamingFolder(null); return; }
+    const trimmed = newName.trim();
+    const toRename = endpoints.filter(ep => ep.folder === oldName);
+    Promise.all(toRename.map(ep => api.put(`/__config/apps/${appId}/endpoints/${ep._id}`, { folder: trimmed })))
+      .then(() => {
+        setEndpoints(prev => prev.map(ep => ep.folder === oldName ? { ...ep, folder: trimmed } : ep));
+        setEndpointFolders(prev => Array.from(new Set(prev.map(f => f === oldName ? trimmed : f))).sort());
+        setRenamingFolder(null); setFolderMenuOpen(null);
+      }).catch(() => {});
+  }
 
   async function load() {
     if (!appId) return;
@@ -240,6 +266,8 @@ export function AppDetailPage() {
                     const folderEps = endpoints.filter(ep => ep.folder === folder);
                     const isCollapsed = collapsedFolders.has(folder);
                     const isOver = dragOverTarget === folder;
+                    const isMenuOpen = folderMenuOpen === folder;
+                    const isRenaming = renamingFolder === folder;
                     return (
                       <div key={folder}>
                         {/* Folder header row */}
@@ -259,6 +287,7 @@ export function AppDetailPage() {
                             borderBottom: `1px solid ${C.border}`,
                             background: isOver ? C.primary + "18" : C.bg,
                             outline: isOver ? `1px dashed ${C.primary}` : undefined,
+                            position: "relative",
                           }}>
                           <span
                             onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
@@ -266,21 +295,64 @@ export function AppDetailPage() {
                             {isCollapsed ? "▶" : "▼"}
                           </span>
                           <span style={{ fontSize: 11, flexShrink: 0 }}>📁</span>
-                          <span
-                            onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
-                            style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {folder}
-                          </span>
+                          {isRenaming ? (
+                            <input
+                              autoFocus
+                              value={renameFolderValue}
+                              onChange={e => setRenameFolderValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") renameEndpointFolder(folder, renameFolderValue);
+                                if (e.key === "Escape") { setRenamingFolder(null); setFolderMenuOpen(null); }
+                              }}
+                              onBlur={() => renameEndpointFolder(folder, renameFolderValue)}
+                              onClick={e => e.stopPropagation()}
+                              style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "1px 4px", border: `1px solid ${C.primary}`, borderRadius: 3 }}
+                            />
+                          ) : (
+                            <span
+                              onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
+                              style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {folder}
+                            </span>
+                          )}
                           <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>{folderEps.length}</span>
-                          {can("edit:endpoints") && (
-                            <button
-                              title={`Add endpoint in ${folder}`}
-                              onClick={e => { e.stopPropagation(); setAddingInFolder(folder); setShowAddEndpoint(true); }}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
-                              +
-                            </button>
+                          {can("edit:endpoints") && !isRenaming && (
+                            <>
+                              <button
+                                title={`Add endpoint in ${folder}`}
+                                onClick={e => { e.stopPropagation(); setAddingInFolder(folder); setShowAddEndpoint(true); }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
+                                +
+                              </button>
+                              <button
+                                title="Folder options"
+                                onClick={e => { e.stopPropagation(); setFolderMenuOpen(isMenuOpen ? null : folder); }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>
+                                ⋯
+                              </button>
+                            </>
                           )}
                         </div>
+                        {/* Folder context menu */}
+                        {isMenuOpen && (
+                          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, margin: "0 8px 4px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); setRenamingFolder(folder); setRenameFolderValue(folder); setFolderMenuOpen(null); }}
+                              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, borderBottom: `1px solid ${C.border}` }}
+                              onMouseEnter={el => (el.currentTarget.style.background = C.bg)}
+                              onMouseLeave={el => (el.currentTarget.style.background = "none")}>
+                              ✏️ Rename folder
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteEndpointFolder(folder); }}
+                              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.danger }}
+                              onMouseEnter={el => (el.currentTarget.style.background = "#fff5f5")}
+                              onMouseLeave={el => (el.currentTarget.style.background = "none")}>
+                              🗑 Delete folder{folderEps.length > 0 ? ` (moves ${folderEps.length} endpoint${folderEps.length > 1 ? "s" : ""} to root)` : ""}
+                            </button>
+                          </div>
+                        )}
+                        
                         {/* Folder endpoints */}
                         {!isCollapsed && folderEps.map(ep => (
                           <div

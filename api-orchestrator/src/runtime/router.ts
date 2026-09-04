@@ -405,32 +405,65 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     return;
   }
 
-  if (upstreamResult.status >= 400) {
-    let upstreamBody: unknown;
-    try { upstreamBody = JSON.parse(upstreamResult.body); } catch { upstreamBody = upstreamResult.body; }
-    res.status(upstreamResult.status).json(upstreamBody);
-    return;
-  }
-
+  // Parse upstream body regardless of status code
   let upstreamJson: unknown;
   try {
     upstreamJson = JSON.parse(upstreamResult.body);
   } catch {
-    res.status(502).json({ error: "Upstream returned non-JSON", code: "UPSTREAM_PARSE_ERROR" });
+    upstreamJson = upstreamResult.body;
+  }
+
+  // If upstream returned an error status and no post-hook is active — pass through as-is
+  if (upstreamResult.status >= 400 && scriptMode !== "script_post" && scriptMode !== "script_pre_post") {
+    res.status(upstreamResult.status).json(upstreamJson);
     return;
   }
 
   if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
     const ctx = buildContext(app as unknown as IApp, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    // Pass upstream as { status, body, headers } so the postHook can inspect
+    // the HTTP status code and decide whether to handle errors or pass them through.
+    const upstreamArg = {
+      status: upstreamResult.status,
+      body:   upstreamJson,
+      headers: upstreamResult.headers ?? {},
+    };
     try {
       const script = await resolveScript();
-      const postResult = await runScript(script as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamJson);
-      if (postResult) upstreamJson = postResult.body;
+      const postResult = await runScript(script as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamArg);
+      if (postResult) {
+        // Post-hook returned an explicit response — use it directly (status + body)
+        const finalStatus = postResult.status ?? upstreamResult.status;
+        if (postResult.headers) {
+          for (const [k, v] of Object.entries(postResult.headers)) res.setHeader(k, v);
+        }
+        res.setHeader("X-Orchestrator-App", String(app.name));
+        res.setHeader("X-Orchestrator-Version", app.base_path);
+        res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
+        let transformed: Record<string, unknown>;
+        try { transformed = applyTransform(postResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        catch { transformed = postResult.body as Record<string, unknown>; }
+        res.status(finalStatus).json(transformed);
+        writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: upstreamLatency, total_latency_ms: Date.now() - startTime, status: finalStatus, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
+        return;
+      }
+      // Post-hook returned nothing — if upstream was an error, pass it through now
+      if (upstreamResult.status >= 400) {
+        res.status(upstreamResult.status).json(upstreamJson);
+        return;
+      }
+      // Post-hook returned nothing + upstream was OK — continue to transform with original body
     } catch (e: any) {
       const statusMap: Record<string, number> = { SCRIPT_TIMEOUT: 504, SCRIPT_LOAD_ERROR: 502, SCRIPT_FETCH_HOST_NOT_ALLOWED: 403 };
       res.status(statusMap[e.code] ?? 502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR" });
       return;
     }
+  }
+
+  // If upstream errored and we reach here without a post-hook handling it, pass through
+  if (upstreamResult.status >= 400) {
+    res.status(upstreamResult.status).json(upstreamJson);
+    return;
   }
 
   let transformed: Record<string, unknown>;

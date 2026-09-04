@@ -14,10 +14,18 @@ const STARTER: Record<ScriptLanguage, string> = {
 // ctx.call(appBasePath, endpointPath, options) — internal endpoint call
 // ctx.logger.info / .warn / .error
 
+// Full handler (replaces upstream entirely)
 export async function handler(ctx) {
   const data = await ctx.fetch(\`\${ctx.env.BASE_URL}/some-path\`);
   return { status: 200, body: await data.json() };
 }
+
+// Post-hook: upstream = { status, body, headers }
+// export async function postHook(ctx, upstream) {
+//   if (upstream.status === 404) return { status: 200, body: { found: false } };
+//   if (upstream.status >= 400) return { status: upstream.status, body: upstream.body };
+//   return { status: 200, body: upstream.body };
+// }
 `,
   typescript: `// Available: handler (full), preHook (pre), postHook (post)
 
@@ -561,7 +569,17 @@ export async function handler(ctx) { return { status: 200, body: { ... } }; }
 export async function preHook(ctx) { /* return response to short-circuit, or void */ }
 
 — Post-hook (script_post / script_pre_post) —
-export async function postHook(ctx, upstream) { return { status: 200, body: upstream }; }`}</pre>
+export async function postHook(ctx, upstream) {
+  // upstream = { status: number, body: unknown, headers: Record<string,string> }
+  // upstream.status is the HTTP status from the upstream service
+  if (upstream.status >= 400) {
+    // handle or remap upstream errors — return your own response:
+    // return { status: 200, body: { found: false } };
+    // or pass the error through as-is:
+    return { status: upstream.status, body: upstream.body };
+  }
+  return { status: 200, body: upstream.body };
+}`}</pre>
       )}
     </div>
   );

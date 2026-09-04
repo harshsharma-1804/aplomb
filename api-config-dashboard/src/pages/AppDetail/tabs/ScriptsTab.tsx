@@ -66,7 +66,16 @@ export function ScriptsTab({ appId }: Props) {
 
   const [deleteTarget, setDeleteTarget] = useState<AppScript | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
-  const [scriptFolders, setScriptFolders] = useState<string[]>([]);
+
+  const FOLDERS_KEY = `script_folders_${appId}`;
+  function loadPersistedFolders(): string[] {
+    try { return JSON.parse(localStorage.getItem(FOLDERS_KEY) ?? "[]"); } catch { return []; }
+  }
+  function persistFolders(folders: string[]) {
+    try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); } catch {}
+  }
+
+  const [scriptFolders, setScriptFolders] = useState<string[]>(() => loadPersistedFolders());
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [dragScriptId, setDragScriptId] = useState<string | null>(null);
@@ -75,12 +84,20 @@ export function ScriptsTab({ appId }: Props) {
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameFolderValue, setRenameFolderValue] = useState("");
 
+  function updateScriptFolders(updater: (prev: string[]) => string[]) {
+    setScriptFolders(prev => {
+      const next = updater(prev);
+      persistFolders(next);
+      return next;
+    });
+  }
+
   function deleteScriptFolder(folder: string) {
     const toMove = scripts.filter(s => s.folder === folder);
     Promise.all(toMove.map(s => api.put(`/__config/apps/${appId}/scripts/${s._id}`, { folder: null })))
       .then(() => {
         setScripts(prev => prev.map(s => s.folder === folder ? { ...s, folder: null } : s));
-        setScriptFolders(prev => prev.filter(f => f !== folder));
+        updateScriptFolders(prev => prev.filter(f => f !== folder));
         setFolderMenuOpen(null);
       }).catch(() => {});
   }
@@ -92,7 +109,7 @@ export function ScriptsTab({ appId }: Props) {
     Promise.all(toRename.map(s => api.put(`/__config/apps/${appId}/scripts/${s._id}`, { folder: trimmed })))
       .then(() => {
         setScripts(prev => prev.map(s => s.folder === oldName ? { ...s, folder: trimmed } : s));
-        setScriptFolders(prev => Array.from(new Set(prev.map(f => f === oldName ? trimmed : f))).sort());
+        updateScriptFolders(prev => Array.from(new Set(prev.map(f => f === oldName ? trimmed : f))).sort());
         setRenamingFolder(null); setFolderMenuOpen(null);
       }).catch(() => {});
   }
@@ -102,7 +119,7 @@ export function ScriptsTab({ appId }: Props) {
     try {
       const res = await api.get<{ count: number; results: AppScript[] }>(`/__config/apps/${appId}/scripts`);
       setScripts(res.results);
-      setScriptFolders(prev => {
+      updateScriptFolders(prev => {
         const fromServer = res.results.map(s => s.folder).filter(Boolean) as string[];
         return Array.from(new Set([...prev, ...fromServer])).sort();
       });
@@ -153,7 +170,7 @@ export function ScriptsTab({ appId }: Props) {
         ...(addInFolder ? { folder: addInFolder } : {}),
       });
       setScripts(prev => [...prev, created]);
-      if (created.folder) setScriptFolders(prev => Array.from(new Set([...prev, created.folder!])).sort());
+      if (created.folder) updateScriptFolders(prev => Array.from(new Set([...prev, created.folder!])).sort());
       setShowAdd(false);
       setAddInFolder(null);
       setAddForm({ filename: "", language: "javascript", description: "" });
@@ -214,7 +231,7 @@ export function ScriptsTab({ appId }: Props) {
                       if (e.key === "Enter") {
                         const name = newFolderName.trim();
                         if (!name) return;
-                        setScriptFolders(prev => Array.from(new Set([...prev, name])).sort());
+                        updateScriptFolders(prev => Array.from(new Set([...prev, name])).sort());
                         setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                         setShowAddFolder(false); setNewFolderName("");
                       }
@@ -227,7 +244,7 @@ export function ScriptsTab({ appId }: Props) {
                     onClick={() => {
                       const name = newFolderName.trim();
                       if (!name) return;
-                      setScriptFolders(prev => Array.from(new Set([...prev, name])).sort());
+                      updateScriptFolders(prev => Array.from(new Set([...prev, name])).sort());
                       setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                       setShowAddFolder(false); setNewFolderName("");
                     }}

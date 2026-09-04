@@ -40,7 +40,17 @@ export function AppDetailPage() {
   const [showCloneApp, setShowCloneApp] = useState(false);
   const [endpointSettingsOpen, setEndpointSettingsOpen] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
-  const [endpointFolders, setEndpointFolders] = useState<string[]>([]);
+  const EP_FOLDERS_KEY = `endpoint_folders_${appId}`;
+  const [endpointFolders, setEndpointFolders] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`endpoint_folders_${appId}`) ?? "[]"); } catch { return []; }
+  });
+  function updateEndpointFolders(updater: (prev: string[]) => string[]) {
+    setEndpointFolders(prev => {
+      const next = updater(prev);
+      try { localStorage.setItem(EP_FOLDERS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [dragEndpointId, setDragEndpointId] = useState<string | null>(null);
@@ -56,7 +66,7 @@ export function AppDetailPage() {
     Promise.all(toMove.map(ep => api.put(`/__config/apps/${appId}/endpoints/${ep._id}`, { folder: null })))
       .then(() => {
         setEndpoints(prev => prev.map(ep => ep.folder === folder ? { ...ep, folder: null } : ep));
-        setEndpointFolders(prev => prev.filter(f => f !== folder));
+        updateEndpointFolders(prev => prev.filter(f => f !== folder));
         setFolderMenuOpen(null);
       }).catch(() => {});
   }
@@ -68,7 +78,7 @@ export function AppDetailPage() {
     Promise.all(toRename.map(ep => api.put(`/__config/apps/${appId}/endpoints/${ep._id}`, { folder: trimmed })))
       .then(() => {
         setEndpoints(prev => prev.map(ep => ep.folder === oldName ? { ...ep, folder: trimmed } : ep));
-        setEndpointFolders(prev => Array.from(new Set(prev.map(f => f === oldName ? trimmed : f))).sort());
+        updateEndpointFolders(prev => Array.from(new Set(prev.map(f => f === oldName ? trimmed : f))).sort());
         setRenamingFolder(null); setFolderMenuOpen(null);
       }).catch(() => {});
   }
@@ -83,7 +93,7 @@ export function AppDetailPage() {
       ]);
       setApp(a);
       setEndpoints(e.results);
-      setEndpointFolders(prev => {
+      updateEndpointFolders(prev => {
         const fromServer = e.results.map(ep => ep.folder).filter(Boolean) as string[];
         const merged = Array.from(new Set([...prev, ...fromServer])).sort();
         return merged;
@@ -213,7 +223,7 @@ export function AppDetailPage() {
                       if (e.key === "Enter") {
                         const name = newFolderName.trim();
                         if (!name) return;
-                        setEndpointFolders(prev => Array.from(new Set([...prev, name])).sort());
+                        updateEndpointFolders(prev => Array.from(new Set([...prev, name])).sort());
                         setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                         setShowAddFolder(false); setNewFolderName("");
                       }
@@ -226,7 +236,7 @@ export function AppDetailPage() {
                     onClick={() => {
                       const name = newFolderName.trim();
                       if (!name) return;
-                      setEndpointFolders(prev => Array.from(new Set([...prev, name])).sort());
+                      updateEndpointFolders(prev => Array.from(new Set([...prev, name])).sort());
                       setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                       setShowAddFolder(false); setNewFolderName("");
                     }}
@@ -508,7 +518,7 @@ export function AppDetailPage() {
           onCreated={ep => {
             setShowAddEndpoint(false); setAddingInFolder(null);
             setEndpoints(prev => [...prev, ep]);
-            if (ep.folder) setEndpointFolders(prev => Array.from(new Set([...prev, ep.folder!])).sort());
+            if (ep.folder) updateEndpointFolders(prev => Array.from(new Set([...prev, ep.folder!])).sort());
             setSelectedEndpoint(ep); setActiveTab("upstream");
           }}
         />

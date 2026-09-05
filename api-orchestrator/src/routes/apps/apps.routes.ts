@@ -1,11 +1,14 @@
 import { Router } from "express";
 import { App } from "../../models/App.js";
-import { invalidateEndpointsForApp } from "../../cache/endpointCache.js";
+import { invalidateEndpointsForApp, upsertEndpointInCache } from "../../cache/endpointCache.js";
 import { param } from "../../utils/params.js";
 import { Endpoint } from "../../models/Endpoint.js";
+import { AppScript } from "../../models/AppScript.js";
+import { Secret } from "../../models/Secret.js";
 import { VersionHistory } from "../../models/VersionHistory.js";
 import { requirePermission } from "../../auth/rbac.js";
 import { refreshApp } from "../../cache/appCache.js";
+import { compileTypeScript } from "../../runtime/scriptRunner.js";
 
 const router = Router();
 
@@ -151,6 +154,238 @@ router.post("/:id/clone", requirePermission("manage:apps"), async (req, res) => 
     console.error("[apps clone]", err);
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }
+});
+
+// ── GET /apps/:id/export ───────────────────────────────────────────────────────
+// Query params:
+//   include = comma-separated list of "endpoints","scripts"  (default: both)
+//   env     = "none" | "keys" | "values"                     (default: "keys")
+
+router.get("/:id/export", requirePermission("export:app"), async (req, res) => {
+  const appId = param(req.params["id"]);
+
+  const app = await App.findById(appId).lean();
+  if (!app) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+
+  const includeRaw = String(req.query["include"] ?? "endpoints,scripts");
+  const include = new Set(includeRaw.split(",").map(s => s.trim()).filter(Boolean));
+  const envMode = (["none", "keys", "values"].includes(String(req.query["env"])) ? req.query["env"] : "keys") as "none" | "keys" | "values";
+
+  // ── Resolve app_env ────────────────────────────────────────────────────────
+  let exportedEnv: Array<{ key: string; value_type: string; plain_value?: string }> = [];
+  if (envMode !== "none") {
+    for (const e of (app as any).app_env ?? []) {
+      if (e.value_type === "secret") {
+        exportedEnv.push({ key: e.key, value_type: "secret" });
+      } else {
+        exportedEnv.push({
+          key: e.key,
+          value_type: "plain",
+          ...(envMode === "values" ? { plain_value: e.plain_value ?? "" } : {}),
+        });
+      }
+    }
+  }
+
+  // ── Endpoints ──────────────────────────────────────────────────────────────
+  let exportedEndpoints: unknown[] = [];
+  if (include.has("endpoints")) {
+    const endpoints = await Endpoint.find({ app_id: appId }).lean();
+
+    // Build script_id → filename map for this app's scripts (needed even if scripts not included)
+    const scripts = await AppScript.find({ app_id: appId }).lean().select("_id filename");
+    const scriptIdToFilename = new Map(scripts.map((s: any) => [String(s._id), s.filename]));
+
+    for (const ep of endpoints) {
+      const { _id, app_id, org_id, created_at, updated_at, __v, ...rest } = ep as any;
+
+      // Resolve secret_ref ObjectId → secret name in upstream.auth_config
+      let upstream = { ...(rest.upstream ?? {}) };
+      if (upstream.auth_config?.secret_ref) {
+        const secret = await Secret.findById(upstream.auth_config.secret_ref).select("name").lean();
+        upstream = {
+          ...upstream,
+          auth_config: {
+            ...upstream.auth_config,
+            secret_ref: undefined,
+            secret_ref_name: (secret as any)?.name ?? null,
+          },
+        };
+      }
+
+      exportedEndpoints.push({
+        ...rest,
+        upstream,
+        script_file_id: undefined,
+        script_filename: rest.script_file_id ? (scriptIdToFilename.get(String(rest.script_file_id)) ?? null) : null,
+      });
+    }
+  }
+
+  // ── Scripts ────────────────────────────────────────────────────────────────
+  let exportedScripts: unknown[] = [];
+  if (include.has("scripts")) {
+    const scripts = await AppScript.find({ app_id: appId }).lean();
+    exportedScripts = scripts.map((s: any) => ({
+      filename:    s.filename,
+      language:    s.language,
+      source:      s.source,
+      description: s.description,
+      folder:      s.folder ?? null,
+    }));
+  }
+
+  // ── App fields ─────────────────────────────────────────────────────────────
+  const { _id, org_id, created_by, created_at, updated_at, __v, app_env, ...appRest } = app as any;
+  const slug = (appRest.base_path as string).replace(/\//g, "-").replace(/^-/, "") || "app";
+
+  const payload = {
+    export_version:  "1",
+    exported_at:     new Date().toISOString(),
+    exported_from:   "orchestrator v1.0.0",
+    export_options:  { include: [...include], env: envMode },
+    app: {
+      ...appRest,
+      allowed_provider_ids: [],
+      app_env: exportedEnv,
+    },
+    endpoints: exportedEndpoints,
+    scripts:   exportedScripts,
+  };
+
+  const filename = `${slug}-export-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.json(payload);
+});
+
+// ── POST /apps/import ──────────────────────────────────────────────────────────
+// Body: { payload: AppExport, options?: { name?, base_path?, overwrite? } }
+
+router.post("/import", requirePermission("manage:apps"), async (req, res) => {
+  const { payload, options = {} } = req.body ?? {};
+
+  if (!payload || payload.export_version !== "1") {
+    res.status(400).json({ error: "Unsupported or missing export_version — only version 1 is supported", code: "UNSUPPORTED_EXPORT_VERSION" });
+    return;
+  }
+
+  const warnings: string[] = [];
+  const targetName     = options.name      ?? payload.app.name;
+  const targetBasePath = options.base_path ?? payload.app.base_path;
+
+  // ── Conflict check ─────────────────────────────────────────────────────────
+  const existing = await App.findOne({ base_path: targetBasePath }).lean();
+  if (existing) {
+    if (!options.overwrite) {
+      res.status(409).json({ error: "An app with this base_path already exists", code: "DUPLICATE_BASE_PATH", conflict: true, existing_app_id: String((existing as any)._id) });
+      return;
+    }
+    // overwrite: true — delete existing app + its data
+    const existingId = String((existing as any)._id);
+    await Endpoint.deleteMany({ app_id: existingId });
+    await AppScript.deleteMany({ app_id: existingId });
+    await VersionHistory.deleteMany({ app_id: existingId });
+    await App.findByIdAndDelete(existingId);
+    invalidateEndpointsForApp(existingId);
+  }
+
+  // ── Create app ─────────────────────────────────────────────────────────────
+  const { allowed_provider_ids: _providers, ...appFields } = payload.app;
+  const newApp = await App.create({
+    ...appFields,
+    name:                targetName,
+    base_path:           targetBasePath,
+    status:              "draft",
+    allowed_provider_ids: [],
+    created_by:          req.dashboardUser?.id ?? null,
+  });
+  const newAppId = String(newApp._id);
+  warnings.push("allowed_provider_ids could not be restored — re-link providers in App Settings");
+
+  // ── Create scripts + build filename → new _id map ─────────────────────────
+  const filenameToId = new Map<string, string>();
+  let scriptsCreated = 0;
+
+  for (const s of payload.scripts ?? []) {
+    let compiled = s.source ?? "";
+    if (s.language === "typescript" && s.source?.trim()) {
+      const { js, error } = await compileTypeScript(s.source);
+      if (error) {
+        warnings.push(`Script '${s.filename}' compile error: ${error} — script saved but not compiled`);
+        compiled = "";
+      } else {
+        compiled = js;
+      }
+    }
+    // Handle filename collision: append -2, -3, …
+    let filename = s.filename;
+    let suffix = 2;
+    while (filenameToId.has(filename)) {
+      const ext = s.filename.includes(".") ? s.filename.slice(s.filename.lastIndexOf(".")) : "";
+      const base = s.filename.slice(0, s.filename.length - ext.length);
+      filename = `${base}-${suffix}${ext}`;
+      suffix++;
+      if (suffix > 2) warnings.push(`Script filename collision — renamed to '${filename}'`);
+    }
+    const script = await AppScript.create({
+      app_id:      newAppId,
+      filename,
+      language:    s.language,
+      source:      s.source,
+      compiled,
+      description: s.description ?? "",
+      folder:      s.folder ?? null,
+    });
+    filenameToId.set(filename, String(script._id));
+    scriptsCreated++;
+  }
+
+  // ── Create endpoints ───────────────────────────────────────────────────────
+  let endpointsCreated = 0;
+
+  for (const ep of payload.endpoints ?? []) {
+    const { script_file_id: _sfid, script_filename, upstream: epUpstream, ...epRest } = ep as any;
+
+    // Resolve script_filename → new script_file_id
+    const resolvedScriptId = script_filename ? (filenameToId.get(script_filename) ?? null) : null;
+    if (script_filename && !resolvedScriptId) {
+      warnings.push(`Endpoint '${epRest.name}': script '${script_filename}' not found in import — script_file_id set to null`);
+    }
+
+    // Resolve secret_ref_name → secret ObjectId
+    let upstream = { ...(epUpstream ?? {}) };
+    if (upstream.auth_config?.secret_ref_name) {
+      const secretName = upstream.auth_config.secret_ref_name;
+      const secret = await Secret.findOne({ name: secretName }).select("_id").lean();
+      if (!secret) {
+        warnings.push(`Secret '${secretName}' not found — upstream auth will be broken until the secret is created`);
+        upstream = { ...upstream, auth_config: { ...upstream.auth_config, secret_ref_name: undefined, secret_ref: null } };
+      } else {
+        upstream = { ...upstream, auth_config: { ...upstream.auth_config, secret_ref_name: undefined, secret_ref: String((secret as any)._id) } };
+      }
+    }
+
+    const created = await Endpoint.create({
+      ...epRest,
+      app_id:         newAppId,
+      upstream,
+      script_file_id: resolvedScriptId,
+    });
+    upsertEndpointInCache((created as any).toObject());
+    endpointsCreated++;
+  }
+
+  // ── Finalise ───────────────────────────────────────────────────────────────
+  await refreshApp(newAppId);
+  await writeHistory(newAppId, "imported", `App imported: ${targetName} (from export file)`, req);
+
+  res.status(201).json({
+    app: newApp,
+    endpoints_created: endpointsCreated,
+    scripts_created:   scriptsCreated,
+    warnings,
+  });
 });
 
 // ── GET /apps/:id/history ──────────────────────────────────────────────────────

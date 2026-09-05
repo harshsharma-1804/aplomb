@@ -237,6 +237,50 @@ export interface HostAllowlistEntry {
   created_at: string;
 }
 
+// ── App Export / Import ───────────────────────────────────────────────────────
+
+export type ExportEnvMode = "none" | "keys" | "values";
+
+export interface ExportOptions {
+  include: Array<"endpoints" | "scripts">;
+  env: ExportEnvMode;
+}
+
+export interface AppExport {
+  export_version: "1";
+  exported_at: string;
+  exported_from: string;
+  export_options: ExportOptions;
+  app: Omit<App, "_id" | "org_id" | "created_at" | "updated_at" | "created_by" | "allowed_provider_ids"> & {
+    allowed_provider_ids: [];
+    app_env: Array<{ key: string; value_type: "plain" | "secret"; plain_value?: string }>;
+  };
+  endpoints: Array<Omit<Endpoint, "_id" | "app_id" | "created_at" | "updated_at" | "script_file_id"> & {
+    script_filename: string | null;
+    upstream: Upstream & { auth_config: { header_name?: string; secret_ref?: never; secret_ref_name?: string | null } };
+  }>;
+  scripts: Array<{
+    filename: string;
+    language: ScriptLanguage;
+    source: string;
+    description: string;
+    folder: string | null;
+  }>;
+}
+
+export interface ImportOptions {
+  name?: string;
+  base_path?: string;
+  overwrite?: boolean;
+}
+
+export interface ImportResult {
+  app: App;
+  endpoints_created: number;
+  scripts_created: number;
+  warnings: string[];
+}
+
 // ── Version history ───────────────────────────────────────────────────────────
 
 export interface VersionHistoryEntry {

@@ -12,6 +12,7 @@ import { MappingTab } from "./tabs/MappingTab";
 import { TestTab } from "./tabs/TestTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { ScriptsTab } from "./tabs/ScriptsTab";
+import { ExportAppModal } from "./ExportAppModal";
 
 const TABS = [
   { key: "request-schema",  label: "Request Schema" },
@@ -38,6 +39,7 @@ export function AppDetailPage() {
   const [editEndpoint, setEditEndpoint] = useState<Endpoint | null>(null);
   const [deleteEndpoint, setDeleteEndpoint] = useState<Endpoint | null>(null);
   const [showCloneApp, setShowCloneApp] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [endpointSettingsOpen, setEndpointSettingsOpen] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const EP_FOLDERS_KEY = `endpoint_folders_${appId}`;
@@ -152,6 +154,7 @@ export function AppDetailPage() {
         <div style={{ display: "flex", gap: 8 }}>
           {can("manage:apps") && <Btn size="sm" variant="ghost" onClick={() => navigate(`/apps/${appId}/history`)}>History</Btn>}
           {can("manage:apps") && <Btn size="sm" variant="outline" onClick={() => navigate(`/apps/${appId}/compare`)}>Compare</Btn>}
+          {can("export:app") && <Btn size="sm" variant="outline" onClick={() => setShowExport(true)}>Export ↓</Btn>}
         </div>
       </div>
 
@@ -508,6 +511,9 @@ export function AppDetailPage() {
           onClose={() => setShowCloneApp(false)}
           onCloned={id => { setShowCloneApp(false); navigate(`/apps/${id}`); }}
         />
+      )}
+      {showExport && app && (
+        <ExportAppModal app={app} onClose={() => setShowExport(false)} />
       )}
 
       {showAddEndpoint && (

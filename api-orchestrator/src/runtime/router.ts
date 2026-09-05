@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
-import { Endpoint } from "../models/Endpoint.js";
 import { config } from "../config/appConfig.js";
+import { getEndpointsByAppAndMethod } from "../cache/endpointCache.js";
 import { getAppByPath } from "../cache/appCache.js";
 import { getProviderByIssuer } from "../cache/providerCache.js";
 import { validateToken, readIssuerFromToken } from "../auth/oidcValidate.js";
@@ -144,6 +144,13 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   // auth_required: false is for local dev / demo only. Never use in production.
   let principal: import("../auth/oidcValidate.js").NormalisedPrincipal | null = null;
 
+  const relativePath = requestPath.slice(app.base_path.length) || "/";
+  const appId = String((app as any)._id);
+
+  // ── Parallel: OIDC validation + endpoint cache lookup ─────────────────────
+  // These are independent — run concurrently to save ~6ms per request.
+  let oidcPromise: Promise<import("../auth/oidcValidate.js").NormalisedPrincipal | null> = Promise.resolve(null);
+
   if (app.auth_required !== false) {
     if (!authHeader?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Unauthorized", code: "MISSING_TOKEN" });
@@ -171,17 +178,25 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
       }
     }
 
-    try {
-      principal = await validateToken(token, provider);
-    } catch {
+    oidcPromise = validateToken(token, provider).catch(() => {
+      throw Object.assign(new Error("Unauthorized"), { _oidcFail: true });
+    });
+  }
+
+  // Endpoint lookup from in-memory cache — synchronous, 0ms
+  const allEndpoints = getEndpointsByAppAndMethod(appId, method);
+
+  // Await OIDC (endpoint lookup is already done synchronously above)
+  try {
+    principal = await oidcPromise;
+  } catch (e: any) {
+    if (e._oidcFail) {
       res.status(401).json({ error: "Unauthorized", code: "INVALID_TOKEN" });
       return;
     }
+    throw e;
   }
 
-  const relativePath = requestPath.slice(app.base_path.length) || "/";
-
-  const allEndpoints = await Endpoint.find({ app_id: app._id, method }).lean();
   let endpoint = null;
   let pathParams: Record<string, string> = {};
 
@@ -307,13 +322,14 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const upstreamHeaders: Record<string, string> = {};
 
-  // Step 1 — static headers (always sent); resolve {{VAR}} in values
-  for (const sh of endpoint.upstream.static_headers ?? []) {
-    if (sh.name) {
-      const resolvedValue = await resolveEnvVars(sh.value ?? "", app as unknown as IApp);
-      upstreamHeaders[sh.name] = resolvedValue;
-    }
-  }
+  // Step 1 — static headers (always sent); resolve {{VAR}} in values — parallel
+  await Promise.all(
+    (endpoint.upstream.static_headers ?? []).map(async (sh: any) => {
+      if (sh.name) {
+        upstreamHeaders[sh.name] = await resolveEnvVars(sh.value ?? "", app as unknown as IApp);
+      }
+    })
+  );
 
   // Step 1.5 — forward ALL safe incoming headers when forward_all_headers is enabled.
   // Individual rules in Step 2 run after and can override any header set here.

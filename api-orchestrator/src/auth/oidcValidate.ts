@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import type { IIdentityProvider } from "../models/IdentityProvider.js";
+import { getAllProviders } from "../cache/providerCache.js";
 
 export interface NormalisedPrincipal {
   sub: string;
@@ -25,6 +26,29 @@ function getJWKS(provider: IIdentityProvider): ReturnType<typeof createRemoteJWK
 
 export function invalidateProviderCache(providerId: string): void {
   jwksCache.delete(providerId);
+}
+
+/**
+ * Pre-warm the JWKS cache for all active providers at startup.
+ * Eliminates the ~900ms cold-start penalty on the first real user request.
+ * Called after initProviderCache() in index.ts.
+ */
+export async function warmJwksCache(): Promise<void> {
+  const providers = getAllProviders();
+  if (providers.length === 0) {
+    console.log("[jwks] No active providers to pre-warm");
+    return;
+  }
+  await Promise.all(providers.map(async (p: any) => {
+    try {
+      let uri = p.jwks_uri;
+      if (!uri) uri = await discoverJwksUri(p.issuer);
+      getJWKS({ ...p, jwks_uri: uri } as IIdentityProvider);
+      console.log(`[jwks] Pre-warmed: ${p.issuer}`);
+    } catch (e) {
+      console.warn(`[jwks] Pre-warm failed for ${p.issuer}:`, (e as Error).message);
+    }
+  }));
 }
 
 export async function discoverJwksUri(issuer: string): Promise<string> {

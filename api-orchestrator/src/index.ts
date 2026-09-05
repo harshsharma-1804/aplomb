@@ -10,6 +10,8 @@ import { initProviderCache } from "./cache/providerCache.js";
 import { initLogger } from "./runtime/logger.js";
 import { initAllowlistCache } from "./cache/allowlistCache.js";
 import { initCorsCache, isRuntimeOriginAllowed } from "./cache/corsCache.js";
+import { initEndpointCache } from "./cache/endpointCache.js";
+import { warmJwksCache } from "./auth/oidcValidate.js";
 import { bootstrapOrganization, bootstrapAdmin } from "./db/bootstrap.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import rootRouter from "./routes/index.route.js";
@@ -113,6 +115,8 @@ async function start(): Promise<void> {
   await initProviderCache();
   await initAllowlistCache();
   await initCorsCache();
+  await initEndpointCache();
+  await warmJwksCache();   // pre-warm JWKS so first real user request pays 0ms cold-start
   initLogger();
 
   app.listen(config.server.port, "0.0.0.0", () => {

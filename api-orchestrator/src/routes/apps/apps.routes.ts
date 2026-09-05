@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { App } from "../../models/App.js";
+import { invalidateEndpointsForApp } from "../../cache/endpointCache.js";
 import { param } from "../../utils/params.js";
 import { Endpoint } from "../../models/Endpoint.js";
 import { VersionHistory } from "../../models/VersionHistory.js";
@@ -113,6 +114,7 @@ router.delete("/:id", requirePermission("manage:apps"), async (req, res) => {
   await Endpoint.deleteMany({ app_id: appId });
   await VersionHistory.deleteMany({ app_id: appId });
   await App.findByIdAndDelete(appId);
+  invalidateEndpointsForApp(appId);
   res.json({ success: true });
 });
 

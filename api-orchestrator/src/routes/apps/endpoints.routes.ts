@@ -12,6 +12,7 @@ import { resolveEnvVars } from "../../runtime/router.js";
 import { runScript } from "../../runtime/scriptRunner.js";
 import { buildContext } from "../../runtime/ctxBuilder.js";
 import { AppScript } from "../../models/AppScript.js";
+import { upsertEndpointInCache, removeEndpointFromCache, invalidateEndpointsForApp } from "../../cache/endpointCache.js";
 
 type EP = Request<{ appId: string; endId?: string }>;
 
@@ -59,6 +60,7 @@ function subResourceUpdate(field: string) {
         { new: true, runValidators: false }
       ).lean();
       if (!ep) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+      upsertEndpointInCache(ep);
       await writeHistory(param(req.params["appId"]), "endpoint_modified", `Endpoint ${field} updated`, req);
       res.json(ep);
     } catch (err: any) {
@@ -119,6 +121,7 @@ router.post(
         body.path_params = syncPathParams(body.path, body.path_params ?? []);
       }
       const ep = await Endpoint.create({ ...body, app_id: param(req.params["appId"]) });
+      upsertEndpointInCache(ep.toObject());
       await writeHistory(param(req.params["appId"]), "endpoint_added", `Endpoint added: ${ep.method} ${ep.path}`, req);
       res.status(201).json(ep);
     } catch (err: any) {
@@ -155,6 +158,7 @@ router.put(
         { new: true, runValidators: false }
       ).lean();
       if (!ep) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+      upsertEndpointInCache(ep);
       await writeHistory(param(req.params["appId"]), "endpoint_modified", `Endpoint modified: ${(ep as any).method} ${(ep as any).path}`, req);
       res.json(ep);
     } catch (err: any) {
@@ -172,6 +176,7 @@ router.delete("/:endId", requirePermission("edit:endpoints"), async (req, res) =
       app_id: param(req.params["appId"]),
     }).lean();
     if (!ep) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    removeEndpointFromCache(param(req.params["appId"]), (ep as any).method, param(req.params["endId"]));
     await writeHistory(param(req.params["appId"]), "endpoint_deleted", `Endpoint deleted: ${(ep as any).method} ${(ep as any).path}`, req);
     res.json({ success: true });
   } catch (err: any) {
@@ -206,6 +211,7 @@ router.put("/:endId/script-config", requirePermission("edit:endpoints"), async (
       { new: true, runValidators: false }
     ).lean();
     if (!ep) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    upsertEndpointInCache(ep);
     await writeHistory(param(req.params["appId"]), "endpoint_modified", `Script config updated for endpoint ${(ep as any).method} ${(ep as any).path}`, req);
     res.json(ep);
   } catch (err: any) {

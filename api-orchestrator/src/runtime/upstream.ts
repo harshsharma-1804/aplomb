@@ -1,28 +1,67 @@
-import { fetch as undiciFetch } from "undici";
+import { Pool } from "undici";
 import CircuitBreaker from "opossum";
 import type { IEndpoint } from "../models/Endpoint.js";
 import { resolveSecret } from "../secrets/resolver.js";
 import { config } from "../config/appConfig.js";
 
 const breakers = new Map<string, CircuitBreaker>();
+const pools = new Map<string, Pool>();
 const ALLOWED_RETRY_METHODS = new Set(["GET", "HEAD"]);
+
+/**
+ * Get or create a keep-alive connection Pool for an upstream origin.
+ * Reusing TCP+TLS connections saves 50–150ms TLS handshake per request.
+ */
+function getPool(origin: string): Pool {
+  if (pools.has(origin)) return pools.get(origin)!;
+  const pool = new Pool(origin, {
+    connections:          10,
+    keepAliveTimeout:     30_000,
+    keepAliveMaxTimeout:  600_000,
+    headersTimeout:       config.upstream.timeoutMs,
+    bodyTimeout:          config.upstream.timeoutMs,
+    connectTimeout:       10_000,
+  });
+  pools.set(origin, pool);
+  return pool;
+}
 
 function getBreaker(host: string): CircuitBreaker {
   if (breakers.has(host)) return breakers.get(host)!;
 
   const breaker = new CircuitBreaker(
-    async (url: string, init: RequestInit) => undiciFetch(url, init as Parameters<typeof undiciFetch>[1]),
+    async (origin: string, path: string, method: string, headers: Record<string, string>, body: string | null) => {
+      const pool = getPool(origin);
+      const response = await pool.request({
+        method:  method as any,
+        path,
+        headers,
+        body:    body ?? undefined,
+      });
+      // Read body as text
+      const chunks: Buffer[] = [];
+      for await (const chunk of response.body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const text = Buffer.concat(chunks).toString("utf-8");
+      const responseHeaders: Record<string, string> = {};
+      const raw = response.headers;
+      if (raw && typeof raw === "object") {
+        for (const [k, v] of Object.entries(raw)) {
+          if (v !== undefined) responseHeaders[String(k)] = Array.isArray(v) ? v.join(", ") : String(v);
+        }
+      }
+      return { status: response.statusCode, body: text, headers: responseHeaders };
+    },
     {
-      timeout: config.upstream.timeoutMs,
-      errorThresholdPercentage: config.upstream.circuitBreakerErrorThresholdPct,
-      resetTimeout: config.upstream.circuitBreakerResetTimeoutMs,
-      volumeThreshold: config.upstream.circuitBreakerVolumeThreshold,
+      timeout:                    config.upstream.timeoutMs,
+      errorThresholdPercentage:   config.upstream.circuitBreakerErrorThresholdPct,
+      resetTimeout:               config.upstream.circuitBreakerResetTimeoutMs,
+      volumeThreshold:            config.upstream.circuitBreakerVolumeThreshold,
     }
   );
 
-  breaker.on("open", () => console.warn(`[upstream] Circuit OPEN for ${host}`));
+  breaker.on("open",     () => console.warn(`[upstream] Circuit OPEN for ${host}`));
   breaker.on("halfOpen", () => console.info(`[upstream] Circuit HALF-OPEN for ${host}`));
-  breaker.on("close", () => console.info(`[upstream] Circuit CLOSED for ${host}`));
+  breaker.on("close",    () => console.info(`[upstream] Circuit CLOSED for ${host}`));
 
   breakers.set(host, breaker);
   return breaker;
@@ -69,8 +108,10 @@ export async function callUpstream(
     reqHeaders["Content-Length"] = String(Buffer.byteLength(body));
   }
 
-  const hostname = new URL(upstreamUrl).hostname;
-  const breaker = getBreaker(hostname);
+  const parsed = new URL(upstreamUrl);
+  const origin  = parsed.origin;                                // e.g. https://api.example.com
+  const path    = parsed.pathname + parsed.search;              // e.g. /claims?status=active
+  const breaker = getBreaker(parsed.hostname);
 
   let lastError: Error | null = null;
 
@@ -78,17 +119,10 @@ export async function callUpstream(
     if (attempt > 0) await sleep(jitter(200 * Math.pow(2, attempt - 1)));
 
     try {
-      const response = await breaker.fire(upstreamUrl, {
-        method: upstreamMethod,
-        headers: reqHeaders,
-        body: body ?? undefined,
-      }) as Response;
-
-      const responseBody = await response.text();
-      const responseHeaders: Record<string, string> = {};
-      response.headers.forEach((v, k) => { responseHeaders[k] = v; });
-
-      return { status: response.status, body: responseBody, headers: responseHeaders };
+      const result = await breaker.fire(origin, path, upstreamMethod, reqHeaders, body) as {
+        status: number; body: string; headers: Record<string, string>;
+      };
+      return result;
     } catch (err) {
       lastError = err as Error;
       if (!canRetry) break;

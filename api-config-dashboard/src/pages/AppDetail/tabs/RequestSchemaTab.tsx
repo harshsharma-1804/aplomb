@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { api } from "../../../api/client";
 import type { Endpoint, SchemaField } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, JsonViewer, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 import { SchemaFieldTree } from "./SchemaFieldTree";
+import { SchemaBodyPreview } from "./SchemaBodyPreview";
 
 interface Props { appId: string; endpoint: Endpoint; onSaved: (ep: Endpoint) => void; }
 
@@ -69,7 +70,7 @@ export function RequestSchemaTab({ appId, endpoint, onSaved }: Props) {
         <div style={{ padding: 16 }}>
           <SchemaFieldTree fields={schema} onChange={setSchema} readOnly={!can("edit:endpoints")} />
         </div>
-        <div style={{ padding: "0 16px 12px" }}><JsonViewer data={schema} /></div>
+        <SchemaBodyPreview schema={schema} label="REQUEST BODY" />
       </Card>
     </div>
   );

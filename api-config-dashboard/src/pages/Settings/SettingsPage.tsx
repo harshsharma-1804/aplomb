@@ -6,10 +6,12 @@ import { HostAllowlistTab } from "./tabs/HostAllowlistTab";
 import { IdentityProvidersTab } from "./tabs/IdentityProvidersTab";
 import { SecretsTab } from "./tabs/SecretsTab";
 import { UsersTab } from "./tabs/UsersTab";
+import { AllowedOriginsTab } from "./tabs/AllowedOriginsTab";
 
 const TABS = [
   { key: "organization",       label: "Organization",        icon: "🏢", adminOnly: false },
   { key: "host-allowlist",     label: "Host Allowlist",      icon: "🌐", adminOnly: true  },
+  { key: "allowed-origins",    label: "Allowed Origins",     icon: "🔗", adminOnly: true  },
   { key: "identity-providers", label: "Identity Providers",  icon: "🔑", adminOnly: true  },
   { key: "secrets",            label: "Secrets",             icon: "🔒", adminOnly: true  },
   { key: "users",              label: "Users",               icon: "👤", adminOnly: true  },
@@ -59,6 +61,7 @@ export function SettingsPage() {
         <div>
           {activeTab === "organization"       && <OrganizationTab />}
           {activeTab === "host-allowlist"     && <HostAllowlistTab />}
+          {activeTab === "allowed-origins"    && <AllowedOriginsTab />}
           {activeTab === "identity-providers" && <IdentityProvidersTab />}
           {activeTab === "secrets"            && <SecretsTab />}
           {activeTab === "users"              && <UsersTab />}

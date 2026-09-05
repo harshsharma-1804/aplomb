@@ -22,11 +22,12 @@ router.get("/", async (req, res) => {
 
 router.post("/", requirePermission("edit:endpoints"), async (req, res) => {
   try {
-    const { filename, language = "javascript", source = "", description = "" } = req.body as {
+    const { filename, language = "javascript", source = "", description = "", folder = null } = req.body as {
       filename: string;
       language: string;
       source: string;
       description: string;
+      folder?: string | null;
     };
 
     if (!filename?.trim()) {
@@ -52,6 +53,7 @@ router.post("/", requirePermission("edit:endpoints"), async (req, res) => {
       source,
       compiled,
       description,
+      folder: folder ?? null,
     });
 
     res.status(201).json(script);
@@ -80,11 +82,12 @@ router.get("/:scriptId", async (req, res) => {
 
 router.put("/:scriptId", requirePermission("edit:endpoints"), async (req, res) => {
   try {
-    const { filename, language, source, description } = req.body as {
+    const { filename, language, source, description, folder } = req.body as {
       filename?: string;
       language?: string;
       source?: string;
       description?: string;
+      folder?: string | null;
     };
 
     if (source !== undefined && Buffer.byteLength(source) > MAX_SCRIPT_BYTES) {
@@ -113,6 +116,7 @@ router.put("/:scriptId", requirePermission("edit:endpoints"), async (req, res) =
     if (language !== undefined) updates["language"] = language;
     if (source !== undefined) updates["source"] = source;
     if (description !== undefined) updates["description"] = description;
+    if (folder !== undefined) updates["folder"] = folder ?? null;
 
     const updated = await AppScript.findByIdAndUpdate(
       param(ps2["scriptId"]),

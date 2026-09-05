@@ -95,6 +95,7 @@ export interface IEndpoint extends Document {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   path: string;
   is_active: boolean;
+  folder: string | null;
   path_params: IPathParam[];
   request: IRequest;
   upstream: IUpstream;
@@ -143,6 +144,7 @@ const EndpointSchema = new Schema<IEndpoint>(
     method:      { type: String, enum: ["GET","POST","PUT","DELETE","PATCH"], required: true },
     path:        { type: String, required: true, trim: true },
     is_active:   { type: Boolean, default: true },
+    folder:      { type: String, default: null },
 
     path_params: { type: Schema.Types.Mixed, default: [] },
 

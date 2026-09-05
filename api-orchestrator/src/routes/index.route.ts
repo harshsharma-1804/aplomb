@@ -11,6 +11,7 @@ import providersRouter from "./admin/providers.routes.js";
 import secretsRouter from "./admin/secrets.routes.js";
 import hostAllowlistRouter from "./admin/hostAllowlist.routes.js";
 import organizationRouter from "./admin/organization.routes.js";
+import corsOriginsRouter from "./admin/corsOrigins.routes.js";
 import { User } from "../models/User.js";
 import { Organization } from "../models/Organization.js";
 
@@ -58,7 +59,8 @@ configRouter.use("/admin/users", usersRouter);
 configRouter.use("/admin/identity-providers", providersRouter);
 configRouter.use("/admin/secrets", secretsRouter);
 configRouter.use("/admin/host-allowlist", hostAllowlistRouter);
-configRouter.use("/admin/organization", organizationRouter);
+  configRouter.use("/admin/organization", organizationRouter);
+  configRouter.use("/admin/cors-origins", corsOriginsRouter);
 
 root.use("/__config", configRouter);
 

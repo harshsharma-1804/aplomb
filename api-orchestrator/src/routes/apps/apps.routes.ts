@@ -301,7 +301,7 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
     created_by:          req.dashboardUser?.id ?? null,
   });
   const newAppId = String(newApp._id);
-  warnings.push("allowed_provider_ids could not be restored — re-link providers in App Settings");
+  warnings.push("OIDC providers were not restored — provider IDs are instance-specific and cannot transfer between instances. Go to App Settings → Identity Providers and re-link the providers that should be allowed to authenticate against this app. Until then, all configured providers on this instance can access it.");
 
   // ── Create scripts + build filename → new _id map ─────────────────────────
   const filenameToId = new Map<string, string>();
@@ -312,7 +312,7 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
     if (s.language === "typescript" && s.source?.trim()) {
       const { js, error } = await compileTypeScript(s.source);
       if (error) {
-        warnings.push(`Script '${s.filename}' compile error: ${error} — script saved but not compiled`);
+        warnings.push(`Script '${s.filename}' has a TypeScript compile error: ${error}. The script was saved with its original source but will not run until the compile error is fixed. Go to the Scripts tab and fix the error manually.`);
         compiled = "";
       } else {
         compiled = js;
@@ -326,7 +326,7 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       const base = s.filename.slice(0, s.filename.length - ext.length);
       filename = `${base}-${suffix}${ext}`;
       suffix++;
-      if (suffix > 2) warnings.push(`Script filename collision — renamed to '${filename}'`);
+      if (suffix > 2) warnings.push(`Script '${s.filename}' already exists in this import — renamed to '${filename}' to avoid collision. Update any endpoints that reference this script in the Scripts tab.`);
     }
     const script = await AppScript.create({
       app_id:      newAppId,
@@ -350,7 +350,7 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
     // Resolve script_filename → new script_file_id
     const resolvedScriptId = script_filename ? (filenameToId.get(script_filename) ?? null) : null;
     if (script_filename && !resolvedScriptId) {
-      warnings.push(`Endpoint '${epRest.name}': script '${script_filename}' not found in import — script_file_id set to null`);
+      warnings.push(`Endpoint '${epRest.name}' references script '${script_filename}' but that script was not included in this export file. The endpoint was created with no script assigned — go to the endpoint's Script tab and re-assign the correct script.`);
     }
 
     // Resolve secret_ref_name → secret ObjectId
@@ -359,7 +359,7 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       const secretName = upstream.auth_config.secret_ref_name;
       const secret = await Secret.findOne({ name: secretName }).select("_id").lean();
       if (!secret) {
-        warnings.push(`Secret '${secretName}' not found — upstream auth will be broken until the secret is created`);
+        warnings.push(`Endpoint '${epRest.name}' uses secret '${secretName}' for upstream authentication, but no secret with that name exists on this instance. The endpoint was imported with auth disabled (secret_ref: null). Go to Admin → Secrets, create a secret named '${secretName}', then re-link it in the endpoint's Upstream tab under Auth Config.`);
         upstream = { ...upstream, auth_config: { ...upstream.auth_config, secret_ref_name: undefined, secret_ref: null } };
       } else {
         upstream = { ...upstream, auth_config: { ...upstream.auth_config, secret_ref_name: undefined, secret_ref: String((secret as any)._id) } };

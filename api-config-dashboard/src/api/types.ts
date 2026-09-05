@@ -152,6 +152,7 @@ export interface AppScript {
   source: string;
   compiled?: string;
   description: string;
+  folder: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -164,6 +165,7 @@ export interface Endpoint {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   path: string;
   is_active: boolean;
+  folder: string | null;
   path_params: PathParam[];
   request: RequestConfig;
   upstream: Upstream;

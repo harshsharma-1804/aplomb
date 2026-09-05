@@ -61,7 +61,7 @@ const DDL = `
     name TEXT NOT NULL, description TEXT DEFAULT '',
     method TEXT NOT NULL, path TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
-    script_mode TEXT NOT NULL DEFAULT 'none', script_file_id TEXT,
+    script_mode TEXT NOT NULL DEFAULT 'none', script_file_id TEXT, folder TEXT,
     path_params TEXT NOT NULL DEFAULT '[]', query_params TEXT NOT NULL DEFAULT '[]',
     request TEXT NOT NULL DEFAULT '{}', upstream TEXT NOT NULL DEFAULT '{}',
     output_schema TEXT NOT NULL DEFAULT '[]', field_mappings TEXT NOT NULL DEFAULT '[]',
@@ -73,7 +73,7 @@ const DDL = `
     id TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES apps(id),
     filename TEXT NOT NULL, language TEXT NOT NULL DEFAULT 'javascript',
     source TEXT NOT NULL DEFAULT '', compiled TEXT, description TEXT DEFAULT '',
-    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    folder TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     UNIQUE(app_id, filename)
   );
   CREATE TABLE IF NOT EXISTS version_history (

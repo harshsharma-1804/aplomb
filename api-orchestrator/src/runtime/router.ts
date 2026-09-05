@@ -16,12 +16,6 @@ import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
 import { buildContext } from "./ctxBuilder.js";
 import { runScript } from "./scriptRunner.js";
 
-/**
- * Resolves {{KEY}} template references in a string using the app's environment variables.
- * Plain values are substituted directly.
- * Secret values are resolved from the secrets store (plaintext in memory only).
- * Unknown keys are left as-is with a warning.
- */
 export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
   if (!matches) return template;
@@ -103,12 +97,6 @@ function resolvePathParams(
   return params;
 }
 
-/**
- * Substitutes {paramName} placeholders in a URL.
- * Case-insensitive match: {claimId} in URL matches "claimid" in params and vice-versa.
- * Non-destructive: if a param is not found the placeholder is left unchanged
- * (not replaced with an empty string) so it is visible for debugging.
- */
 function substitutePathParams(url: string, params: Record<string, string>): string {
   const lower: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) lower[k.toLowerCase()] = v;
@@ -131,8 +119,6 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     return;
   }
 
-  // Draft apps are invisible — return the same 404 as "no app found" to avoid
-  // revealing which paths exist in draft. No exceptions regardless of auth_required.
   if (app.status === "draft") {
     res.status(404).json({ error: "No app matches this path", code: "APP_NOT_FOUND" });
     return;
@@ -140,9 +126,16 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const authHeader = req.headers["authorization"];
 
-  // ── OIDC validation — skipped when app.auth_required === false ─────────────
-  // auth_required: false is for local dev / demo only. Never use in production.
   let principal: import("../auth/oidcValidate.js").NormalisedPrincipal | null = null;
+
+  const relativePath = requestPath.slice(app.base_path.length) || "/";
+  const appId = String((app as any).id ?? (app as any)._id);
+
+  // ── Parallel: OIDC validation + endpoint lookup ────────────────────────────
+  // Endpoint lookup is synchronous (SQLite local disk, ~0ms).
+  // OIDC validation is async (JWKS verify). Start it as a promise so it
+  // runs while we do endpoint path matching below.
+  let oidcPromise: Promise<import("../auth/oidcValidate.js").NormalisedPrincipal | null> = Promise.resolve(null);
 
   if (app.auth_required !== false) {
     if (!authHeader?.startsWith("Bearer ")) {
@@ -171,17 +164,25 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
       }
     }
 
-    try {
-      principal = await validateToken(token, provider as any);
-    } catch {
+    oidcPromise = validateToken(token, provider as any).catch(() => {
+      throw Object.assign(new Error("Unauthorized"), { _oidcFail: true });
+    });
+  }
+
+  // Endpoint lookup — synchronous SQLite read
+  const allEndpoints = endpointRepo.findByAppAndMethod(getDb(), appId, method);
+
+  // Await OIDC (endpoint lookup is already done above)
+  try {
+    principal = await oidcPromise;
+  } catch (e: any) {
+    if (e._oidcFail) {
       res.status(401).json({ error: "Unauthorized", code: "INVALID_TOKEN" });
       return;
     }
+    throw e;
   }
 
-  const relativePath = requestPath.slice(app.base_path.length) || "/";
-
-  const allEndpoints = endpointRepo.findByAppAndMethod(getDb(), String((app as any).id ?? (app as any)._id), method);
   let endpoint = null;
   let pathParams: Record<string, string> = {};
 
@@ -251,7 +252,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   if (scriptMode === "script_full") {
     const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
-    const ctx = buildContext(app , orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    const ctx = buildContext(app, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
     let scriptResult;
     try {
       const script = await resolveScript();
@@ -293,8 +294,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
       )
     : { body: null };
 
-  // ── Resolve {{VAR}} env references in URL template before path param substitution ──
-  const urlTemplate = await resolveEnvVars(endpoint.upstream.url, app );
+  const urlTemplate = await resolveEnvVars(endpoint.upstream.url, app);
   const resolvedUrl = substitutePathParams(
     urlTemplate + (upstreamQuery.toString() ? "?" + upstreamQuery.toString() : ""),
     pathParams
@@ -307,16 +307,16 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const upstreamHeaders: Record<string, string> = {};
 
-  // Step 1 — static headers (always sent); resolve {{VAR}} in values
-  for (const sh of endpoint.upstream.static_headers ?? []) {
-    if (sh.name) {
-      const resolvedValue = await resolveEnvVars(sh.value ?? "", app );
-      upstreamHeaders[sh.name] = resolvedValue;
-    }
-  }
+  // Step 1 — static headers; resolve {{VAR}} in values — parallel
+  await Promise.all(
+    (endpoint.upstream.static_headers ?? []).map(async (sh: any) => {
+      if (sh.name) {
+        upstreamHeaders[sh.name] = await resolveEnvVars(sh.value ?? "", app);
+      }
+    })
+  );
 
-  // Step 1.5 — forward ALL safe incoming headers when forward_all_headers is enabled.
-  // Individual rules in Step 2 run after and can override any header set here.
+  // Step 1.5 — forward ALL safe incoming headers when forward_all_headers is enabled
   if ((endpoint.upstream as any).forward_all_headers) {
     const HOP_BY_HOP = new Set([
       "host", "connection", "keep-alive", "transfer-encoding",
@@ -329,8 +329,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     }
   }
 
-  // Step 2 — forwarded headers from the frontend request (pass-through / rename).
-  // Trim from_name to handle accidental spaces entered in the dashboard.
+  // Step 2 — forwarded headers from the frontend request
   for (const fh of endpoint.upstream.forwarded_headers ?? []) {
     const incomingValue = req.headers[fh.from_name.trim().toLowerCase()] as string | undefined;
     if (!incomingValue) {
@@ -342,13 +341,13 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
         });
         return;
       }
-      continue; // optional and absent — skip silently
+      continue;
     }
     const targetName = fh.to_name?.trim() || fh.from_name;
     upstreamHeaders[targetName] = incomingValue;
   }
 
-  // Step 3 — auth / cookie forwarding (highest precedence, applied last)
+  // Step 3 — auth / cookie forwarding (highest precedence)
   if (endpoint.upstream.forward_cookies || endpoint.upstream.auth_type === "forward_cookie") {
     if (authHeader) upstreamHeaders["Authorization"] = authHeader;
     const cookie = req.headers["cookie"];
@@ -360,7 +359,7 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
 
   if (scriptMode === "script_pre" || scriptMode === "script_pre_post") {
-    const ctx = buildContext(app , orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    const ctx = buildContext(app, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
     try {
       const script = await resolveScript();
       const earlyReturn = await runScript(script as any, ctx, "script_pre");
@@ -405,32 +404,63 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     return;
   }
 
-  if (upstreamResult.status >= 400) {
-    let upstreamBody: unknown;
-    try { upstreamBody = JSON.parse(upstreamResult.body); } catch { upstreamBody = upstreamResult.body; }
-    res.status(upstreamResult.status).json(upstreamBody);
-    return;
-  }
-
+  // Parse upstream body regardless of status code
   let upstreamJson: unknown;
   try {
     upstreamJson = JSON.parse(upstreamResult.body);
   } catch {
-    res.status(502).json({ error: "Upstream returned non-JSON", code: "UPSTREAM_PARSE_ERROR" });
+    upstreamJson = upstreamResult.body;
+  }
+
+  // If upstream returned an error status and no post-hook is active — pass through as-is
+  if (upstreamResult.status >= 400 && scriptMode !== "script_post" && scriptMode !== "script_pre_post") {
+    res.status(upstreamResult.status).json(upstreamJson);
     return;
   }
 
   if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
-    const ctx = buildContext(app , orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    const ctx = buildContext(app, orgId, req.body ?? {}, pathParams, queryParams, principal, scriptLogs);
+    // Pass upstream as { status, body, headers } so the postHook can inspect
+    // the HTTP status code and decide whether to handle errors or pass them through.
+    const upstreamArg = {
+      status: upstreamResult.status,
+      body:   upstreamJson,
+      headers: upstreamResult.headers ?? {},
+    };
     try {
       const script = await resolveScript();
-      const postResult = await runScript(script as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamJson);
-      if (postResult) upstreamJson = postResult.body;
+      const postResult = await runScript(script as any, ctx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamArg);
+      if (postResult) {
+        const finalStatus = postResult.status ?? upstreamResult.status;
+        if (postResult.headers) {
+          for (const [k, v] of Object.entries(postResult.headers)) res.setHeader(k, v);
+        }
+        res.setHeader("X-Orchestrator-App", String(app.name));
+        res.setHeader("X-Orchestrator-Version", app.base_path);
+        res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
+        let transformed: Record<string, unknown>;
+        try { transformed = applyTransform(postResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        catch { transformed = postResult.body as Record<string, unknown>; }
+        res.status(finalStatus).json(transformed);
+        writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: upstreamLatency, total_latency_ms: Date.now() - startTime, status: finalStatus, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
+        return;
+      }
+      // Post-hook returned nothing — if upstream was an error, pass it through now
+      if (upstreamResult.status >= 400) {
+        res.status(upstreamResult.status).json(upstreamJson);
+        return;
+      }
     } catch (e: any) {
       const statusMap: Record<string, number> = { SCRIPT_TIMEOUT: 504, SCRIPT_LOAD_ERROR: 502, SCRIPT_FETCH_HOST_NOT_ALLOWED: 403 };
       res.status(statusMap[e.code] ?? 502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR" });
       return;
     }
+  }
+
+  // If upstream errored and we reach here without a post-hook handling it, pass through
+  if (upstreamResult.status >= 400) {
+    res.status(upstreamResult.status).json(upstreamJson);
+    return;
   }
 
   let transformed: Record<string, unknown>;

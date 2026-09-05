@@ -75,7 +75,16 @@ function applyMappings(
     // so child mappings (relative or absolute within this level) resolve correctly.
     if (field.type === "object" && field.item_schema && field.item_schema.length > 0) {
       const subtree = queryOne(upstream, `$.${field.field_path}`) ?? upstream;
-      const childOutput = applyMappings(subtree, field.item_schema, mappings, field.field_path);
+      // Relativize absolute upstream paths for child mappings so they resolve
+      // correctly against the subtree (e.g. "$.member.id" → "$.id" when
+      // recursing into the "member" subtree).
+      const prefix = `$.${field.field_path}.`;
+      const relativizedMappings = mappings.map(m =>
+        m.upstream_path?.startsWith(prefix)
+          ? { ...m, upstream_path: "$." + m.upstream_path.slice(prefix.length) }
+          : m
+      );
+      const childOutput = applyMappings(subtree, field.item_schema, relativizedMappings, field.field_path);
       setByPath(output, field.field_path, childOutput);
       continue;
     }

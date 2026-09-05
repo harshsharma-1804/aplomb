@@ -13,7 +13,7 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", requirePermission("edit:endpoints"), async (req, res) => {
-  const { filename, language = "javascript", source = "", description = "" } = req.body ?? {};
+  const { filename, language = "javascript", source = "", description = "", folder = null } = req.body ?? {};
   if (!filename?.trim()) { res.status(400).json({ error: "filename is required", code: "VALIDATION_ERROR" }); return; }
   if (Buffer.byteLength(source) > MAX_SCRIPT_BYTES) { res.status(400).json({ error: `Script source exceeds ${MAX_SCRIPT_BYTES / 1024}KB`, code: "SCRIPT_TOO_LARGE" }); return; }
 
@@ -25,7 +25,15 @@ router.post("/", requirePermission("edit:endpoints"), async (req, res) => {
   }
 
   try {
-    const script = scriptRepo.create(getDb(), { app_id: (req.params as any)["appId"], filename: filename.trim(), language, source, compiled, description });
+    const script = scriptRepo.create(getDb(), {
+      app_id: (req.params as any)["appId"],
+      filename: filename.trim(),
+      language,
+      source,
+      compiled,
+      description,
+      folder: folder ?? null,
+    });
     res.status(201).json(script);
   } catch (err: any) {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "A script with this filename already exists", code: "DUPLICATE_FILENAME" }); return; }
@@ -47,7 +55,7 @@ router.put("/:scriptId", requirePermission("edit:endpoints"), async (req, res) =
   const existing = scriptRepo.findById(db, ps["scriptId"]);
   if (!existing || existing.app_id !== ps["appId"]) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
 
-  const { filename, language, source, description } = req.body ?? {};
+  const { filename, language, source, description, folder } = req.body ?? {};
   if (source !== undefined && Buffer.byteLength(source) > MAX_SCRIPT_BYTES) { res.status(400).json({ error: `Script source exceeds ${MAX_SCRIPT_BYTES / 1024}KB`, code: "SCRIPT_TOO_LARGE" }); return; }
 
   const effectiveLanguage = language ?? existing.language;
@@ -61,7 +69,14 @@ router.put("/:scriptId", requirePermission("edit:endpoints"), async (req, res) =
   }
 
   try {
-    const updated = scriptRepo.update(db, ps["scriptId"], { filename: filename?.trim(), language, source, compiled, description });
+    const updated = scriptRepo.update(db, ps["scriptId"], {
+      filename: filename?.trim(),
+      language,
+      source,
+      compiled,
+      description,
+      folder: folder !== undefined ? (folder ?? null) : undefined,
+    });
     res.json(updated);
   } catch (err: any) {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "A script with this filename already exists", code: "DUPLICATE_FILENAME" }); return; }

@@ -92,7 +92,7 @@ router.put("/:endId", requirePermission("edit:endpoints"), upstreamAllowlistGuar
   }
 });
 
-// ── DELETE /apps/:appId/endpoints/:endId ──────────────────────────────────────
+// ── DELETE /apps/:appId/endpoints/:endId ─────────────────────────────────────
 
 router.delete("/:endId", requirePermission("edit:endpoints"), (req, res) => {
   const ps = req.params as Record<string, string>;

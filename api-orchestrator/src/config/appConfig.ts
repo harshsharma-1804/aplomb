@@ -87,7 +87,13 @@ export const config = {
   },
 
   cors: {
+    // Origins allowed to access the dashboard config API and auth routes
     allowedOrigins: commaSeparated("CORS_ALLOWED_ORIGINS", ["http://localhost:5000", "http://api-config-dashboard:5000"]),
+    // Origins allowed to call runtime API endpoints (your app frontends).
+    // Comma-separated. Use * to allow all. Empty = fall back to allowedOrigins.
+    // Managed via the dashboard Admin → Allowed Origins page (stored in DB).
+    // This env var seeds the initial list on first boot.
+    runtimeOrigins: commaSeparated("RUNTIME_CORS_ORIGINS", []),
   },
 
   telemetry: {

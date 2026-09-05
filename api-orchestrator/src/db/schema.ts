@@ -114,6 +114,7 @@ export const endpoints = sqliteTable("endpoints", {
   is_active:      integer("is_active", { mode: "boolean" }).notNull().default(true),
   script_mode:    text("script_mode").notNull().default("none"),
   script_file_id: text("script_file_id"),
+  folder:         text("folder"),
 
   // JSON blobs — request/response schema can grow arbitrarily deep
   path_params:     text("path_params").notNull().default("[]"),
@@ -141,11 +142,22 @@ export const app_scripts = sqliteTable("app_scripts", {
   source:      text("source").notNull().default(""),
   compiled:    text("compiled"),
   description: text("description").default(""),
+  folder:      text("folder"),
   created_at:  text("created_at").notNull(),
   updated_at:  text("updated_at").notNull(),
 }, (t) => [
   uniqueIndex("idx_app_scripts_unique").on(t.app_id, t.filename),
 ]);
+
+// ── cors_origins ──────────────────────────────────────────────────────────────
+// Operator-configured origins allowed to call runtime API endpoints from browsers.
+export const cors_origins = sqliteTable("cors_origins", {
+  id:          text("id").primaryKey(),
+  origin:      text("origin").notNull().unique(),
+  description: text("description").default(""),
+  created_by:  text("created_by"),
+  created_at:  text("created_at").notNull(),
+});
 
 // ── version_history ───────────────────────────────────────────────────────────
 export const version_history = sqliteTable("version_history", {
@@ -181,3 +193,5 @@ export type AppScript        = typeof app_scripts.$inferSelect;
 export type NewAppScript     = typeof app_scripts.$inferInsert;
 export type VersionHistory   = typeof version_history.$inferSelect;
 export type NewVersionHistory = typeof version_history.$inferInsert;
+export type CorsOrigin       = typeof cors_origins.$inferSelect;
+export type NewCorsOrigin    = typeof cors_origins.$inferInsert;

@@ -12,6 +12,7 @@ export type CreateEndpointInput = {
   is_active?: boolean;
   script_mode?: string;
   script_file_id?: string | null;
+  folder?: string | null;
   path_params?: unknown[];
   query_params?: unknown[];
   request?: Record<string, unknown>;
@@ -28,6 +29,7 @@ function serialize(row: typeof endpoints.$inferSelect) {
   return {
     ...row,
     _id:             row.id,
+    folder:          row.folder ?? null,
     path_params:     JSON.parse(row.path_params    ?? "[]"),
     query_params:    JSON.parse(row.query_params   ?? "[]"),
     request:         JSON.parse(row.request        ?? "{}"),
@@ -53,6 +55,7 @@ export const endpointRepo = {
       is_active:      input.is_active ?? true,
       script_mode:    input.script_mode ?? "none",
       script_file_id: input.script_file_id ?? null,
+      folder:         input.folder ?? null,
       path_params:    JSON.stringify(input.path_params    ?? []),
       query_params:   JSON.stringify(input.query_params   ?? []),
       request:        JSON.stringify(input.request        ?? {}),
@@ -91,6 +94,7 @@ export const endpointRepo = {
     if (input.is_active      !== undefined) patch["is_active"]      = input.is_active;
     if (input.script_mode    !== undefined) patch["script_mode"]    = input.script_mode;
     if (input.script_file_id !== undefined) patch["script_file_id"] = input.script_file_id;
+    if (input.folder         !== undefined) patch["folder"]         = input.folder ?? null;
     if (input.path_params    !== undefined) patch["path_params"]    = JSON.stringify(input.path_params);
     if (input.query_params   !== undefined) patch["query_params"]   = JSON.stringify(input.query_params);
     if (input.request        !== undefined) patch["request"]        = JSON.stringify(input.request);

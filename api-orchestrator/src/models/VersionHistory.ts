@@ -1,7 +1,7 @@
 import { Schema, model, type Document, type Types } from "mongoose";
 
 export type ChangeType =
-  | "created" | "cloned" | "activated" | "deprecated"
+  | "created" | "cloned" | "activated" | "deprecated" | "imported"
   | "endpoint_added" | "endpoint_modified" | "endpoint_deleted" | "rollback";
 
 export interface IVersionHistory extends Document {
@@ -18,7 +18,7 @@ const VersionHistorySchema = new Schema<IVersionHistory>(
     app_id: { type: Schema.Types.ObjectId, required: true, ref: "App" },
     change_type: {
       type: String,
-      enum: ["created","cloned","activated","deprecated","endpoint_added","endpoint_modified","endpoint_deleted","rollback"],
+      enum: ["created","cloned","activated","deprecated","imported","endpoint_added","endpoint_modified","endpoint_deleted","rollback"],
       required: true,
     },
     changed_by: {

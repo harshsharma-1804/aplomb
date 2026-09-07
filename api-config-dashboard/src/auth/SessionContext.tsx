@@ -15,6 +15,7 @@ const PERMISSIONS: Record<string, Array<"admin" | "sub_admin" | "viewer">> = {
   "edit:endpoints":   ["admin", "sub_admin"],
   "manage:apps":      ["admin", "sub_admin"],
   "rollback":         ["admin"],
+  "export:app":       ["admin"],
   "manage:providers": ["admin"],
   "manage:secrets":   ["admin"],
   "manage:users":     ["admin"],

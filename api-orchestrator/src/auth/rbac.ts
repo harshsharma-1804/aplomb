@@ -23,6 +23,7 @@ const PERMISSIONS: Record<string, UserRole[]> = {
   "edit:endpoints":        ["admin", "sub_admin"],
   "manage:apps":           ["admin", "sub_admin"],
   "rollback":              ["admin"],
+  "export:app":            ["admin"],
   "manage:providers":      ["admin"],
   "manage:secrets":        ["admin"],
   "manage:users":          ["admin"],

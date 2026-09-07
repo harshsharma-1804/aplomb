@@ -4,12 +4,14 @@ import { api } from "../../api/client";
 import type { App, ListResult } from "../../api/types";
 import { Card, SectionHead, Table, Btn, Badge, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, C } from "../../components";
 import { useSession } from "../../auth/SessionContext";
+import { ImportAppModal } from "./ImportAppModal";
 
 export function AppsPage() {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [cloneSource, setCloneSource] = useState<App | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<App | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -70,7 +72,10 @@ export function AppsPage() {
             Each app is a versioned collection of endpoints with a unique base path.
           </p>
         </div>
-        {can("manage:apps") && <Btn onClick={() => setShowCreate(true)}>+ Create App</Btn>}
+        <div style={{ display: "flex", gap: 8 }}>
+          {can("manage:apps") && <Btn variant="outline" onClick={() => setShowImport(true)}>Import App ↑</Btn>}
+          {can("manage:apps") && <Btn onClick={() => setShowCreate(true)}>+ Create App</Btn>}
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
@@ -105,6 +110,13 @@ export function AppsPage() {
         <CreateAppModal
           onClose={() => setShowCreate(false)}
           onCreated={id => { setShowCreate(false); navigate(`/apps/${id}`); }}
+        />
+      )}
+
+      {showImport && (
+        <ImportAppModal
+          onClose={() => setShowImport(false)}
+          onImported={load}
         />
       )}
 

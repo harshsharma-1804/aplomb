@@ -4,9 +4,11 @@ import { getDb } from "../../db/client.js";
 import { appRepo } from "../../db/repos/appRepo.js";
 import { endpointRepo } from "../../db/repos/endpointRepo.js";
 import { scriptRepo } from "../../db/repos/scriptRepo.js";
+import { secretRepo } from "../../db/repos/secretRepo.js";
 import { versionHistoryRepo } from "../../db/repos/versionHistoryRepo.js";
 import { requirePermission } from "../../auth/rbac.js";
 import { refreshApp } from "../../cache/appCache.js";
+import { compileTypeScript } from "../../runtime/scriptRunner.js";
 
 const router = Router();
 
@@ -101,26 +103,277 @@ router.post("/:id/clone", requirePermission("manage:apps"), (req, res) => {
   }
 });
 
+// ── GET /apps/:id/export ───────────────────────────────────────────────────────
+// Query params:
+//   include = comma-separated list of "endpoints","scripts"  (default: both)
+//   env     = "none" | "keys" | "values"                     (default: "keys")
+
+router.get("/:id/export", requirePermission("export:app"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+
+  const app = appRepo.findById(db, appId);
+  if (!app) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+
+  const includeRaw = String(req.query["include"] ?? "endpoints,scripts");
+  const include = new Set(includeRaw.split(",").map(s => s.trim()).filter(Boolean));
+  const envMode = (["none", "keys", "values"].includes(String(req.query["env"])) ? req.query["env"] : "keys") as "none" | "keys" | "values";
+
+  // ── Resolve app_env ────────────────────────────────────────────────────────
+  let exportedEnv: Array<{ key: string; value_type: string; plain_value?: string }> = [];
+  if (envMode !== "none") {
+    for (const e of app.app_env ?? []) {
+      if (e.value_type === "secret") {
+        exportedEnv.push({ key: e.key, value_type: "secret" });
+      } else {
+        exportedEnv.push({
+          key: e.key,
+          value_type: "plain",
+          ...(envMode === "values" ? { plain_value: e.plain_value ?? "" } : {}),
+        });
+      }
+    }
+  }
+
+  // ── Endpoints ──────────────────────────────────────────────────────────────
+  let exportedEndpoints: unknown[] = [];
+  if (include.has("endpoints")) {
+    const endpoints = endpointRepo.findByAppId(db, appId);
+
+    // Build script_id → filename map (needed even if scripts not included)
+    const scriptIdToFilename = new Map(
+      scriptRepo.findByAppId(db, appId).map((s: any) => [s.id, s.filename])
+    );
+
+    for (const ep of endpoints) {
+      const { id: _id, app_id: _aid, created_at: _c, updated_at: _u, ...rest } = ep as any;
+
+      // Resolve secret_ref id → secret name in upstream.auth_config
+      let upstream = { ...(rest.upstream ?? {}) };
+      if (upstream.auth_config?.secret_ref) {
+        const secret = secretRepo.findById(db, String(upstream.auth_config.secret_ref));
+        upstream = {
+          ...upstream,
+          auth_config: {
+            ...upstream.auth_config,
+            secret_ref: undefined,
+            secret_ref_name: secret?.name ?? null,
+          },
+        };
+      }
+
+      exportedEndpoints.push({
+        ...rest,
+        upstream,
+        script_file_id: undefined,
+        script_filename: rest.script_file_id ? (scriptIdToFilename.get(String(rest.script_file_id)) ?? null) : null,
+      });
+    }
+  }
+
+  // ── Scripts ────────────────────────────────────────────────────────────────
+  let exportedScripts: unknown[] = [];
+  if (include.has("scripts")) {
+    exportedScripts = scriptRepo.findByAppId(db, appId).map((s: any) => ({
+      filename:    s.filename,
+      language:    s.language,
+      source:      s.source,
+      description: s.description,
+      folder:      s.folder ?? null,
+    }));
+  }
+
+  // ── App fields ─────────────────────────────────────────────────────────────
+  const { id: _id, created_by: _cb, created_at: _ca, updated_at: _ua, ...appRest } = app as any;
+  const slug = (appRest.base_path as string).replace(/\//g, "-").replace(/^-/, "") || "app";
+
+  const payload = {
+    export_version:  "1",
+    exported_at:     new Date().toISOString(),
+    exported_from:   "orchestrator v1.0.0",
+    export_options:  { include: [...include], env: envMode },
+    app: {
+      ...appRest,
+      allowed_provider_ids: [],
+      app_env: exportedEnv,
+    },
+    endpoints: exportedEndpoints,
+    scripts:   exportedScripts,
+  };
+
+  const filename = `${slug}-export-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.json(payload);
+});
+
+// ── POST /apps/import ──────────────────────────────────────────────────────────
+// Body: { payload: AppExport, options?: { name?, base_path?, overwrite? } }
+
+router.post("/import", requirePermission("manage:apps"), async (req, res) => {
+  const db = getDb();
+  const { payload, options = {} } = req.body ?? {};
+
+  if (!payload || payload.export_version !== "1") {
+    res.status(400).json({ error: "Unsupported or missing export_version — only version 1 is supported", code: "UNSUPPORTED_EXPORT_VERSION" });
+    return;
+  }
+
+  const warnings: string[] = [];
+  const targetName     = options.name      ?? payload.app.name;
+  const targetBasePath = options.base_path ?? payload.app.base_path;
+
+  // ── Conflict check ─────────────────────────────────────────────────────────
+  const existing = appRepo.findByBasePath(db, targetBasePath);
+  if (existing) {
+    if (!options.overwrite) {
+      res.status(409).json({ error: "An app with this base_path already exists", code: "DUPLICATE_BASE_PATH", conflict: true, existing_app_id: existing.id });
+      return;
+    }
+    // overwrite: true — delete existing app + its data
+    endpointRepo.deleteByAppId(db, existing.id);
+    scriptRepo.deleteByAppId(db, existing.id);
+    versionHistoryRepo.deleteByAppId(db, existing.id);
+    appRepo.delete(db, existing.id);
+  }
+
+  // ── Create app ─────────────────────────────────────────────────────────────
+  const { allowed_provider_ids: _providers, ...appFields } = payload.app;
+  const newApp = appRepo.create(db, {
+    ...appFields,
+    name:                 targetName,
+    base_path:            targetBasePath,
+    status:               "draft",
+    allowed_provider_ids: [],
+    created_by:           req.dashboardUser?.id ?? null,
+  });
+  const newAppId = newApp.id;
+  warnings.push("OIDC providers were not restored — provider IDs are instance-specific and cannot transfer between instances. Go to App Settings → Identity Providers and re-link the providers that should be allowed to authenticate against this app. Until then, all configured providers on this instance can access it.");
+
+  try {
+    // ── Create scripts + build filename → new id map ─────────────────────────
+    const filenameToId = new Map<string, string>();
+    let scriptsCreated = 0;
+
+    for (const s of payload.scripts ?? []) {
+      let compiled = s.source ?? "";
+      if (s.language === "typescript" && s.source?.trim()) {
+        const { js, error } = await compileTypeScript(s.source);
+        if (error) {
+          warnings.push(`Script '${s.filename}' has a TypeScript compile error: ${error}. The script was saved with its original source but will not run until the compile error is fixed. Go to the Scripts tab and fix the error manually.`);
+          compiled = "";
+        } else {
+          compiled = js;
+        }
+      }
+      // Handle filename collision: append -2, -3, …
+      let filename = s.filename;
+      let suffix = 2;
+      while (filenameToId.has(filename)) {
+        const ext = s.filename.includes(".") ? s.filename.slice(s.filename.lastIndexOf(".")) : "";
+        const base = s.filename.slice(0, s.filename.length - ext.length);
+        filename = `${base}-${suffix}${ext}`;
+        suffix++;
+        if (suffix > 2) warnings.push(`Script '${s.filename}' already exists in this import — renamed to '${filename}' to avoid collision. Update any endpoints that reference this script in the Scripts tab.`);
+      }
+      const script = scriptRepo.create(db, {
+        app_id:      newAppId,
+        filename,
+        language:    s.language,
+        source:      s.source,
+        compiled,
+        description: s.description ?? "",
+        folder:      s.folder ?? null,
+      });
+      filenameToId.set(filename, script.id);
+      scriptsCreated++;
+    }
+
+    // ── Create endpoints ───────────────────────────────────────────────────────
+    let endpointsCreated = 0;
+
+    for (const ep of payload.endpoints ?? []) {
+      const { script_file_id: _sfid, script_filename, upstream: epUpstream, ...epRest } = ep as any;
+
+      // Resolve script_filename → new script id
+      const resolvedScriptId = script_filename ? (filenameToId.get(script_filename) ?? null) : null;
+      if (script_filename && !resolvedScriptId) {
+        warnings.push(`Endpoint '${epRest.name}' references script '${script_filename}' but that script was not included in this export file. The endpoint was created with no script assigned — go to the endpoint's Script tab and re-assign the correct script.`);
+      }
+
+      // Resolve secret_ref_name → secret id
+      let upstream = { ...(epUpstream ?? {}) };
+      if (upstream.auth_config?.secret_ref_name) {
+        const secretName = upstream.auth_config.secret_ref_name;
+        const secret = secretRepo.findByName(db, secretName);
+        if (!secret) {
+          warnings.push(`Endpoint '${epRest.name}' uses secret '${secretName}' for upstream authentication, but no secret with that name exists on this instance. The endpoint was imported with auth disabled (secret_ref: null). Go to Admin → Secrets, create a secret named '${secretName}', then re-link it in the endpoint's Upstream tab under Auth Config.`);
+          upstream = { ...upstream, auth_config: { ...upstream.auth_config, secret_ref_name: undefined, secret_ref: null } };
+        } else {
+          upstream = { ...upstream, auth_config: { ...upstream.auth_config, secret_ref_name: undefined, secret_ref: secret.id } };
+        }
+      }
+
+      endpointRepo.create(db, {
+        ...epRest,
+        app_id:         newAppId,
+        upstream,
+        script_file_id: resolvedScriptId,
+      });
+      endpointsCreated++;
+    }
+
+    // ── Finalise ───────────────────────────────────────────────────────────────
+    refreshApp(newAppId);
+    writeHistory(newAppId, "imported", `App imported: ${targetName} (from export file)`, req);
+
+    res.status(201).json({
+      app: newApp,
+      endpoints_created: endpointsCreated,
+      scripts_created:   scriptsCreated,
+      warnings,
+    });
+  } catch (err: any) {
+    // Rollback — delete the partially-created app so no phantom remains
+    endpointRepo.deleteByAppId(db, newAppId);
+    scriptRepo.deleteByAppId(db, newAppId);
+    appRepo.delete(db, newAppId);
+    if (err.message?.includes("UNIQUE")) {
+      res.status(409).json({ error: "Import failed — conflicting data (duplicate endpoint method + path in export file)", code: "DUPLICATE_ENDPOINT" });
+      return;
+    }
+    res.status(500).json({ error: err.message ?? "Import failed — rolled back", code: "INTERNAL_ERROR" });
+  }
+});
+
+// ── GET /apps/:id/history ──────────────────────────────────────────────────────
+
 router.get("/:id/history", (req, res) => {
   const history = versionHistoryRepo.findByAppId(getDb(), param(param(req.params["id"])));
   res.json({ count: history.length, results: history });
 });
 
+// ── POST /apps/:id/rollback ────────────────────────────────────────────────────
+
 router.post("/:id/rollback", requirePermission("rollback"), (req, res) => {
   const db = getDb();
-  const { snapshot_id } = req.body ?? {};
-  const snap = versionHistoryRepo.findById(db, snapshot_id);
-  if (!snap || snap.app_id !== param(param(req.params["id"]))) { res.status(404).json({ error: "Snapshot not found", code: "NOT_FOUND" }); return; }
-
   const appId = param(param(req.params["id"]));
+  const { snapshot_id } = req.body ?? {};
+
+  const snapshot = versionHistoryRepo.findById(db, snapshot_id);
+  if (!snapshot || snapshot.app_id !== appId) {
+    res.status(404).json({ error: "Snapshot not found", code: "NOT_FOUND" });
+    return;
+  }
+
   endpointRepo.deleteByAppId(db, appId);
-  for (const ep of snap.snapshot.endpoints as any[]) {
-    const { id: _id, app_id: _a, created_at: _c, updated_at: _u, ...rest } = ep;
+  for (const ep of (snapshot.snapshot as any)?.endpoints ?? []) {
+    const { id: _id, app_id: _aid, created_at: _c, updated_at: _u, ...rest } = ep as any;
     endpointRepo.create(db, { ...rest, app_id: appId });
   }
-  appRepo.update(db, appId, snap.snapshot.app as any);
+  appRepo.update(db, appId, (snapshot.snapshot as any)?.app ?? {});
   refreshApp(appId);
-  writeHistory(appId, "rollback", `Rolled back to snapshot from ${snap.created_at}`, req);
+  writeHistory(appId, "rollback", `Rolled back to snapshot from ${new Date(snapshot.created_at).toLocaleString()}`, req);
   res.json({ success: true });
 });
 

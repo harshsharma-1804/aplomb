@@ -17,3 +17,6 @@ Thumbs.db
 *.pem
 *.p12
 *.secret
+
+# SQLite data files
+data/

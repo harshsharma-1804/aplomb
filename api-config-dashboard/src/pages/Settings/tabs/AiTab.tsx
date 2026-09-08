@@ -300,10 +300,6 @@ function BotBindingsModal({ bot, apps, providers, onClose, onSave }: {
   const exposedApps = apps.filter(a => a.ai_expose && a.status === "active");
   const hiddenExposedCount = apps.filter(a => a.ai_expose && a.status !== "active").length;
 
-  function toggle(list: string[], id: string, set: (v: string[]) => void) {
-    set(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
-  }
-
   async function submit() {
     setSaving(true); setError("");
     try {
@@ -326,41 +322,47 @@ function BotBindingsModal({ bot, apps, providers, onClose, onSave }: {
         {/* Allowed apps */}
         <section>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Allowed Apps — {appIds.length} selected
+            Allowed Apps
           </div>
-          {exposedApps.length === 0 && (
-            <div style={{ fontSize: 12, color: C.muted }}>
-              No AI-exposed active apps. Enable "AI Agent / MCP Exposure" on an app first{hiddenExposedCount > 0 ? ` (${hiddenExposedCount} exposed but not active)` : ""}.
-            </div>
-          )}
-          {exposedApps.map(a => (
-            <label key={a._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: C.radius, border: `1px solid ${appIds.includes(a._id) ? C.primary : C.border}`, background: appIds.includes(a._id) ? C.primary + "08" : C.surface, marginBottom: 6, cursor: "pointer" }}>
-              <input type="checkbox" checked={appIds.includes(a._id)} onChange={() => toggle(appIds, a._id, setAppIds)} style={{ accentColor: C.primary }} />
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{a.name}</div>
-                <code style={{ fontSize: 11, color: C.muted }}>{a.base_path}</code>
-              </div>
-            </label>
-          ))}
+          <PickerSection
+            placeholder={exposedApps.length === 0 ? "No AI-exposed active apps available" : "+ Add app…"}
+            options={exposedApps
+              .filter(a => !appIds.includes(a._id))
+              .map(a => ({ value: a._id, label: `${a.name} (${a.base_path})` }))}
+            selected={appIds}
+            onAdd={id => setAppIds([...appIds, id])}
+            onRemove={id => setAppIds(appIds.filter(x => x !== id))}
+            emptyText={
+              exposedApps.length === 0
+                ? <>No AI-exposed active apps. Enable "AI Agent / MCP Exposure" on an app first{hiddenExposedCount > 0 ? ` (${hiddenExposedCount} exposed but not active)` : ""}.</>
+                : "No apps assigned — this bot cannot call anything yet."
+            }
+            renderMeta={(id: string) => {
+              const a = apps.find(x => x._id === id);
+              return a ? <code style={{ fontSize: 11, color: C.muted }}>{a.base_path}</code> : null;
+            }}
+          />
         </section>
 
         {/* Allowed providers */}
         <section>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Allowed LLM Providers — {providerIds.length} selected
+            Allowed LLM Providers
           </div>
-          {providers.length === 0 && (
-            <div style={{ fontSize: 12, color: C.muted }}>No providers configured. Add one above first.</div>
-          )}
-          {providers.map(p => (
-            <label key={p._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: C.radius, border: `1px solid ${providerIds.includes(p._id) ? C.primary : C.border}`, background: providerIds.includes(p._id) ? C.primary + "08" : C.surface, marginBottom: 6, cursor: "pointer" }}>
-              <input type="checkbox" checked={providerIds.includes(p._id)} onChange={() => toggle(providerIds, p._id, setProviderIds)} style={{ accentColor: C.primary }} />
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>{p.name} {p.is_active && <Badge text="active" />}</div>
-                <code style={{ fontSize: 11, color: C.muted }}>{p.base_url} · {p.model}</code>
-              </div>
-            </label>
-          ))}
+          <PickerSection
+            placeholder={providers.length === 0 ? "No providers configured — add one above first" : "+ Add provider…"}
+            options={providers
+              .filter(p => !providerIds.includes(p._id))
+              .map(p => ({ value: p._id, label: `${p.name} · ${p.model}` }))}
+            selected={providerIds}
+            onAdd={id => setProviderIds([...providerIds, id])}
+            onRemove={id => setProviderIds(providerIds.filter(x => x !== id))}
+            emptyText="No providers assigned — this bot cannot chat yet."
+            renderMeta={(id: string) => {
+              const p = providers.find(x => x._id === id);
+              return p ? <code style={{ fontSize: 11, color: C.muted }}>{p.base_url} · {p.model}</code> : null;
+            }}
+          />
         </section>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -369,5 +371,81 @@ function BotBindingsModal({ bot, apps, providers, onClose, onSave }: {
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ── Dropdown + selected-items box (add via dropdown, remove via ×) ───────────
+
+function PickerSection({ placeholder, options, selected, onAdd, onRemove, emptyText, renderMeta }: {
+  placeholder: string;
+  options: Array<{ value: string; label: string }>;
+  selected: string[];
+  onAdd: (id: string) => void;
+  onRemove: (id: string) => void;
+  emptyText: React.ReactNode;
+  renderMeta?: (id: string) => React.ReactNode;
+}) {
+  const disabled = options.length === 0;
+
+  return (
+    <div>
+      <select
+        value=""
+        disabled={disabled}
+        onChange={e => { if (e.target.value) onAdd(e.target.value); }}
+        style={{
+          ...inputStyle,
+          marginBottom: 8,
+          color: disabled ? C.muted : C.text,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        <option value="">{placeholder}</option>
+        {options.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+
+      <div style={{
+        border: `1px solid ${C.border}`,
+        borderRadius: C.radius,
+        background: C.surface,
+        minHeight: 66,
+        maxHeight: 220,
+        overflowY: "auto",
+        padding: 6,
+      }}>
+        {selected.length === 0 && (
+          <div style={{ padding: "14px 8px", fontSize: 12, color: C.muted, textAlign: "center" }}>{emptyText}</div>
+        )}
+        {selected.map(id => (
+          <div key={id} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "6px 10px", marginBottom: 4,
+            border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.bg,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {options.find(o => o.value === id)?.label.split(" (")[0] ?? id}
+              </span>
+              {renderMeta?.(id)}
+            </div>
+            <button
+              onClick={() => onRemove(id)}
+              title="Remove"
+              style={{
+                flexShrink: 0, width: 22, height: 22, borderRadius: C.radius,
+                border: `1px solid ${C.border}`, background: C.surface,
+                color: C.muted, fontSize: 13, lineHeight: 1, cursor: "pointer",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = C.danger; (e.currentTarget as HTMLButtonElement).style.borderColor = C.danger; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = C.muted; (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

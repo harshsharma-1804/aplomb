@@ -1,6 +1,6 @@
 import { getDb } from "../db/client.js";
-import { aiProviderRepo } from "../db/repos/aiProviderRepo.js";
-import { getTools } from "./toolRegistry.js";
+import { getToolsForBot } from "./toolRegistry.js";
+import { aiBotRepo } from "../db/repos/aiBotRepo.js";
 import { executeTool } from "./toolExecutor.js";
 import { chatCompletion, type LlmMessage, type LlmToolDef } from "./llmClient.js";
 import { config } from "../config/appConfig.js";
@@ -54,8 +54,8 @@ function buildSystemPrompt(userId: string): string {
   ].join("\n");
 }
 
-function toolsToLlmFormat(): LlmToolDef[] {
-  return getTools().map(t => ({
+function toolsToLlmFormat(allowedAppIds: string[]): LlmToolDef[] {
+  return getToolsForBot(allowedAppIds).map(t => ({
     type: "function" as const,
     function: {
       name: t.name,
@@ -68,16 +68,22 @@ function toolsToLlmFormat(): LlmToolDef[] {
 export async function runChatAgent(
   history: BotChatMessage[],
   userId: string,
-  bot: { id: string; name: string }
+  bot: { id: string; name: string; allowedProviderIds: string[]; allowedAppIds: string[] }
 ): Promise<ChatAgentResult> {
   const db = getDb();
 
-  const provider = aiProviderRepo.getActiveFull(db);
+  // Provider resolution — deny-by-default: bot must have providers assigned.
+  // First ACTIVE provider in the admin-assigned order wins; deactivated
+  // providers are skipped.
+  const provider = aiBotRepo.getActiveProviderFull(db, bot.allowedProviderIds);
   if (!provider) {
-    throw Object.assign(new Error("No active AI provider configured — ask an admin to add one in Settings → AI Providers"), { code: "AI_NOT_CONFIGURED" });
+    throw Object.assign(
+      new Error("No active LLM provider assigned to this bot — ask an admin to assign providers in Settings → AI & MCP"),
+      { code: "AI_NOT_CONFIGURED" }
+    );
   }
 
-  const tools = toolsToLlmFormat();
+  const tools = toolsToLlmFormat(bot.allowedAppIds);
   const llmMessages: LlmMessage[] = [
     { role: "system", content: buildSystemPrompt(userId) },
     ...mapToLlmMessages(history, userId),
@@ -111,7 +117,7 @@ export async function runChatAgent(
 
     for (const tc of response.tool_calls) {
       toolCallsMade++;
-      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId });
+      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, allowedAppIds: bot.allowedAppIds });
       llmMessages.push({
         role: "tool",
         tool_call_id: tc.id,

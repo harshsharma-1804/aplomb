@@ -185,6 +185,9 @@ export const ai_bots = sqliteTable("ai_bots", {
   name:          text("name").notNull(),
   api_key_hash:  text("api_key_hash").notNull(),
   is_active:     integer("is_active", { mode: "boolean" }).notNull().default(true),
+  // Deny-by-default bindings — empty = no access until admin assigns
+  allowed_app_ids:      text("allowed_app_ids").notNull().default("[]"),
+  allowed_provider_ids: text("allowed_provider_ids").notNull().default("[]"),
   last_used_at:  text("last_used_at"),
   created_by:    text("created_by"),
   created_at:    text("created_at").notNull(),

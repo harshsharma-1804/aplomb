@@ -67,14 +67,33 @@ router.post("/bots", requirePermission("manage:providers"), async (req, res) => 
 });
 
 router.put("/bots/:id", requirePermission("manage:providers"), (req, res) => {
-  const { is_active } = req.body ?? {};
-  if (typeof is_active !== "boolean") {
-    res.status(400).json({ error: "is_active (boolean) is required", code: "VALIDATION_ERROR" });
+  const { is_active, allowed_app_ids, allowed_provider_ids } = req.body ?? {};
+
+  if (is_active !== undefined) {
+    if (typeof is_active !== "boolean") {
+      res.status(400).json({ error: "is_active must be a boolean", code: "VALIDATION_ERROR" });
+      return;
+    }
+    const updated = aiBotRepo.setActive(getDb(), String(req.params["id"]), is_active);
+    if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    res.json(updated);
     return;
   }
-  const updated = aiBotRepo.setActive(getDb(), String(req.params["id"]), is_active);
-  if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
-  res.json(updated);
+
+  if (allowed_app_ids !== undefined || allowed_provider_ids !== undefined) {
+    for (const [field, val] of [["allowed_app_ids", allowed_app_ids], ["allowed_provider_ids", allowed_provider_ids]] as const) {
+      if (val !== undefined && (!Array.isArray(val) || !val.every(v => typeof v === "string"))) {
+        res.status(400).json({ error: `${field} must be an array of strings`, code: "VALIDATION_ERROR" });
+        return;
+      }
+    }
+    const updated = aiBotRepo.updateBindings(getDb(), String(req.params["id"]), { allowed_app_ids, allowed_provider_ids });
+    if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    res.json(updated);
+    return;
+  }
+
+  res.status(400).json({ error: "Nothing to update — send is_active, allowed_app_ids or allowed_provider_ids", code: "VALIDATION_ERROR" });
 });
 
 router.delete("/bots/:id", requirePermission("manage:providers"), (req, res) => {

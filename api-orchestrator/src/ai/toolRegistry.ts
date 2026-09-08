@@ -169,6 +169,24 @@ export function getTools(): ToolDef[] {
   return cache;
 }
 
+/**
+ * Per-bot tool catalog — bot's allowed apps ∩ AI-exposed apps.
+ * Deny-by-default: a bot with no assigned apps sees no tools.
+ */
+export function getToolsForBot(allowedAppIds: string[]): ToolDef[] {
+  if (!allowedAppIds.length) return [];
+  const allowed = new Set(allowedAppIds);
+  return getTools().filter(t => allowed.has(t._exec.app_id));
+}
+
 export function findTool(name: string): ToolDef | undefined {
   return getTools().find(t => t.name === name);
+}
+
+/**
+ * Find a tool for a specific bot — same as findTool but restricted to
+ * the bot's allowed apps. Used by tools/call enforcement.
+ */
+export function findToolForBot(name: string, allowedAppIds: string[]): ToolDef | undefined {
+  return getToolsForBot(allowedAppIds).find(t => t.name === name);
 }

@@ -1,4 +1,4 @@
-import { getTools } from "./toolRegistry.js";
+import { getToolsForBot } from "./toolRegistry.js";
 import { executeTool } from "./toolExecutor.js";
 
 /**
@@ -43,7 +43,7 @@ function ok(id: any, result: any): JsonRpcResponse {
 
 export async function handleMcpRequest(
   body: JsonRpcRequest,
-  bot: { id: string; name: string }
+  bot: { id: string; name: string; allowedProviderIds: string[]; allowedAppIds: string[] }
 ): Promise<JsonRpcResponse> {
   const id = body.id ?? null;
 
@@ -66,7 +66,8 @@ export async function handleMcpRequest(
     }
 
     case "tools/list": {
-      const tools = getTools().map(t => ({
+      // Per-bot catalog — deny-by-default: bot must have apps assigned
+      const tools = getToolsForBot(bot.allowedAppIds).map(t => ({
         name: t.name,
         description: t.description,
         inputSchema: t.parameters,
@@ -87,7 +88,7 @@ export async function handleMcpRequest(
         return err(id, -32602, "params._meta.orchestrator_user_id is required — bind the end user the same way /__ai/chat does", { code: "USER_CONTEXT_REQUIRED" });
       }
 
-      const exec = await executeTool(name, args, { botId: bot.id, botName: bot.name, userId });
+      const exec = await executeTool(name, args, { botId: bot.id, botName: bot.name, userId, allowedAppIds: bot.allowedAppIds });
 
       // MCP tool result content format
       return ok(id, {

@@ -1,7 +1,7 @@
 import { getDb } from "../db/client.js";
 import { appRepo } from "../db/repos/appRepo.js";
 import { endpointRepo } from "../db/repos/endpointRepo.js";
-import { findTool, type ToolDef } from "./toolRegistry.js";
+import { findToolForBot, type ToolDef } from "./toolRegistry.js";
 import { aiToolCallRepo } from "../db/repos/aiToolCallRepo.js";
 import { validateInput } from "../runtime/inputValidator.js";
 import { applyTransform } from "../runtime/transform.js";
@@ -26,6 +26,7 @@ export interface ToolExecutionContext {
   botId: string;
   botName: string;
   userId: string;
+  allowedAppIds: string[];
 }
 
 export interface ToolExecutionResult {
@@ -59,10 +60,10 @@ export async function executeTool(
   const db = getDb();
   const started = Date.now();
 
-  const tool = findTool(toolName);
+  const tool = findToolForBot(toolName, ctx.allowedAppIds);
   if (!tool) {
-    aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "denied", detail: "Unknown tool — not in AI-exposed registry" });
-    return { ok: false, error: `Unknown tool '${toolName}'`, outcome: "denied" };
+    aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "denied", detail: "Unknown tool or app not in this bot's assigned list" });
+    return { ok: false, error: `Unknown tool '${toolName}' or its app is not assigned to this bot`, outcome: "denied" };
   }
 
   // ── User-scope guard ────────────────────────────────────────────────────────

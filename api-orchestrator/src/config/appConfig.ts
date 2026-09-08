@@ -96,6 +96,12 @@ export const config = {
     runtimeOrigins: commaSeparated("RUNTIME_CORS_ORIGINS", []),
   },
 
+  dashboard: {
+    // When set, the orchestrator serves the built dashboard SPA from this
+    // directory (unified single-container mode). Empty = disabled (split mode).
+    distPath: optional("DASHBOARD_DIST", ""),
+  },
+
   telemetry: {
     // TTL for request_logs time-series collection in seconds (default 30 days)
     logRetentionSeconds: optionalNumber("LOG_RETENTION_SECONDS", 30 * 24 * 60 * 60),

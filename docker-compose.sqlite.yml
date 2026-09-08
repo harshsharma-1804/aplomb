@@ -38,6 +38,33 @@ services:
       api-orchestrator-sqlite:
         condition: service_healthy
 
+  orchestrator-unified:
+    build:
+      context: .
+      dockerfile: api-orchestrator/Dockerfile.unified
+    image: orchestrator-unified:latest
+    restart: unless-stopped
+    ports:
+      - "3004:3002"
+    volumes:
+      - ./data/sqlite-unified:/app/data
+    environment:
+      DB_PATH: /app/data/orchestrator.db
+      PORT: "3002"
+      NODE_ENV: ${NODE_ENV:-development}
+      SESSION_SECRET: ${SESSION_SECRET:-orchestrator-sqlite-dev-secret}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-00000000000000000000000000000000}
+      UPSTREAM_HOST_ALLOWLIST: ${UPSTREAM_HOST_ALLOWLIST:-mock-server,localhost,host.docker.internal}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-Admin@1234567890}
+      # No CORS_ALLOWED_ORIGINS needed — dashboard is same-origin in unified mode
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/__health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
 volumes: {}
 
 networks:

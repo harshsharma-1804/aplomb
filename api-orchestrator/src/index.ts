@@ -3,9 +3,11 @@ import express, { type Request, type Response, type NextFunction } from "express
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
+import compression from "compression";
+import { join } from "path";
 import { config } from "./config/appConfig.js";
 import { initDb, closeDb } from "./db/client.js";
-import { initAppCache, stopAppCachePolling } from "./cache/appCache.js";
+import { initAppCache, stopAppCachePolling, getAppByPath } from "./cache/appCache.js";
 import { initProviderCache, stopProviderCachePolling } from "./cache/providerCache.js";
 import { initAllowlistCache, stopAllowlistCachePolling } from "./cache/allowlistCache.js";
 import { initCorsCache, isRuntimeOriginAllowed, stopCorsCachePolling } from "./cache/corsCache.js";
@@ -70,8 +72,42 @@ app.get("/__health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString(), service: "api-orchestrator", version: "1.0.0" });
 });
 
+// ── Dashboard static serving (unified single-container mode) ──────────────────
+// Enabled only when DASHBOARD_DIST points at the built dashboard SPA.
+// Empty env (default) = split deployment — static serving disabled.
+//
+// MUST be registered before rootRouter: the runtime router is mounted at "/"
+// and catches every path (404ing unknown ones as APP_NOT_FOUND) — a fallback
+// placed after it would never run.
+//
+// Guards, in order:
+//   1. API prefixes (/__config, /auth, /__health, /api) → next() — JSON 404s stay JSON
+//   2. Runtime app requests (getAppByPath matches a base_path) → next() —
+//      the runtime router owns these; serving index.html here would break API calls
+//   3. Everything else → SPA index.html (dashboard client-side routes)
+if (config.dashboard.distPath) {
+  const distPath = config.dashboard.distPath;
+
+  app.use(compression());
+  app.use(express.static(distPath, { index: false, maxAge: "1h" }));
+
+  const serveSpa = (req: Request, res: Response, next: NextFunction) => {
+    const p = req.path;
+    if (p.startsWith("/__config") || p.startsWith("/auth") || p.startsWith("/__health") || p.startsWith("/api")) {
+      return next();
+    }
+    if (getAppByPath(p)) return next();
+    res.sendFile(join(distPath, "index.html"));
+  };
+
+  // Express 5: "/*path" does not match "/" — register root explicitly
+  app.get("/", serveSpa);
+  app.get("/*path", serveSpa);
+}
+
 app.use(rootRouter);
 
+// Unhandled API paths (e.g. unknown /__config or /api routes) → JSON 404
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
 });

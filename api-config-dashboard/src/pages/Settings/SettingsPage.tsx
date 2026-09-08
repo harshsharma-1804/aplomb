@@ -34,7 +34,7 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20, alignItems: "start", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gridTemplateRows: "minmax(0, 1fr)", gap: 20, flex: 1, minHeight: 0 }}>
         {/* Left panel — tabs */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflowY: "auto", minHeight: 0 }}>
           {visibleTabs.map(tab => (

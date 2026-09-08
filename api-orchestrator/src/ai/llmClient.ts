@@ -1,4 +1,3 @@
-import { createDecipheriv } from "crypto";
 import { config } from "../config/appConfig.js";
 import { resolveSecret } from "../secrets/resolver.js";
 
@@ -34,33 +33,18 @@ export interface LlmProviderConfig {
   base_url: string;
   model: string;
   secret_id: string | null;
-  ciphertext: string;
-  iv: string;
-  auth_tag: string;
 }
 
 /**
- * Resolves the provider API key at call time — never stored in memory longer
- * than the request, never logged, never included in LLM messages.
- *   1. Vault reference (secret_id) → resolved via the Secrets store
- *   2. Embedded key → decrypted from ciphertext/iv/auth_tag
+ * Resolves the provider API key at call time from the Secrets vault —
+ * never stored in memory longer than the request, never logged,
+ * never included in LLM messages. Plain-value keys are not supported.
  */
 export function resolveProviderKey(provider: LlmProviderConfig): string {
-  if (provider.secret_id) {
-    return resolveSecret(provider.secret_id);
+  if (!provider.secret_id) {
+    throw new Error(`Provider '${provider.name}' has no vault secret assigned — assign one in Settings → AI & MCP`);
   }
-  const keyEnv = config.secrets.encryptionKey;
-  if (keyEnv.length !== config.secrets.keyLengthRequired) {
-    throw new Error(`SECRETS_ENCRYPTION_KEY must be exactly ${config.secrets.keyLengthRequired} ASCII characters`);
-  }
-  const key = Buffer.from(keyEnv, "utf8");
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(provider.iv, "base64"));
-  decipher.setAuthTag(Buffer.from(provider.auth_tag, "base64"));
-  const plaintext = Buffer.concat([
-    decipher.update(Buffer.from(provider.ciphertext, "base64")),
-    decipher.final(),
-  ]);
-  return plaintext.toString("utf8");
+  return resolveSecret(provider.secret_id);
 }
 
 export interface LlmResponse {

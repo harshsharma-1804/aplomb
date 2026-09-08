@@ -16,17 +16,17 @@ router.get("/providers", requirePermission("manage:providers"), (req, res) => {
 });
 
 router.post("/providers", requirePermission("manage:providers"), (req, res) => {
-  const { name, base_url, model, api_key, secret_id, is_active } = req.body ?? {};
+  const { name, base_url, model, secret_id, is_active } = req.body ?? {};
   if (!name || !base_url || !model) {
     res.status(400).json({ error: "name, base_url and model are required", code: "VALIDATION_ERROR" });
     return;
   }
-  if (!api_key && !secret_id) {
-    res.status(400).json({ error: "Provide either api_key or secret_id (vault reference)", code: "VALIDATION_ERROR" });
+  if (!secret_id) {
+    res.status(400).json({ error: "secret_id (vault reference) is required — plain API keys are not accepted", code: "VALIDATION_ERROR" });
     return;
   }
   try {
-    const provider = aiProviderRepo.create(getDb(), { name, base_url, model, api_key, secret_id, is_active, created_by: (req as any).dashboardUser?.id });
+    const provider = aiProviderRepo.create(getDb(), { name, base_url, model, secret_id, is_active, created_by: (req as any).dashboardUser?.id });
     refreshToolRegistry();
     res.status(201).json(provider);
   } catch (e: any) {
@@ -39,9 +39,9 @@ router.post("/providers", requirePermission("manage:providers"), (req, res) => {
 });
 
 router.put("/providers/:id", requirePermission("manage:providers"), (req, res) => {
-  const { name, base_url, model, api_key, secret_id, is_active } = req.body ?? {};
+  const { name, base_url, model, secret_id, is_active } = req.body ?? {};
   try {
-    const updated = aiProviderRepo.update(getDb(), String(req.params["id"]), { name, base_url, model, api_key, secret_id, is_active });
+    const updated = aiProviderRepo.update(getDb(), String(req.params["id"]), { name, base_url, model, secret_id, is_active });
     if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
     refreshToolRegistry();
     res.json(updated);

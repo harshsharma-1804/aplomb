@@ -168,12 +168,8 @@ export const ai_providers = sqliteTable("ai_providers", {
   name:        text("name").notNull(),
   base_url:    text("base_url").notNull(),
   model:       text("model").notNull(),
-  // Key source — vault reference takes precedence when set; otherwise embedded
-  // encrypted key material (ciphertext/iv/auth_tag) is used.
+  // Key source — reference to the Secrets vault. Keys are never stored here.
   secret_id:   text("secret_id"),
-  ciphertext:  text("ciphertext").notNull().default(""),
-  iv:          text("iv").notNull().default(""),
-  auth_tag:    text("auth_tag").notNull().default(""),
   is_active:   integer("is_active", { mode: "boolean" }).notNull().default(true),
   created_by:  text("created_by"),
   created_at:  text("created_at").notNull(),

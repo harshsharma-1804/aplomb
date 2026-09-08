@@ -35,8 +35,6 @@ export function AiTab() {
   const [pName, setPName] = useState("");
   const [pUrl, setPUrl] = useState("");
   const [pModel, setPModel] = useState("");
-  const [pKey, setPKey] = useState("");
-  const [keySource, setKeySource] = useState<"paste" | "vault">("paste");
   const [pSecretId, setPSecretId] = useState("");
   const [vaultSecrets, setVaultSecrets] = useState<VaultSecret[]>([]);
   const [pError, setPError] = useState("");
@@ -86,10 +84,9 @@ export function AiTab() {
     setPSaving(true); setPError("");
     try {
       await api.post("/__config/admin/ai/providers", {
-        name: pName, base_url: pUrl, model: pModel,
-        ...(keySource === "vault" ? { secret_id: pSecretId } : { api_key: pKey }),
+        name: pName, base_url: pUrl, model: pModel, secret_id: pSecretId,
       });
-      setPName(""); setPUrl(""); setPModel(""); setPKey(""); setPSecretId(""); setShowProviderForm(false);
+      setPName(""); setPUrl(""); setPModel(""); setPSecretId(""); setShowProviderForm(false);
       load();
     } catch (err) { setPError(String(err)); }
     finally { setPSaving(false); }
@@ -153,36 +150,19 @@ export function AiTab() {
             <Field label="Base URL" hint="OpenAI-compatible chat/completions root, e.g. https://api.openai.com/v1">
               <input style={inputStyle} value={pUrl} onChange={e => setPUrl(e.target.value)} placeholder="https://api.openai.com/v1" required />
             </Field>
-            {/* Key source */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              {([["paste", "Paste API key"], ["vault", "Use vault secret"]] as const).map(([val, label]) => (
-                <button key={val} type="button" onClick={() => setKeySource(val)} style={{
-                  flex: 1, padding: "8px 12px", borderRadius: C.radius, cursor: "pointer",
-                  border: `2px solid ${keySource === val ? C.primary : C.border}`,
-                  background: keySource === val ? C.primary + "10" : C.surface,
-                  fontWeight: 600, fontSize: 12, color: keySource === val ? C.primary : C.text,
-                }}>{label}</button>
-              ))}
-            </div>
-            {keySource === "paste" ? (
-              <Field label="API Key" hint="Encrypted at rest before storage — never returned by the API">
-                <input style={inputStyle} type="password" value={pKey} onChange={e => setPKey(e.target.value)} placeholder="sk-…" required />
-              </Field>
-            ) : (
-              <Field label="Vault Secret" hint="Reference to an existing secret in Admin → Secrets — rotated there, picked up here automatically">
-                <select
-                  style={{ ...inputStyle, cursor: "pointer" }}
-                  value={pSecretId}
-                  onChange={e => setPSecretId(e.target.value)}
-                  required
-                >
-                  <option value="">{vaultSecrets.length === 0 ? "No secrets in vault — create one in Admin → Secrets" : "Select a secret…"}</option>
-                  {vaultSecrets.map(v => (
-                    <option key={v._id} value={v._id}>{v.name}</option>
-                  ))}
-                </select>
-              </Field>
-            )}
+            <Field label="API Key (from vault)" hint="Keys are never entered or stored as plain values — pick a secret from Admin → Secrets; rotate it there and providers pick it up automatically">
+              <select
+                style={{ ...inputStyle, cursor: "pointer" }}
+                value={pSecretId}
+                onChange={e => setPSecretId(e.target.value)}
+                required
+              >
+                <option value="">{vaultSecrets.length === 0 ? "No secrets in vault — create one in Admin → Secrets first" : "Select a secret…"}</option>
+                {vaultSecrets.map(v => (
+                  <option key={v._id} value={v._id}>{v.name}</option>
+                ))}
+              </select>
+            </Field>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <Btn type="submit" disabled={pSaving}>{pSaving ? "Saving…" : "Add Provider"}</Btn>
             </div>
@@ -199,7 +179,7 @@ export function AiTab() {
                     {p.name} {p.is_active && <Badge text="active" />}
                   </div>
                   <div style={{ fontSize: 12, color: C.muted }}>
-                    {p.base_url} · <code>{p.model}</code> · key: {p.secret_id ? `🔒 vault (${p.secret_name ?? "secret"})` : "embedded"}
+                    {p.base_url} · <code>{p.model}</code> · key: {p.secret_id ? `🔒 vault (${p.secret_name ?? "secret"})` : "⚠ no key assigned"}
                   </div>
                 </div>
                 {editable && <Btn size="sm" variant="danger" onClick={() => setProviderDelete(p)}>Delete</Btn>}

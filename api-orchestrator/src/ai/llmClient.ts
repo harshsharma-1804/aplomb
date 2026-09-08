@@ -1,5 +1,6 @@
 import { createDecipheriv } from "crypto";
 import { config } from "../config/appConfig.js";
+import { resolveSecret } from "../secrets/resolver.js";
 
 /**
  * Minimal OpenAI-compatible chat-completions client with tool calling.
@@ -32,12 +33,22 @@ export interface LlmProviderConfig {
   name: string;
   base_url: string;
   model: string;
+  secret_id: string | null;
   ciphertext: string;
   iv: string;
   auth_tag: string;
 }
 
-export function decryptProviderKey(provider: LlmProviderConfig): string {
+/**
+ * Resolves the provider API key at call time — never stored in memory longer
+ * than the request, never logged, never included in LLM messages.
+ *   1. Vault reference (secret_id) → resolved via the Secrets store
+ *   2. Embedded key → decrypted from ciphertext/iv/auth_tag
+ */
+export function resolveProviderKey(provider: LlmProviderConfig): string {
+  if (provider.secret_id) {
+    return resolveSecret(provider.secret_id);
+  }
   const keyEnv = config.secrets.encryptionKey;
   if (keyEnv.length !== config.secrets.keyLengthRequired) {
     throw new Error(`SECRETS_ENCRYPTION_KEY must be exactly ${config.secrets.keyLengthRequired} ASCII characters`);
@@ -62,7 +73,7 @@ export async function chatCompletion(
   messages: LlmMessage[],
   tools?: LlmToolDef[]
 ): Promise<LlmResponse> {
-  const apiKey = decryptProviderKey(provider);
+  const apiKey = resolveProviderKey(provider);
   const url = `${provider.base_url.replace(/\/$/, "")}/chat/completions`;
 
   const controller = new AbortController();

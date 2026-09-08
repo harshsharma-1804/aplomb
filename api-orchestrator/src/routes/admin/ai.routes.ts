@@ -16,26 +16,42 @@ router.get("/providers", requirePermission("manage:providers"), (req, res) => {
 });
 
 router.post("/providers", requirePermission("manage:providers"), (req, res) => {
-  const { name, base_url, model, api_key, is_active } = req.body ?? {};
-  if (!name || !base_url || !model || !api_key) {
-    res.status(400).json({ error: "name, base_url, model and api_key are required", code: "VALIDATION_ERROR" });
+  const { name, base_url, model, api_key, secret_id, is_active } = req.body ?? {};
+  if (!name || !base_url || !model) {
+    res.status(400).json({ error: "name, base_url and model are required", code: "VALIDATION_ERROR" });
+    return;
+  }
+  if (!api_key && !secret_id) {
+    res.status(400).json({ error: "Provide either api_key or secret_id (vault reference)", code: "VALIDATION_ERROR" });
     return;
   }
   try {
-    const provider = aiProviderRepo.create(getDb(), { name, base_url, model, api_key, is_active, created_by: (req as any).dashboardUser?.id });
+    const provider = aiProviderRepo.create(getDb(), { name, base_url, model, api_key, secret_id, is_active, created_by: (req as any).dashboardUser?.id });
     refreshToolRegistry();
     res.status(201).json(provider);
   } catch (e: any) {
+    if (e.message?.includes("not found in vault")) {
+      res.status(400).json({ error: e.message, code: "SECRET_NOT_FOUND" });
+      return;
+    }
     res.status(500).json({ error: e.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }
 });
 
 router.put("/providers/:id", requirePermission("manage:providers"), (req, res) => {
-  const { name, base_url, model, api_key, is_active } = req.body ?? {};
-  const updated = aiProviderRepo.update(getDb(), String(req.params["id"]), { name, base_url, model, api_key, is_active });
-  if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
-  refreshToolRegistry();
-  res.json(updated);
+  const { name, base_url, model, api_key, secret_id, is_active } = req.body ?? {};
+  try {
+    const updated = aiProviderRepo.update(getDb(), String(req.params["id"]), { name, base_url, model, api_key, secret_id, is_active });
+    if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    refreshToolRegistry();
+    res.json(updated);
+  } catch (e: any) {
+    if (e.message?.includes("not found in vault")) {
+      res.status(400).json({ error: e.message, code: "SECRET_NOT_FOUND" });
+      return;
+    }
+    res.status(500).json({ error: e.message ?? "Internal server error", code: "INTERNAL_ERROR" });
+  }
 });
 
 router.delete("/providers/:id", requirePermission("manage:providers"), (req, res) => {

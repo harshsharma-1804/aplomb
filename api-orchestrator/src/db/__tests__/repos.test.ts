@@ -50,7 +50,7 @@ const DDL = `
   CREATE TABLE IF NOT EXISTS apps (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, base_path TEXT NOT NULL UNIQUE,
     description TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
-    deprecated_at TEXT, auth_required INTEGER NOT NULL DEFAULT 1,
+    deprecated_at TEXT, auth_required INTEGER NOT NULL DEFAULT 1, ai_expose INTEGER NOT NULL DEFAULT 0,
     mode TEXT NOT NULL DEFAULT 'prod',
     app_env TEXT NOT NULL DEFAULT '[]',
     allowed_provider_ids TEXT NOT NULL DEFAULT '[]',

@@ -15,6 +15,13 @@
       "when": 1788526531443,
       "tag": "0001_add_folder_and_cors_origins",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788526531444,
+      "tag": "0002_ai_layer",
+      "breakpoints": true
     }
   ]
 }

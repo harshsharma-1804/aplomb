@@ -94,6 +94,7 @@ export const apps = sqliteTable("apps", {
   status:               text("status").notNull().default("draft"),
   deprecated_at:        text("deprecated_at"),
   auth_required:        integer("auth_required", { mode: "boolean" }).notNull().default(true),
+  ai_expose:            integer("ai_expose", { mode: "boolean" }).notNull().default(false),
   mode:                 text("mode").notNull().default("prod"),
   // JSON blobs — freely evolving, no migration when new fields added
   app_env:              text("app_env").notNull().default("[]"),
@@ -159,6 +160,53 @@ export const cors_origins = sqliteTable("cors_origins", {
   created_at:  text("created_at").notNull(),
 });
 
+// ── ai_providers ──────────────────────────────────────────────────────────────
+// LLM providers configured by the admin in the dashboard (OpenAI-compatible).
+// api_key is encrypted at rest with the same crypto as secrets.
+export const ai_providers = sqliteTable("ai_providers", {
+  id:          text("id").primaryKey(),
+  name:        text("name").notNull(),
+  base_url:    text("base_url").notNull(),
+  model:       text("model").notNull(),
+  ciphertext:  text("ciphertext").notNull(),
+  iv:          text("iv").notNull(),
+  auth_tag:    text("auth_tag").notNull(),
+  is_active:   integer("is_active", { mode: "boolean" }).notNull().default(true),
+  created_by:  text("created_by"),
+  created_at:  text("created_at").notNull(),
+  updated_at:  text("updated_at").notNull(),
+});
+
+// ── ai_bots ───────────────────────────────────────────────────────────────────
+// Registered chatbot clients. api_key is generated once (shown to admin),
+// stored as an argon2 hash. Bots call /__ai/chat and /mcp with X-Bot-Key.
+export const ai_bots = sqliteTable("ai_bots", {
+  id:            text("id").primaryKey(),
+  name:          text("name").notNull(),
+  api_key_hash:  text("api_key_hash").notNull(),
+  is_active:     integer("is_active", { mode: "boolean" }).notNull().default(true),
+  last_used_at:  text("last_used_at"),
+  created_by:    text("created_by"),
+  created_at:    text("created_at").notNull(),
+});
+
+// ── ai_tool_calls ─────────────────────────────────────────────────────────────
+// Audit trail for every AI-initiated tool call, incl. scope violations.
+export const ai_tool_calls = sqliteTable("ai_tool_calls", {
+  id:          text("id").primaryKey(),
+  bot_id:      text("bot_id"),
+  bot_name:    text("bot_name").default(""),
+  user_id:     text("user_id").default(""),
+  tool_name:   text("tool_name").notNull(),
+  tool_args:   text("tool_args").notNull().default("{}"),
+  outcome:     text("outcome").notNull(),   // ok | tool_error | scope_violation | denied
+  detail:      text("detail").default(""),
+  latency_ms:  integer("latency_ms").default(0),
+  created_at:  text("created_at").notNull(),
+}, (t) => [
+  index("idx_ai_tool_calls_created").on(t.created_at),
+]);
+
 // ── version_history ───────────────────────────────────────────────────────────
 export const version_history = sqliteTable("version_history", {
   id:          text("id").primaryKey(),
@@ -195,3 +243,9 @@ export type VersionHistory   = typeof version_history.$inferSelect;
 export type NewVersionHistory = typeof version_history.$inferInsert;
 export type CorsOrigin       = typeof cors_origins.$inferSelect;
 export type NewCorsOrigin    = typeof cors_origins.$inferInsert;
+export type AiProvider       = typeof ai_providers.$inferSelect;
+export type NewAiProvider    = typeof ai_providers.$inferInsert;
+export type AiBot            = typeof ai_bots.$inferSelect;
+export type NewAiBot         = typeof ai_bots.$inferInsert;
+export type AiToolCall       = typeof ai_tool_calls.$inferSelect;
+export type NewAiToolCall    = typeof ai_tool_calls.$inferInsert;

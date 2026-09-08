@@ -36,6 +36,8 @@ export interface App {
   allowed_provider_ids: string[];
   /** When false the runtime skips OIDC validation — dev/demo only */
   auth_required: boolean;
+  /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
+  ai_expose: boolean;
   /** Environment this app belongs to — shown in UI and X-Orchestrator-Mode header */
   mode: "dev" | "qa" | "staging" | "prod";
   /** App-scoped environment variables — use {{KEY}} in upstream URLs and header values */

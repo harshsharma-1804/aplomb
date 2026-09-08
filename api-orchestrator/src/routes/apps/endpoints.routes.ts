@@ -12,6 +12,7 @@ import { isHostAllowedForOrg } from "../../cache/allowlistCache.js";
 import { resolveEnvVars } from "../../runtime/router.js";
 import { runScript } from "../../runtime/scriptRunner.js";
 import { buildContext } from "../../runtime/ctxBuilder.js";
+import { refreshToolRegistry } from "../../ai/toolRegistry.js";
 
 const router = Router({ mergeParams: true });
 
@@ -56,6 +57,7 @@ router.post("/", requirePermission("edit:endpoints"), upstreamAllowlistGuard, (r
   if (body.path) body.path_params = syncPathParams(body.path, body.path_params ?? []);
   try {
     const ep = endpointRepo.create(getDb(), { ...body, app_id: ps["appId"]! });
+    refreshToolRegistry();
     writeHistory(ps["appId"]!, "endpoint_added", `Endpoint added: ${ep.method} ${ep.path}`, req);
     res.status(201).json(ep);
   } catch (err: any) {
@@ -84,6 +86,7 @@ router.put("/:endId", requirePermission("edit:endpoints"), upstreamAllowlistGuar
   if (body.path) body.path_params = syncPathParams(body.path, body.path_params ?? []);
   try {
     const ep = endpointRepo.update(db, ps["endId"]!, body);
+    refreshToolRegistry();
     writeHistory(ps["appId"]!, "endpoint_modified", `Endpoint modified: ${ep?.method} ${ep?.path}`, req);
     res.json(ep);
   } catch (err: any) {
@@ -100,6 +103,7 @@ router.delete("/:endId", requirePermission("edit:endpoints"), (req, res) => {
   const ep = endpointRepo.findById(db, ps["endId"]!);
   if (!ep || ep.app_id !== ps["appId"]!) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
   endpointRepo.delete(db, ps["endId"]!);
+  refreshToolRegistry();
   writeHistory(ps["appId"]!, "endpoint_deleted", `Endpoint deleted: ${ep.method} ${ep.path}`, req);
   res.json({ success: true });
 });
@@ -115,6 +119,7 @@ function subUpdate(field: string, guard?: typeof upstreamAllowlistGuard) {
     const ep = endpointRepo.findById(db, ps["endId"]!);
     if (!ep || ep.app_id !== ps["appId"]!) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
     endpointRepo.updateField(db, ps["endId"]!, field, req.body);
+    refreshToolRegistry();
     const updated = endpointRepo.findById(db, ps["endId"]!);
     writeHistory(ps["appId"]!, "endpoint_modified", `Endpoint ${field} updated`, req);
     res.json(updated);

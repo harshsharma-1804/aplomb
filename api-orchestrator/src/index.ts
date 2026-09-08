@@ -11,6 +11,7 @@ import { initAppCache, stopAppCachePolling, getAppByPath } from "./cache/appCach
 import { initProviderCache, stopProviderCachePolling } from "./cache/providerCache.js";
 import { initAllowlistCache, stopAllowlistCachePolling } from "./cache/allowlistCache.js";
 import { initCorsCache, isRuntimeOriginAllowed, stopCorsCachePolling } from "./cache/corsCache.js";
+import { initToolRegistry } from "./ai/toolRegistry.js";
 import { warmJwksCache } from "./auth/oidcValidate.js";
 import { initLogger } from "./runtime/logger.js";
 import { bootstrapOrganization, bootstrapAdmin } from "./db/bootstrap.js";
@@ -135,6 +136,7 @@ async function start(): Promise<void> {
   initProviderCache();
   initAllowlistCache();
   initCorsCache();
+  initToolRegistry();   // AI/MCP tool catalog from AI-exposed apps (no-op when AI_ENABLED=false)
   warmJwksCache();
   initLogger();
 

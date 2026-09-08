@@ -16,6 +16,7 @@ export type CreateAppInput = {
   description?: string;
   status?: string;
   auth_required?: boolean;
+  ai_expose?: boolean;
   mode?: string;
   app_env?: unknown[];
   allowed_provider_ids?: string[];
@@ -36,6 +37,7 @@ function serialize(row: typeof apps.$inferSelect) {
     app_env:              JSON.parse(row.app_env ?? "[]"),
     allowed_provider_ids: JSON.parse(row.allowed_provider_ids ?? "[]"),
     auth_required:        Boolean(row.auth_required),
+    ai_expose:            Boolean(row.ai_expose),
   };
 }
 
@@ -50,6 +52,7 @@ export const appRepo = {
       description: input.description ?? "",
       status: input.status ?? "draft",
       auth_required: input.auth_required ?? true,
+      ai_expose: input.ai_expose ?? false,
       mode: input.mode ?? "prod",
       app_env: JSON.stringify(input.app_env ?? []),
       allowed_provider_ids: JSON.stringify(input.allowed_provider_ids ?? []),
@@ -82,6 +85,7 @@ export const appRepo = {
     if (input.status      !== undefined) patch["status"]      = input.status;
     if (input.mode        !== undefined) patch["mode"]        = input.mode;
     if (input.auth_required !== undefined) patch["auth_required"] = input.auth_required;
+    if (input.ai_expose     !== undefined) patch["ai_expose"]     = input.ai_expose;
     if (input.deprecated_at !== undefined) patch["deprecated_at"] = input.deprecated_at;
     if (input.app_env     !== undefined) patch["app_env"]     = JSON.stringify(input.app_env);
     if (input.allowed_provider_ids !== undefined) patch["allowed_provider_ids"] = JSON.stringify(input.allowed_provider_ids);

@@ -7,6 +7,7 @@ import { IdentityProvidersTab } from "./tabs/IdentityProvidersTab";
 import { SecretsTab } from "./tabs/SecretsTab";
 import { UsersTab } from "./tabs/UsersTab";
 import { AllowedOriginsTab } from "./tabs/AllowedOriginsTab";
+import { AiTab } from "./tabs/AiTab";
 
 const TABS = [
   { key: "organization",       label: "Organization",        icon: "🏢", adminOnly: false },
@@ -14,6 +15,7 @@ const TABS = [
   { key: "allowed-origins",    label: "Allowed Origins",     icon: "🔗", adminOnly: true  },
   { key: "identity-providers", label: "Identity Providers",  icon: "🔑", adminOnly: true  },
   { key: "secrets",            label: "Secrets",             icon: "🔒", adminOnly: true  },
+  { key: "ai",                 label: "AI & MCP",            icon: "🤖", adminOnly: true  },
   { key: "users",              label: "Users",               icon: "👤", adminOnly: true  },
 ];
 
@@ -64,6 +66,7 @@ export function SettingsPage() {
           {activeTab === "allowed-origins"    && <AllowedOriginsTab />}
           {activeTab === "identity-providers" && <IdentityProvidersTab />}
           {activeTab === "secrets"            && <SecretsTab />}
+          {activeTab === "ai"                 && <AiTab />}
           {activeTab === "users"              && <UsersTab />}
         </div>
       </div>

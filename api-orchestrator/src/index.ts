@@ -27,16 +27,29 @@ app.use(helmet({
 
 const openCors = cors({ origin: "*" });
 
-const dashboardCors = cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (config.cors.allowedOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: "${origin}" not allowed on config API`));
-  },
-  credentials: true,
-  methods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization","Cookie"],
-});
+// Dashboard zone — dynamic so we can read req.headers.host.
+// In unified mode (DASHBOARD_DIST set) the dashboard is served by this same
+// process — same-origin requests always carry an Origin header on POST with
+// credentials, and it must be accepted regardless of which host:port the
+// operator deployed on. Same-origin = Origin host matches request Host.
+function dashboardCors(req: Request, res: Response, next: NextFunction) {
+  const zone = cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (config.cors.allowedOrigins.includes(origin)) return cb(null, true);
+      if (config.dashboard.distPath) {
+        try {
+          if (new URL(origin).host === req.headers.host) return cb(null, true);
+        } catch { /* malformed origin — fall through to reject */ }
+      }
+      cb(new Error(`CORS: "${origin}" not allowed on config API`));
+    },
+    credentials: true,
+    methods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS"],
+    allowedHeaders: ["Content-Type","Authorization","Cookie"],
+  });
+  zone(req, res, next);
+}
 
 const runtimeCors = cors({
   origin: (origin, cb) => {

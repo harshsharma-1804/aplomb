@@ -139,15 +139,18 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     if (handled) return;
   }
 
-  // ── Authentication — auth_mode: bearer | session | both ─────────────────────
-  //   bearer  : legacy behaviour, OIDC bearer gated by auth_required
-  //   session : orc_sid cookie required (auth_mode is the auth decision)
-  //   both    : bearer wins when an Authorization header is present, else cookie
+  // ── Authentication — auth_required is the master switch; auth_mode picks how ─
+  //   No Auth (auth_required=false)      → open, no checks (dev/demo only)
+  //   Required + auth_mode bearer        → OIDC bearer per request (legacy behaviour)
+  //   Required + auth_mode session/both  → orc_sid cookie; bearer wins in "both" when present
   const authMode = (app as any).auth_mode ?? "bearer";
-  const useBearer = authMode === "bearer"
-    ? app.auth_required !== false
-    : authMode === "both" && !!authHeader?.startsWith("Bearer ");
-  const useSession = authMode === "session" || (authMode === "both" && !useBearer);
+  const authRequired = app.auth_required !== false;
+  const useBearer = !authRequired
+    ? false
+    : authMode === "bearer"
+      ? true
+      : authMode === "both" && !!authHeader?.startsWith("Bearer ");
+  const useSession = authRequired && (authMode === "session" || (authMode === "both" && !useBearer));
 
   let oidcPromise: Promise<import("../auth/oidcValidate.js").NormalisedPrincipal | null> = Promise.resolve(null);
 

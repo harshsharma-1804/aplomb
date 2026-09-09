@@ -108,12 +108,12 @@ export async function executeTool(
     }
 
     // ── Session-mode guard ────────────────────────────────────────────────────
-    // Apps that authenticate end users via orc_sid sessions (auth_mode session/
-    // both) must never be reachable with a bare bot key — that would let a
-    // leaked X-Bot-Key read any member's data. Bot-key callers are denied;
-    // session callers are pinned to their own app.
+    // Apps that authenticate end users via orc_sid sessions (auth_required +
+    // auth_mode session/both) must never be reachable with a bare bot key —
+    // that would let a leaked X-Bot-Key read any member's data. Bot-key
+    // callers are denied; session callers are pinned to their own app.
     const appAuthMode = (app as any).auth_mode ?? "bearer";
-    const sessionAuthApp = appAuthMode === "session" || appAuthMode === "both";
+    const sessionAuthApp = Boolean(app.auth_required) && (appAuthMode === "session" || appAuthMode === "both");
     if (sessionAuthApp) {
       if (!ctx.session) {
         aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "denied", detail: "App requires an authenticated session (auth_required + session auth) — bot-key calls are not accepted", latency_ms: Date.now() - started });

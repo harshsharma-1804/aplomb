@@ -149,6 +149,11 @@ export const aiBotRepo = {
     return db.select().from(ai_bots).all().map(serialize);
   },
 
+  /** Bots bound to an app (any permission) — used for session bot_snapshot at login. */
+  listBotsForApp(db: DrizzleDb, appId: string) {
+    return this.listSafe(db).filter(b => b.allowed_app_ids.includes(appId));
+  },
+
   findById(db: DrizzleDb, id: string) {
     const row = db.select().from(ai_bots).where(eq(ai_bots.id, id)).get();
     return row ? serialize(row) : null;

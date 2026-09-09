@@ -13,8 +13,23 @@ import { resolveEnvVars } from "../../runtime/router.js";
 import { runScript } from "../../runtime/scriptRunner.js";
 import { buildContext } from "../../runtime/ctxBuilder.js";
 import { refreshToolRegistry } from "../../ai/toolRegistry.js";
+import { RESERVED_APP_AUTH_PATHS } from "../../auth/appSessionAuth.js";
 
 const router = Router({ mergeParams: true });
+
+/** Reserved auth paths (/login, /session/verify, …) can't be shadowed by business endpoints. */
+function assertNotReservedPath(appId: string, path: string) {
+  const app = appRepo.findById(getDb(), appId);
+  if (!app) return;
+  if ((app as any).auth_mode === "bearer") return; // session auth off — paths are free
+  const normalized = `/${path.replace(/^\/+|\/+$/g, "")}`;
+  if (RESERVED_APP_AUTH_PATHS.has(normalized)) {
+    throw Object.assign(
+      new Error(`"${normalized}" is a reserved app-authentication path and cannot be used as an endpoint while session auth is enabled`),
+      { code: "RESERVED_AUTH_PATH" }
+    );
+  }
+}
 
 function changedBy(req: any) {
   return { user_id: req.dashboardUser?.id ?? null, username: req.dashboardUser?.username ?? "system" };
@@ -56,11 +71,13 @@ router.post("/", requirePermission("edit:endpoints"), upstreamAllowlistGuard, (r
   const body = { ...req.body };
   if (body.path) body.path_params = syncPathParams(body.path, body.path_params ?? []);
   try {
+    assertNotReservedPath(ps["appId"]!, body.path ?? "");
     const ep = endpointRepo.create(getDb(), { ...body, app_id: ps["appId"]! });
     refreshToolRegistry();
     writeHistory(ps["appId"]!, "endpoint_added", `Endpoint added: ${ep.method} ${ep.path}`, req);
     res.status(201).json(ep);
   } catch (err: any) {
+    if (err.code === "RESERVED_AUTH_PATH") { res.status(409).json({ error: err.message, code: err.code }); return; }
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "Endpoint with this method + path already exists", code: "DUPLICATE_ENDPOINT" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }
@@ -85,11 +102,13 @@ router.put("/:endId", requirePermission("edit:endpoints"), upstreamAllowlistGuar
   const body = { ...req.body };
   if (body.path) body.path_params = syncPathParams(body.path, body.path_params ?? []);
   try {
+    assertNotReservedPath(ps["appId"]!, body.path ?? existing.path);
     const ep = endpointRepo.update(db, ps["endId"]!, body);
     refreshToolRegistry();
     writeHistory(ps["appId"]!, "endpoint_modified", `Endpoint modified: ${ep?.method} ${ep?.path}`, req);
     res.json(ep);
   } catch (err: any) {
+    if (err.code === "RESERVED_AUTH_PATH") { res.status(409).json({ error: err.message, code: err.code }); return; }
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "Endpoint with this method + path already exists", code: "DUPLICATE_ENDPOINT" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }

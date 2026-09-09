@@ -99,6 +99,10 @@ export const apps = sqliteTable("apps", {
   // JSON blobs — freely evolving, no migration when new fields added
   app_env:              text("app_env").notNull().default("[]"),
   allowed_provider_ids: text("allowed_provider_ids").notNull().default("[]"),
+  // Runtime authentication — see AppScopedSessions-9.md
+  auth_mode:            text("auth_mode").notNull().default("bearer"),      // bearer | session | both
+  session_method:       text("session_method").notNull().default("both"),   // gateway | identity | both
+  session_config:       text("session_config").notNull().default("{}"),     // { cookie_name?, ttl_idle_min, max_age_min, max_sessions_per_user, ua_enforce }
   created_by:           text("created_by"),
   created_at:           text("created_at").notNull(),
   updated_at:           text("updated_at").notNull(),
@@ -217,6 +221,56 @@ export const ai_tool_calls = sqliteTable("ai_tool_calls", {
   index("idx_ai_tool_calls_created").on(t.created_at),
 ]);
 
+// ── app_sessions ──────────────────────────────────────────────────────────────
+// Per-app, per-device end-user sessions (orc_sid cookies).
+// Deliberately NO unique on (app_id, sub) — multi-device by design.
+// Two clocks: idle_expires_at (sliding) + absolute_expires_at (hard cap).
+export const app_sessions = sqliteTable("app_sessions", {
+  id:                   text("id").primaryKey(),          // random 32B — cookie value
+  app_id:               text("app_id").notNull().references(() => apps.id),
+  sub:                  text("sub").notNull(),            // member/user ID
+  email:                text("email"),
+  issuer:               text("issuer").notNull(),         // 'gateway:<app_id>' or IdP issuer
+  device_label:         text("device_label").notNull(),
+  ua_hash:              text("ua_hash").notNull(),        // sha256(User-Agent) — enforceable fingerprint
+  last_seen_ip:         text("last_seen_ip"),             // metadata only — never a gate
+  // IdP access token, encrypted at rest with the secrets key — never returned to clients
+  idp_token_ct:         text("idp_token_ct"),
+  idp_token_iv:         text("idp_token_iv"),
+  idp_token_tag:        text("idp_token_tag"),
+  // Bot IDs bound to the app at login time (embedded per user decision)
+  bot_snapshot:         text("bot_snapshot").notNull().default("[]"),
+  idle_expires_at:      text("idle_expires_at").notNull(),
+  absolute_expires_at:  text("absolute_expires_at").notNull(),
+  last_active_at:       text("last_active_at").notNull(),
+  revoked_at:           text("revoked_at"),
+  created_at:           text("created_at").notNull(),
+}, (t) => [
+  index("idx_app_sessions_app_sub").on(t.app_id, t.sub),
+  index("idx_app_sessions_idle_expires").on(t.idle_expires_at),
+  index("idx_app_sessions_absolute_expires").on(t.absolute_expires_at),
+]);
+
+// ── app_users ─────────────────────────────────────────────────────────────────
+// Per-app gateway-auth users. Completely disjoint from `users` (dashboard admins):
+// each login path queries only its own table, so neither can authenticate to the
+// other's zone.
+export const app_users = sqliteTable("app_users", {
+  id:            text("id").primaryKey(),
+  app_id:        text("app_id").notNull().references(() => apps.id),
+  username:      text("username").notNull(),
+  email:         text("email").notNull(),
+  password_hash: text("password_hash").notNull(),
+  sub:           text("sub").notNull(),        // principal sub (e.g. member ID MED2026...)
+  display_name:  text("display_name"),
+  is_active:     integer("is_active", { mode: "boolean" }).notNull().default(true),
+  created_at:    text("created_at").notNull(),
+  updated_at:    text("updated_at").notNull(),
+}, (t) => [
+  uniqueIndex("app_users_app_username_unique").on(t.app_id, t.username),
+  uniqueIndex("app_users_app_email_unique").on(t.app_id, t.email),
+]);
+
 // ── version_history ───────────────────────────────────────────────────────────
 export const version_history = sqliteTable("version_history", {
   id:          text("id").primaryKey(),
@@ -259,3 +313,7 @@ export type AiBot            = typeof ai_bots.$inferSelect;
 export type NewAiBot         = typeof ai_bots.$inferInsert;
 export type AiToolCall       = typeof ai_tool_calls.$inferSelect;
 export type NewAiToolCall    = typeof ai_tool_calls.$inferInsert;
+export type AppSession       = typeof app_sessions.$inferSelect;
+export type NewAppSession    = typeof app_sessions.$inferInsert;
+export type AppUser          = typeof app_users.$inferSelect;
+export type NewAppUser       = typeof app_users.$inferInsert;

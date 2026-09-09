@@ -10,6 +10,10 @@ import { requirePermission } from "../../auth/rbac.js";
 import { refreshApp } from "../../cache/appCache.js";
 import { compileTypeScript } from "../../runtime/scriptRunner.js";
 import { refreshToolRegistry } from "../../ai/toolRegistry.js";
+import { appUserRepo } from "../../db/repos/appUserRepo.js";
+import { appSessionRepo, resolveSessionConfig } from "../../db/repos/appSessionRepo.js";
+import { validateCookieName, sessionCookieName } from "../../auth/appSessionAuth.js";
+import { config } from "../../config/appConfig.js";
 
 const router = Router();
 
@@ -105,6 +109,150 @@ router.post("/:id/clone", requirePermission("manage:apps"), (req, res) => {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "base_path already exists", code: "DUPLICATE_BASE_PATH" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }
+});
+
+// ── PUT /apps/:id/session-auth — Runtime Authentication settings ───────────────
+
+router.put("/:id/session-auth", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const app = appRepo.findById(db, appId);
+  if (!app) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+
+  const { auth_mode, session_method, session_config } = req.body ?? {};
+  if (auth_mode !== undefined && !["bearer", "session", "both"].includes(auth_mode)) {
+    res.status(400).json({ error: "auth_mode must be bearer | session | both", code: "VALIDATION_ERROR" }); return;
+  }
+  if (session_method !== undefined && !["gateway", "identity", "both"].includes(session_method)) {
+    res.status(400).json({ error: "session_method must be gateway | identity | both", code: "VALIDATION_ERROR" }); return;
+  }
+
+  const current = resolveSessionConfig(app);
+  const merged = { ...current, ...(session_config ?? {}) };
+
+  if (merged.ua_enforce !== undefined && !["off", "flag", "enforce"].includes(merged.ua_enforce)) {
+    res.status(400).json({ error: "ua_enforce must be off | flag | enforce", code: "VALIDATION_ERROR" }); return;
+  }
+  merged.ttl_idle_min = Math.max(5, Math.min(Number(merged.ttl_idle_min) || 30, 1440));
+  merged.max_age_min = Math.max(15, Math.min(Number(merged.max_age_min) || 480, 10080));
+  merged.max_sessions_per_user = Math.max(1, Math.min(Number(merged.max_sessions_per_user) || 5, 20));
+
+  if (merged.cookie_name !== undefined && merged.cookie_name !== "") {
+    const err = validateCookieName(db, appId, merged.cookie_name);
+    if (err) { res.status(400).json({ error: err, code: "INVALID_COOKIE_NAME" }); return; }
+  }
+
+  const updated = appRepo.update(db, appId, {
+    ...(auth_mode !== undefined ? { auth_mode } : {}),
+    ...(session_method !== undefined ? { session_method } : {}),
+    session_config: merged,
+  } as any);
+  refreshApp(appId);
+  writeHistory(appId, "modified", `Runtime authentication updated (mode: ${updated?.auth_mode})`, req);
+  res.json({
+    auth_mode: updated?.auth_mode,
+    session_method: updated?.session_method,
+    session_config: updated?.session_config,
+    effective_cookie_name: sessionCookieName(app as any),
+    dashboard_cookie_name: config.cookies.name,
+  });
+});
+
+// ── GET /apps/:id/sessions — active sessions (admin view) ─────────────────────
+
+router.get("/:id/sessions", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const sessions = appSessionRepo.listActiveForApp(db, appId);
+  res.json({ count: sessions.length, results: sessions });
+});
+
+// ── DELETE /apps/:id/sessions/:sessionId — admin revoke ───────────────────────
+
+router.delete("/:id/sessions/:sessionId", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const sessionId = param(param(req.params["sessionId"]));
+  const row = appSessionRepo.findById(db, sessionId);
+  if (!row || row.app_id !== appId) { res.status(404).json({ error: "Session not found", code: "NOT_FOUND" }); return; }
+  appSessionRepo.revoke(db, sessionId);
+  res.json({ success: true });
+});
+
+// ── App users (gateway auth directory — per app, disjoint from dashboard users)
+
+router.get("/:id/users", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const users = appUserRepo.listByApp(db, appId);
+  res.json({ count: users.length, results: users });
+});
+
+router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const { username, email, password, sub, display_name } = req.body ?? {};
+  if (!username || !email || !password || !sub) {
+    res.status(400).json({ error: "username, email, password and sub are required", code: "VALIDATION_ERROR" }); return;
+  }
+  if (String(password).length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters", code: "WEAK_PASSWORD" }); return;
+  }
+  try {
+    const user = await appUserRepo.create(db, { app_id: appId, username, email, password, sub, display_name });
+    res.status(201).json(user);
+  } catch (err: any) {
+    if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "A user with this username or email already exists for this app", code: "DUPLICATE_APP_USER" }); return; }
+    res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
+  }
+});
+
+router.put("/:id/users/:userId", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const users = appUserRepo.listByApp(db, appId);
+  if (!users.find(u => u.id === userId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const { display_name, email, sub, is_active } = req.body ?? {};
+  try {
+    if (display_name !== undefined || email !== undefined || sub !== undefined) {
+      appUserRepo.update(db, userId, { display_name, email, sub });
+    }
+    if (is_active !== undefined) appUserRepo.setActive(db, userId, Boolean(is_active));
+    res.json(appUserRepo.listByApp(db, appId).find(u => u.id === userId));
+  } catch (err: any) {
+    if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "Email already in use for this app", code: "DUPLICATE_APP_USER" }); return; }
+    res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
+  }
+});
+
+router.put("/:id/users/:userId/password", requirePermission("manage:apps"), async (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  if (!appUserRepo.listByApp(db, appId).find(u => u.id === userId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const { password } = req.body ?? {};
+  if (!password || String(password).length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters", code: "WEAK_PASSWORD" }); return;
+  }
+  await appUserRepo.setPassword(db, userId, password);
+  // Security: password reset kills every active session for this user on this app
+  appSessionRepo.revokeAllForAppUser(db, appId, appUserRepo.listByApp(db, appId).find(u => u.id === userId)!.sub);
+  res.json({ success: true });
+});
+
+router.delete("/:id/users/:userId", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const user = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!user) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  appSessionRepo.revokeAllForAppUser(db, appId, user.sub);
+  appUserRepo.delete(db, userId);
+  res.json({ success: true });
 });
 
 // ── GET /apps/:id/export ───────────────────────────────────────────────────────

@@ -256,6 +256,18 @@ export interface BotLimits {
   topic_blocklist?: string[];
   fallback_message?: string;
   max_response_words?: number;
+  scope_guard?: ScopeGuardConfig;
+}
+
+export interface ScopeGuardConfig {
+  /** Disabled by default — upstream is the real authority on data access */
+  enabled: boolean;
+  /** Tool argument names treated as user identifiers (case-insensitive) */
+  id_arg_names: string[];
+  /** Optional JS regex — any arg value matching this is treated as a user ID */
+  id_value_pattern?: string;
+  /** Message returned to the LLM when a scope violation is detected */
+  deny_message?: string;
 }
 
 export interface AppPermission { read: boolean; write: boolean; }

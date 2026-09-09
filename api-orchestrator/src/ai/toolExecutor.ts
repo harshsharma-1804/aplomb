@@ -3,7 +3,7 @@ import { appRepo } from "../db/repos/appRepo.js";
 import { endpointRepo } from "../db/repos/endpointRepo.js";
 import { scriptRepo } from "../db/repos/scriptRepo.js";
 import { findToolForBot, type ToolDef } from "./toolRegistry.js";
-import type { AppPermissionsMap } from "../db/repos/aiBotRepo.js";
+import type { AppPermissionsMap, ScopeGuardConfig } from "../db/repos/aiBotRepo.js";
 import { aiToolCallRepo } from "../db/repos/aiToolCallRepo.js";
 import { validateInput } from "../runtime/inputValidator.js";
 import { applyTransform } from "../runtime/transform.js";
@@ -31,6 +31,7 @@ export interface ToolExecutionContext {
   botName: string;
   userId: string;
   appPermissions: AppPermissionsMap;
+  scopeGuard?: ScopeGuardConfig;
 }
 
 export interface ToolExecutionResult {
@@ -40,17 +41,27 @@ export interface ToolExecutionResult {
   outcome: "ok" | "tool_error" | "scope_violation" | "denied";
 }
 
-// Argument keys that reference an end-user identifier
-const USER_ID_KEYS = new Set(["memberid", "user_id", "member_id", "userid", "id"]);
-const USER_ID_VALUE_PATTERN = /^(MED|USR|MBR)[-_]?\w+/i;
+/**
+ * User scope guard — configured per bot from the dashboard (Limits → User Scope Guard).
+ * Disabled by default: the upstream API is the real authority on data access.
+ * Enable + configure when you want a pre-upstream audit trail of cross-user attempts.
+ */
+function checkUserScope(args: Record<string, unknown>, userId: string, guard: ScopeGuardConfig | undefined): string | null {
+  if (!guard?.enabled) return null;
 
-function checkUserScope(_tool: ToolDef, args: Record<string, unknown>, userId: string): string | null {
+  const idArgNames = new Set((guard.id_arg_names ?? []).map(s => s.toLowerCase()));
+  let pattern: RegExp | null = null;
+  if (guard.id_value_pattern) {
+    try { pattern = new RegExp(guard.id_value_pattern, "i"); } catch { /* invalid regex — skip pattern matching */ }
+  }
+
   for (const [k, v] of Object.entries(args)) {
     if (typeof v !== "string" || !v) continue;
     const key = k.toLowerCase();
-    const looksLikeUserId = USER_ID_KEYS.has(key) || (key === "id" && USER_ID_VALUE_PATTERN.test(v));
+    const looksLikeUserId = idArgNames.has(key) || (pattern !== null && pattern.test(v));
     if (looksLikeUserId && v !== userId) {
-      return `Argument '${k}' references user '${v}' but this session is bound to user '${userId}' — access denied`;
+      return guard.deny_message
+        ?? `Argument '${k}' references a different user — access denied`;
     }
   }
   return null;
@@ -70,8 +81,8 @@ export async function executeTool(
     return { ok: false, error: `Unknown tool '${toolName}' or its app is not assigned to this bot`, outcome: "denied" };
   }
 
-  // ── User-scope guard ─────────────────────────────────────────────────────────
-  const scopeViolation = checkUserScope(tool, rawArgs, ctx.userId);
+  // ── User-scope guard (configurable from dashboard, disabled by default) ──────
+  const scopeViolation = checkUserScope(rawArgs, ctx.userId, ctx.scopeGuard);
   if (scopeViolation) {
     aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "scope_violation", detail: scopeViolation, latency_ms: Date.now() - started });
     return { ok: false, error: scopeViolation, outcome: "scope_violation" };

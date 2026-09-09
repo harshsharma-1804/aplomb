@@ -44,7 +44,7 @@ function ok(id: any, result: any): JsonRpcResponse {
 
 export async function handleMcpRequest(
   body: JsonRpcRequest,
-  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap }
+  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap; scopeGuard?: import("../db/repos/aiBotRepo.js").ScopeGuardConfig }
 ): Promise<JsonRpcResponse> {
   const id = body.id ?? null;
 
@@ -89,7 +89,7 @@ export async function handleMcpRequest(
         return err(id, -32602, "params._meta.orchestrator_user_id is required — bind the end user the same way /__ai/chat does", { code: "USER_CONTEXT_REQUIRED" });
       }
 
-      const exec = await executeTool(name, args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions });
+      const exec = await executeTool(name, args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions, scopeGuard: bot.scopeGuard });
 
       // MCP tool result content format
       return ok(id, {

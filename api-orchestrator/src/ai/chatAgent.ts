@@ -208,7 +208,7 @@ export async function runChatAgent(
 
     for (const tc of response.tool_calls) {
       toolCallsMade++;
-      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions });
+      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions, scopeGuard: limits.scope_guard });
       llmMessages.push({
         role: "tool",
         tool_call_id: tc.id,

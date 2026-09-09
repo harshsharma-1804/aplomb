@@ -1,6 +1,7 @@
 import { useState } from "react";
+// ScopeArgNameInput also uses useState — same import
 import { api } from "../../../api/client";
-import type { AiBot, BotLimits } from "../../../api/types";
+import type { AiBot, BotLimits, ScopeGuardConfig } from "../../../api/types";
 import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
 
 interface Props { bot: AiBot; onUpdated: (b: AiBot) => void; readonly: boolean; }
@@ -152,6 +153,100 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
           )}
         </div>
       </Card>
+
+      {/* ── User Scope Guard ─────────────────────────────────────────────── */}
+      <Card>
+        <SectionHead title="User Scope Guard" action={<SaveBtn />} />
+        <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+          <strong>Disabled by default</strong> — the upstream API is the real authority on data access (it will reject unauthorised requests regardless). Enable this if you want the orchestrator to also pre-block cross-user tool calls and log them as <code>scope_violation</code> in the audit trail.
+        </div>
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          <ToggleField
+            label="Enable user scope guard"
+            value={!!limits.scope_guard?.enabled}
+            onChange={v => setL("scope_guard", { ...(limits.scope_guard ?? { id_arg_names: [] }), enabled: v })}
+            readonly={readonly}
+          />
+          {limits.scope_guard?.enabled && (
+            <>
+              {/* ID arg names */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 6 }}>
+                  User ID argument names
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>— tool argument names that carry a user identifier (case-insensitive)</span>
+                </div>
+                {!readonly && (
+                  <ScopeArgNameInput
+                    current={limits.scope_guard.id_arg_names ?? []}
+                    onChange={names => setL("scope_guard", { ...limits.scope_guard!, id_arg_names: names })}
+                  />
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                  {(limits.scope_guard.id_arg_names ?? []).length === 0 && (
+                    <span style={{ fontSize: 12, color: C.muted }}>No names configured — guard will not match any argument by name.</span>
+                  )}
+                  {(limits.scope_guard.id_arg_names ?? []).map((name, i) => (
+                    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.primary + "12", border: `1px solid ${C.primary}40`, borderRadius: 99, padding: "2px 10px", fontSize: 12, fontWeight: 600, color: C.primary }}>
+                      {name}
+                      {!readonly && (
+                        <button onClick={() => setL("scope_guard", { ...limits.scope_guard!, id_arg_names: (limits.scope_guard!.id_arg_names ?? []).filter((_, j) => j !== i) })}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* ID value pattern */}
+              <Field
+                label="User ID value pattern (regex, optional)"
+                hint="Any tool argument whose value matches this regex is treated as a user ID, regardless of the argument name. Leave blank to rely on argument names only. Example: ^CUST-\d+ for retail."
+              >
+                <input
+                  style={{ ...inputStyle, fontFamily: "monospace" }}
+                  value={limits.scope_guard.id_value_pattern ?? ""}
+                  onChange={e => setL("scope_guard", { ...limits.scope_guard!, id_value_pattern: e.target.value || undefined })}
+                  placeholder="e.g. ^(MED|USR|EMP)[-_]?\w+"
+                  disabled={readonly}
+                />
+                {limits.scope_guard.id_value_pattern && (() => {
+                  try { new RegExp(limits.scope_guard.id_value_pattern!); return null; }
+                  catch { return <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ Invalid regex pattern</div>; }
+                })()}
+              </Field>
+
+              {/* Deny message */}
+              <Field label="Access denied message" hint="Returned to the LLM when a scope violation is detected. The LLM will relay this to the user.">
+                <textarea
+                  style={{ ...inputStyle, resize: "vertical", minHeight: 52 }}
+                  value={limits.scope_guard.deny_message ?? ""}
+                  onChange={e => setL("scope_guard", { ...limits.scope_guard!, deny_message: e.target.value || undefined })}
+                  placeholder="Access denied — you can only access your own account data."
+                  disabled={readonly}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ScopeArgNameInput({ current, onChange }: { current: string[]; onChange: (v: string[]) => void }) {
+  const [val, setVal] = useState("");
+  function add() {
+    const t = val.trim();
+    if (!t || current.includes(t)) return;
+    onChange([...current, t]);
+    setVal("");
+  }
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      <input style={{ ...inputStyle, flex: 1 }} value={val} onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+        placeholder="e.g. memberId, userId, customerId" />
+      <Btn onClick={add} disabled={!val.trim()}>+ Add</Btn>
     </div>
   );
 }

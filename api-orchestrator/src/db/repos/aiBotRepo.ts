@@ -18,11 +18,22 @@ export interface AppPermission {
 /** Map of app_id → permissions. Replaces / extends allowed_app_ids. */
 export type AppPermissionsMap = Record<string, AppPermission>;
 
+export interface ScopeGuardConfig {
+  /** When false (default) the upstream is the authority — no pre-upstream blocking. */
+  enabled: boolean;
+  /** Tool argument names treated as user identifiers (case-insensitive). */
+  id_arg_names: string[];
+  /** Optional JS regex — any arg value matching this is also treated as a user ID. */
+  id_value_pattern?: string;
+  /** Message returned to the LLM when a scope violation is detected. */
+  deny_message?: string;
+}
+
 export interface BotLimits {
   max_tool_calls?: number;
   max_history_messages?: number;
   timeout_ms?: number;
-  // Scope enforcement
+  // Scope enforcement (intent classification)
   scope_enforcement?: boolean;
   scope_description?: string;
   out_of_scope_message?: string;
@@ -33,6 +44,8 @@ export interface BotLimits {
   topic_blocklist?: string[];
   fallback_message?: string;
   max_response_words?: number;
+  // User scope guard (configurable, disabled by default — upstream is the real gate)
+  scope_guard?: ScopeGuardConfig;
 }
 
 export type SerializedBot = {

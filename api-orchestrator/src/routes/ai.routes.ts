@@ -93,7 +93,7 @@ aiMcpRouter.post("/mcp", requireBotKey, async (req, res) => {
 
   const bot = (req as any).aiBot;
   try {
-    const response = await handleMcpRequest(body, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, appPermissions: bot.app_permissions ?? {} });
+    const response = await handleMcpRequest(body, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, appPermissions: bot.app_permissions ?? {}, scopeGuard: bot.limits?.scope_guard });
     // Notifications (no id) get 202 with no body per MCP streamable HTTP
     if (body.id === undefined || body.id === null) {
       res.status(202).end();

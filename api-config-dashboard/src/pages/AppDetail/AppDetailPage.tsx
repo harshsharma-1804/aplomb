@@ -12,6 +12,8 @@ import { MappingTab } from "./tabs/MappingTab";
 import { TestTab } from "./tabs/TestTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { ScriptsTab } from "./tabs/ScriptsTab";
+import { UsersTab } from "./tabs/UsersTab";
+import { SessionsTab } from "./tabs/SessionsTab";
 import { ExportAppModal } from "./ExportAppModal";
 
 const TABS = [
@@ -32,7 +34,7 @@ export function AppDetailPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [activeTab, setActiveTab] = useState("response-schema");
-  const [topTab, setTopTab] = useState<"endpoints" | "scripts" | "settings">("endpoints");
+  const [topTab, setTopTab] = useState<"endpoints" | "users" | "sessions" | "scripts" | "settings">("endpoints");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddEndpoint, setShowAddEndpoint] = useState(false);
@@ -160,7 +162,7 @@ export function AppDetailPage() {
 
       {/* ── Top-level tabs: Endpoints | Settings ───────────────────────── */}
       <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, flexShrink: 0 }}>
-        {([{ key: "endpoints", label: "Endpoints" }, { key: "scripts", label: "Scripts" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
+        {([{ key: "endpoints", label: "Endpoints" }, { key: "users", label: "Users" }, { key: "sessions", label: "Sessions" }, { key: "scripts", label: "Scripts" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
           <button key={t.key} onClick={() => setTopTab(t.key)} style={{
             padding: "8px 16px", background: "none", border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 600,
@@ -170,6 +172,20 @@ export function AppDetailPage() {
           }}>{t.label}</button>
         ))}
       </div>
+
+      {/* ── Users tab (gateway-auth app users) ─────────────────────────── */}
+      {topTab === "users" && (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <UsersTab appId={appId!} app={app} />
+        </div>
+      )}
+
+      {/* ── Sessions tab (active devices + revoke) ─────────────────────── */}
+      {topTab === "sessions" && (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <SessionsTab appId={appId!} />
+        </div>
+      )}
 
       {/* ── Scripts tab ────────────────────────────────────────────────── */}
       {topTab === "scripts" && (

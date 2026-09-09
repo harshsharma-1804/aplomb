@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 import { join } from "path";
 import { config } from "./config/appConfig.js";
-import { initDb, closeDb } from "./db/client.js";
+import { initDb, closeDb, getDb } from "./db/client.js";
 import { initAppCache, stopAppCachePolling, getAppByPath } from "./cache/appCache.js";
 import { initProviderCache, stopProviderCachePolling } from "./cache/providerCache.js";
 import { initAllowlistCache, stopAllowlistCachePolling } from "./cache/allowlistCache.js";

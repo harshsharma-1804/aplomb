@@ -7,6 +7,7 @@ import { IdentityProvidersTab } from "./tabs/IdentityProvidersTab";
 import { SecretsTab } from "./tabs/SecretsTab";
 import { UsersTab } from "./tabs/UsersTab";
 import { AllowedOriginsTab } from "./tabs/AllowedOriginsTab";
+import { AiTab } from "./tabs/AiTab";
 
 const TABS = [
   { key: "organization",       label: "Organization",        icon: "🏢", adminOnly: false },
@@ -14,6 +15,7 @@ const TABS = [
   { key: "allowed-origins",    label: "Allowed Origins",     icon: "🔗", adminOnly: true  },
   { key: "identity-providers", label: "Identity Providers",  icon: "🔑", adminOnly: true  },
   { key: "secrets",            label: "Secrets",             icon: "🔒", adminOnly: true  },
+  { key: "ai",                 label: "AI & MCP",            icon: "🤖", adminOnly: true  },
   { key: "users",              label: "Users",               icon: "👤", adminOnly: true  },
 ];
 
@@ -24,17 +26,17 @@ export function SettingsPage() {
   const visibleTabs = TABS.filter(t => !t.adminOnly || can("manage:users"));
 
   return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ marginBottom: 20, flexShrink: 0 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Tenant Settings</h1>
         <p style={{ margin: "2px 0 0", color: C.muted, fontSize: 13 }}>
           Manage your organization, allowed upstream hosts, identity providers, secrets, and users.
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gridTemplateRows: "minmax(0, 1fr)", gap: 20, flex: 1, minHeight: 0 }}>
         {/* Left panel — tabs */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden" }}>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflowY: "auto", minHeight: 0 }}>
           {visibleTabs.map(tab => (
             <button
               key={tab.key}
@@ -57,13 +59,14 @@ export function SettingsPage() {
           ))}
         </div>
 
-        {/* Right panel — content */}
-        <div>
+        {/* Right panel — content (scrolls independently as content grows) */}
+        <div style={{ overflowY: "auto", minHeight: 0 }}>
           {activeTab === "organization"       && <OrganizationTab />}
           {activeTab === "host-allowlist"     && <HostAllowlistTab />}
           {activeTab === "allowed-origins"    && <AllowedOriginsTab />}
           {activeTab === "identity-providers" && <IdentityProvidersTab />}
           {activeTab === "secrets"            && <SecretsTab />}
+          {activeTab === "ai"                 && <AiTab />}
           {activeTab === "users"              && <UsersTab />}
         </div>
       </div>

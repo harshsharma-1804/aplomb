@@ -9,6 +9,7 @@ import { versionHistoryRepo } from "../../db/repos/versionHistoryRepo.js";
 import { requirePermission } from "../../auth/rbac.js";
 import { refreshApp } from "../../cache/appCache.js";
 import { compileTypeScript } from "../../runtime/scriptRunner.js";
+import { refreshToolRegistry } from "../../ai/toolRegistry.js";
 
 const router = Router();
 
@@ -34,6 +35,7 @@ router.post("/", requirePermission("manage:apps"), (req, res) => {
   try {
     const app = appRepo.create(getDb(), { ...req.body, created_by: req.dashboardUser?.id });
     refreshApp(app.id);
+    refreshToolRegistry();
     writeHistory(app.id, "created", `App created: ${app.name}`, req);
     res.status(201).json(app);
   } catch (err: any) {
@@ -56,6 +58,7 @@ router.put("/:id", requirePermission("manage:apps"), (req, res) => {
     const app = appRepo.update(db, param(param(req.params["id"])), req.body);
     if (!app) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
     refreshApp(app.id);
+    refreshToolRegistry();
     const desc = before.base_path !== app.base_path
       ? `App base_path changed: ${before.base_path} → ${app.base_path}`
       : `App settings updated: ${app.name}`;
@@ -74,6 +77,7 @@ router.delete("/:id", requirePermission("manage:apps"), (req, res) => {
   scriptRepo.deleteByAppId(db, id);
   versionHistoryRepo.deleteByAppId(db, id);
   appRepo.delete(db, id);
+  refreshToolRegistry();
   res.json({ success: true });
 });
 

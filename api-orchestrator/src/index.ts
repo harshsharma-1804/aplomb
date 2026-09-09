@@ -11,9 +11,10 @@ import { initAppCache, stopAppCachePolling, getAppByPath } from "./cache/appCach
 import { initProviderCache, stopProviderCachePolling } from "./cache/providerCache.js";
 import { initAllowlistCache, stopAllowlistCachePolling } from "./cache/allowlistCache.js";
 import { initCorsCache, isRuntimeOriginAllowed, stopCorsCachePolling } from "./cache/corsCache.js";
+import { initToolRegistry } from "./ai/toolRegistry.js";
 import { warmJwksCache } from "./auth/oidcValidate.js";
 import { initLogger } from "./runtime/logger.js";
-import { bootstrapOrganization, bootstrapAdmin } from "./db/bootstrap.js";
+import { bootstrapOrganization, bootstrapAdmin, bootstrapBuiltinAiProvider } from "./db/bootstrap.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import rootRouter from "./routes/index.route.js";
 
@@ -71,6 +72,12 @@ function runtimeCorsGuard(req: Request, res: Response, next: NextFunction) {
   const p = req.path;
   if (p.startsWith("/__config") || p.startsWith("/auth") || p.startsWith("/__health")) {
     return next();
+  }
+  // In unified mode, same-origin requests (dashboard SPA assets, page routes)
+  // have their Origin == Host — skip CORS entirely, they need no CORS headers.
+  if (config.dashboard.distPath) {
+    const origin = req.headers["origin"];
+    if (!origin || new URL(origin).host === req.headers["host"]) return next();
   }
   return runtimeCors(req, res, next);
 }
@@ -131,10 +138,12 @@ async function start(): Promise<void> {
   await initDb();
   await bootstrapOrganization();
   await bootstrapAdmin();
+  bootstrapBuiltinAiProvider();
   initAppCache();
   initProviderCache();
   initAllowlistCache();
   initCorsCache();
+  initToolRegistry();   // AI/MCP tool catalog from AI-exposed apps (no-op when AI_ENABLED=false)
   warmJwksCache();
   initLogger();
 

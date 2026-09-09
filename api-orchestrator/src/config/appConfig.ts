@@ -102,6 +102,24 @@ export const config = {
     distPath: optional("DASHBOARD_DIST", ""),
   },
 
+  ai: {
+    // Master feature flag — /__ai and /mcp return 404 when false (default).
+    enabled: optional("AI_ENABLED", "false") === "true",
+    // Agent runaway guard — max LLM↔tool round-trips per chat request.
+    maxIterations: optionalNumber("AI_AGENT_MAX_ITERATIONS", 6),
+    // Per-LLM-call timeout in ms.
+    llmTimeoutMs: optionalNumber("AI_LLM_TIMEOUT_MS", 60_000),
+    // Built-in lightweight model (FunctionGemma 270M via Ollama).
+    // Seeded as a provider on first boot when enabled.
+    // The orchestrator starts independently of Ollama — unreachable Ollama returns AI_PROVIDER_ERROR.
+    builtinProvider: {
+      enabled:  optional("AI_BUILTIN_PROVIDER_ENABLED", "true") === "true",
+      baseUrl:  optional("AI_BUILTIN_PROVIDER_URL",   "http://host.docker.internal:11434/v1"),
+      model:    optional("AI_BUILTIN_PROVIDER_MODEL", "functiongemma"),
+      name:     "FunctionGemma (built-in)",
+    },
+  },
+
   telemetry: {
     // TTL for request_logs time-series collection in seconds (default 30 days)
     logRetentionSeconds: optionalNumber("LOG_RETENTION_SECONDS", 30 * 24 * 60 * 60),

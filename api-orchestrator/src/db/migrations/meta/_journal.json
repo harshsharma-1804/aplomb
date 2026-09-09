@@ -15,6 +15,48 @@
       "when": 1788526531443,
       "tag": "0001_add_folder_and_cors_origins",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788526531444,
+      "tag": "0002_ai_layer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788526531445,
+      "tag": "0003_ai_bot_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788526531446,
+      "tag": "0004_ai_provider_secret_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788526531447,
+      "tag": "0005_drop_embedded_provider_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788526531448,
+      "tag": "0006_bot_rules_limits_persona",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788526531449,
+      "tag": "0007_bot_app_permissions",
+      "breakpoints": true
     }
   ]
 }

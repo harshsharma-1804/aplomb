@@ -3,11 +3,14 @@ import { useSession } from "./auth/SessionContext";
 import { LoginPage } from "./pages/Login/LoginPage";
 import { AppsPage } from "./pages/Apps/AppsPage";
 import { AppDetailPage } from "./pages/AppDetail/AppDetailPage";
+import { BotsPage } from "./pages/Bots/BotsPage";
+import { BotDetailPage } from "./pages/BotDetail/BotDetailPage";
 import { SettingsPage } from "./pages/Settings/SettingsPage";
 import { C } from "./components";
 
 const NAV = [
   { to: "/apps",     label: "App Registry" },
+  { to: "/bots",     label: "Bot Registry"  },
   { to: "/settings", label: "⚙ Tenant Settings" },
 ];
 
@@ -39,6 +42,8 @@ function Shell() {
             <Route path="/" element={<Navigate to="/apps" replace />} />
             <Route path="/apps" element={<AppsPage />} />
             <Route path="/apps/:appId/*" element={<AppDetailPage />} />
+            <Route path="/bots" element={<BotsPage />} />
+            <Route path="/bots/:botId" element={<BotDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/:tab" element={<SettingsPage />} />
           </Routes>

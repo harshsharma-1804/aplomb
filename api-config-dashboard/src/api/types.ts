@@ -36,6 +36,8 @@ export interface App {
   allowed_provider_ids: string[];
   /** When false the runtime skips OIDC validation — dev/demo only */
   auth_required: boolean;
+  /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
+  ai_expose: boolean;
   /** Environment this app belongs to — shown in UI and X-Orchestrator-Mode header */
   mode: "dev" | "qa" | "staging" | "prod";
   /** App-scoped environment variables — use {{KEY}} in upstream URLs and header values */
@@ -234,6 +236,84 @@ export interface HostAllowlistEntry {
   hostname: string;
   description: string;
   is_wildcard: boolean;
+  created_at: string;
+}
+
+// ── AI / Bots ─────────────────────────────────────────────────────────────────
+
+export interface BotLimits {
+  max_tool_calls?: number;
+  max_history_messages?: number;
+  timeout_ms?: number;
+  // Scope enforcement
+  scope_enforcement?: boolean;
+  scope_description?: string;
+  scope_classification_prompt?: string;
+  out_of_scope_message?: string;
+  scope_context_messages?: number;
+  // Hard behaviour controls
+  tool_only_mode?: boolean;
+  tool_only_refusal?: string;
+  topic_blocklist?: string[];
+  fallback_message?: string;
+  max_response_words?: number;
+  scope_guard?: ScopeGuardConfig;
+}
+
+export interface ScopeGuardConfig {
+  /** Disabled by default — upstream is the real authority on data access */
+  enabled: boolean;
+  /** Tool argument names treated as user identifiers (case-insensitive) */
+  id_arg_names: string[];
+  /** Optional JS regex — any arg value matching this is treated as a user ID */
+  id_value_pattern?: string;
+  /** Message returned to the LLM when a scope violation is detected */
+  deny_message?: string;
+}
+
+export interface AppPermission { read: boolean; write: boolean; }
+export type AppPermissionsMap = Record<string, AppPermission>;
+
+export interface AiBot {
+  _id: string;
+  id: string;
+  name: string;
+  is_active: boolean;
+  allowed_app_ids: string[];
+  allowed_provider_ids: string[];
+  app_permissions: AppPermissionsMap;
+  rules: string[];
+  persona: string;
+  limits: BotLimits;
+  last_used_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface AiProvider {
+  _id: string;
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  secret_id: string | null;
+  secret_name: string | null;
+  /** true when secret_id is null — local/open models (Ollama, llama.cpp) that need no API key */
+  no_auth: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AiToolCall {
+  _id: string;
+  bot_id: string | null;
+  bot_name: string;
+  user_id: string;
+  tool_name: string;
+  tool_args: Record<string, unknown>;
+  outcome: "ok" | "tool_error" | "scope_violation" | "denied";
+  detail: string | null;
+  latency_ms: number;
   created_at: string;
 }
 

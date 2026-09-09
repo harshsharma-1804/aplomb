@@ -12,6 +12,8 @@ import secretsRouter from "./admin/secrets.routes.js";
 import hostAllowlistRouter from "./admin/hostAllowlist.routes.js";
 import organizationRouter from "./admin/organization.routes.js";
 import corsOriginsRouter from "./admin/corsOrigins.routes.js";
+import aiAdminRouter from "./admin/ai.routes.js";
+import { aiChatRouter, aiMcpRouter } from "./ai.routes.js";
 
 const root = Router();
 
@@ -30,8 +32,15 @@ configRouter.use("/admin/secrets", secretsRouter);
 configRouter.use("/admin/host-allowlist", hostAllowlistRouter);
 configRouter.use("/admin/organization", organizationRouter);
 configRouter.use("/admin/cors-origins", corsOriginsRouter);
+configRouter.use("/admin/ai", aiAdminRouter);
 
 root.use("/__config", configRouter);
+
+// AI zone — mounted BEFORE the runtime router (which catches every path).
+// Feature-flagged internally by AI_ENABLED (404 when off).
+root.use("/__ai", aiChatRouter);
+root.use(aiMcpRouter);
+
 root.use("/", runtimeRoutes);
 
 export default root;

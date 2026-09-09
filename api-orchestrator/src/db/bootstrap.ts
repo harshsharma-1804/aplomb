@@ -2,6 +2,7 @@ import { getDb } from "./client.js";
 import { organizationRepo } from "./repos/organizationRepo.js";
 import { userRepo } from "./repos/userRepo.js";
 import { hostAllowlistRepo } from "./repos/hostAllowlistRepo.js";
+import { aiProviderRepo } from "./repos/aiProviderRepo.js";
 import { config } from "../config/appConfig.js";
 import { hash as argon2Hash } from "@node-rs/argon2";
 
@@ -32,6 +33,26 @@ export async function bootstrapOrganization(): Promise<void> {
     }
     console.log(`[bootstrap] Seeded ${envHosts.length} host allowlist entries from env var`);
   }
+}
+
+export function bootstrapBuiltinAiProvider(): void {
+  if (!config.ai.builtinProvider.enabled) return;
+  const db = getDb();
+  const bp = config.ai.builtinProvider;
+
+  // Idempotent — skip if already seeded (check by name)
+  const existing = aiProviderRepo.listSafe(db).find(p => p.name === bp.name);
+  if (existing) return;
+
+  aiProviderRepo.create(db, {
+    name:       bp.name,
+    base_url:   bp.baseUrl,
+    model:      bp.model,
+    secret_id:  null,   // local model — no API key
+    is_active:  true,
+    created_by: "system",
+  });
+  console.log(`[bootstrap] Built-in AI provider seeded: ${bp.name} @ ${bp.baseUrl} (model: ${bp.model})`);
 }
 
 export async function bootstrapAdmin(): Promise<void> {

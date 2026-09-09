@@ -21,6 +21,7 @@ export function SettingsTab({ app, appId, onAppUpdated, onDeleteApp, onCloneApp 
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <GeneralSection    app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <AuthSection       app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
+      <AiExposeSection   app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <EnvSection        app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <QuickActionsSection app={app} appId={appId} onSaved={onAppUpdated} onDelete={onDeleteApp} onClone={onCloneApp} readonly={readonly} />
     </div>
@@ -211,6 +212,60 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
 }
 
 // ── Section 3: Environment Variables ─────────────────────────────────────────
+
+function AiExposeSection({ app, appId, onSaved, readonly }: { app: App; appId: string; onSaved: (a: App) => void; readonly: boolean }) {
+  const [aiExpose, setAiExpose] = useState(app.ai_expose === true);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState("");
+
+  useEffect(() => { setAiExpose(app.ai_expose === true); }, [app.ai_expose]);
+
+  async function save(next: boolean) {
+    setAiExpose(next);
+    setSaving(true); setError("");
+    try {
+      const updated = await api.put<App>(`/__config/apps/${appId}`, { ai_expose: next });
+      onSaved(updated);
+    } catch (e) {
+      setError(String(e));
+      setAiExpose(app.ai_expose === true);
+    }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <Card>
+      <SectionHead title="AI Agent / MCP Exposure" />
+      <div style={{ padding: 16 }}>
+        {error && <ErrorBanner message={error} />}
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: readonly ? "default" : "pointer" }}>
+          <input
+            type="checkbox"
+            checked={aiExpose}
+            onChange={e => !readonly && save(e.target.checked)}
+            disabled={readonly || saving}
+            style={{ marginTop: 2, width: 15, height: 15, accentColor: C.primary }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>
+              Expose this app's endpoints to the AI agent and MCP {saving && <span style={{ color: C.muted }}>— saving…</span>}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              When enabled, every active endpoint becomes a tool that the AI chat agent (and external MCP clients) can discover and call.
+              Calls run through the full runtime pipeline and are scoped to the end user bound to each chat.
+            </div>
+          </div>
+        </label>
+        {aiExpose && (
+          <div style={{ marginTop: 10, padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
+            🤖 This app is AI-exposed. Assign it to bots in the <strong>Bot Registry → Bindings tab</strong>.
+            AI-initiated calls skip runtime OIDC — the bot key + bound user id (scope-enforced) replace per-user tokens. Normal traffic still enforces OIDC.
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 function EnvSection({ app, appId, onSaved, readonly }: { app: App; appId: string; onSaved: (a: App) => void; readonly: boolean }) {
   const [vars, setVars]       = useState<AppEnvVar[]>(app.app_env ?? []);
@@ -433,3 +488,4 @@ function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly 
 function ErrorBanner({ message }: { message: string }) {
   return <div style={{ background: "#fff5f5", border: `1px solid #dc354530`, borderRadius: C.radius, padding: "10px 14px", color: "#dc3545", fontSize: 13, marginBottom: 12 }}>{message}</div>;
 }
+

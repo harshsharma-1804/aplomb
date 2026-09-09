@@ -120,7 +120,7 @@ async function classifyIntent(
 export async function runChatAgent(
   history: BotChatMessage[],
   userId: string,
-  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap; rules: string[]; persona: string; limits: import("../db/repos/aiBotRepo.js").BotLimits }
+  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap; rules: string[]; persona: string; limits: import("../db/repos/aiBotRepo.js").BotLimits; session?: { appId: string; sub: string } }
 ): Promise<ChatAgentResult> {
   const db = getDb();
 
@@ -211,7 +211,7 @@ export async function runChatAgent(
 
     for (const tc of response.tool_calls) {
       toolCallsMade++;
-      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions, scopeGuard: limits.scope_guard });
+      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions, scopeGuard: limits.scope_guard, session: bot.session });
       llmMessages.push({
         role: "tool",
         tool_call_id: tc.id,

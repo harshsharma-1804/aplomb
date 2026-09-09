@@ -33,6 +33,8 @@ export interface BotLimits {
   max_tool_calls?: number;
   max_history_messages?: number;
   timeout_ms?: number;
+  // Abuse protection — max /__ai/chat + /mcp requests per minute (0/absent = unlimited)
+  rate_limit_per_min?: number;
   // Scope enforcement (intent classification)
   scope_enforcement?: boolean;
   scope_description?: string;
@@ -220,6 +222,7 @@ export const aiBotRepo = {
     if (merged.timeout_ms            != null) merged.timeout_ms            = Math.max(5000, Math.min(merged.timeout_ms, 120_000));
     if (merged.max_response_words    != null) merged.max_response_words    = Math.max(10, Math.min(merged.max_response_words, 2000));
     if (merged.scope_context_messages != null) merged.scope_context_messages = Math.max(1, Math.min(merged.scope_context_messages, 10));
+    if (merged.rate_limit_per_min    != null) merged.rate_limit_per_min    = Math.max(0, Math.min(merged.rate_limit_per_min, 600));
     db.update(ai_bots).set({ limits: JSON.stringify(merged) }).where(eq(ai_bots.id, id)).run();
     return this.findById(db, id);
   },

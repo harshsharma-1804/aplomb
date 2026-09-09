@@ -62,7 +62,7 @@ aiChatRouter.post("/chat", requireBotKey, async (req, res) => {
   const bot = (req as any).aiBot;
 
   try {
-    const result = await runChatAgent(payload.messages, payload.user.id, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, allowedAppIds: bot.allowed_app_ids });
+    const result = await runChatAgent(payload.messages, payload.user.id, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, allowedAppIds: bot.allowed_app_ids, rules: bot.rules ?? [], persona: bot.persona ?? '', limits: bot.limits ?? {} });
     res.json(result);
   } catch (e: any) {
     if (e.code === "AI_NOT_CONFIGURED") {

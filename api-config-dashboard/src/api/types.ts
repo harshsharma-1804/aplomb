@@ -239,6 +239,54 @@ export interface HostAllowlistEntry {
   created_at: string;
 }
 
+// ── AI / Bots ─────────────────────────────────────────────────────────────────
+
+export interface BotLimits {
+  max_tool_calls?: number;
+  max_history_messages?: number;
+  timeout_ms?: number;
+}
+
+export interface AiBot {
+  _id: string;
+  id: string;
+  name: string;
+  is_active: boolean;
+  allowed_app_ids: string[];
+  allowed_provider_ids: string[];
+  rules: string[];
+  persona: string;
+  limits: BotLimits;
+  last_used_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface AiProvider {
+  _id: string;
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  secret_id: string | null;
+  secret_name: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AiToolCall {
+  _id: string;
+  bot_id: string | null;
+  bot_name: string;
+  user_id: string;
+  tool_name: string;
+  tool_args: Record<string, unknown>;
+  outcome: "ok" | "tool_error" | "scope_violation" | "denied";
+  detail: string | null;
+  latency_ms: number;
+  created_at: string;
+}
+
 // ── App Export / Import ───────────────────────────────────────────────────────
 
 export type ExportEnvMode = "none" | "keys" | "values";

@@ -1,78 +1,46 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confirm, Badge, Modal, C } from "../../../components";
+import type { AiProvider, AiToolCall } from "../../../api/types";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confirm, Badge, C } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
-
-interface AiProvider {
-  _id: string; name: string; base_url: string; model: string;
-  secret_id: string | null; secret_name: string | null;
-  is_active: boolean; created_at: string;
-}
 
 interface VaultSecret { _id: string; name: string; }
 
-interface AiBot {
-  _id: string; name: string; is_active: boolean;
-  allowed_app_ids: string[];
-  allowed_provider_ids: string[];
-  last_used_at: string | null; created_at: string;
-}
-
-interface AppOption { _id: string; name: string; base_path: string; ai_expose: boolean; status: string; }
-
-interface ToolCall {
-  _id: string; bot_name: string; user_id: string; tool_name: string;
-  outcome: string; detail: string | null; latency_ms: number; created_at: string;
-}
+const OUTCOME_COLOR: Record<string, string> = {
+  ok: "#166534", tool_error: "#92400e", scope_violation: "#b91c1c", denied: "#b91c1c",
+};
 
 export function AiTab() {
   const { can } = useSession();
+  const navigate = useNavigate();
   const editable = can("manage:providers");
 
-  // ── Providers ──────────────────────────────────────────────────────────────
-  const [providers, setProviders] = useState<AiProvider[]>([]);
-  const [showProviderForm, setShowProviderForm] = useState(false);
-  const [pName, setPName] = useState("");
-  const [pUrl, setPUrl] = useState("");
-  const [pModel, setPModel] = useState("");
-  const [pSecretId, setPSecretId] = useState("");
+  const [providers, setProviders]     = useState<AiProvider[]>([]);
   const [vaultSecrets, setVaultSecrets] = useState<VaultSecret[]>([]);
-  const [pError, setPError] = useState("");
-  const [pSaving, setPSaving] = useState(false);
+  const [calls, setCalls]             = useState<AiToolCall[]>([]);
+  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [pName, setPName]             = useState("");
+  const [pUrl, setPUrl]               = useState("");
+  const [pModel, setPModel]           = useState("");
+  const [pSecretId, setPSecretId]     = useState("");
+  const [pError, setPError]           = useState("");
+  const [pSaving, setPSaving]         = useState(false);
   const [providerDelete, setProviderDelete] = useState<AiProvider | null>(null);
-
-  // ── Bots ───────────────────────────────────────────────────────────────────
-  const [bots, setBots] = useState<AiBot[]>([]);
-  const [showBotForm, setShowBotForm] = useState(false);
-  const [bName, setBName] = useState("");
-  const [bError, setBError] = useState("");
-  const [bSaving, setBSaving] = useState(false);
-  const [botDelete, setBotDelete] = useState<AiBot | null>(null);
-  const [newKey, setNewKey] = useState<{ name: string; key: string } | null>(null);
-  const [editBot, setEditBot] = useState<AiBot | null>(null);
-  const [appOptions, setAppOptions] = useState<AppOption[]>([]);
-
-  // ── Tool call audit ────────────────────────────────────────────────────────
-  const [calls, setCalls] = useState<ToolCall[]>([]);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState("");
 
   async function load() {
     setLoading(true);
     try {
-      const [p, b, c, a, v] = await Promise.all([
+      const [p, v, c] = await Promise.all([
         api.get<{ results: AiProvider[] }>("/__config/admin/ai/providers"),
-        api.get<{ results: AiBot[] }>("/__config/admin/ai/bots"),
-        api.get<{ results: ToolCall[] }>("/__config/admin/ai/tool-calls?limit=25"),
-        api.get<{ results: AppOption[] }>("/__config/apps"),
         api.get<{ results: VaultSecret[] }>("/__config/admin/secrets"),
+        api.get<{ results: AiToolCall[] }>("/__config/admin/ai/tool-calls?limit=25"),
       ]);
       setProviders(p.results);
-      setBots(b.results);
-      setCalls(c.results);
-      setAppOptions(a.results);
       setVaultSecrets(v.results);
+      setCalls(c.results);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }
@@ -83,61 +51,37 @@ export function AiTab() {
     e.preventDefault();
     setPSaving(true); setPError("");
     try {
-      await api.post("/__config/admin/ai/providers", {
-        name: pName, base_url: pUrl, model: pModel, secret_id: pSecretId,
-      });
+      await api.post("/__config/admin/ai/providers", { name: pName, base_url: pUrl, model: pModel, secret_id: pSecretId });
       setPName(""); setPUrl(""); setPModel(""); setPSecretId(""); setShowProviderForm(false);
       load();
     } catch (err) { setPError(String(err)); }
     finally { setPSaving(false); }
   }
 
-  async function addBot(e: React.FormEvent) {
-    e.preventDefault();
-    setBSaving(true); setBError("");
-    try {
-      const d = await api.post<AiBot & { api_key: string }>("/__config/admin/ai/bots", { name: bName });
-      setNewKey({ name: d.name, key: d.api_key });
-      setBName(""); setShowBotForm(false);
-      load();
-    } catch (err) { setBError(String(err)); }
-    finally { setBSaving(false); }
-  }
-
-  function openBotEditor(bot: AiBot) {
-    setEditBot(bot);
-  }
-
-  async function saveBindings(botId: string, appIds: string[], providerIds: string[]) {
-    await api.put(`/__config/admin/ai/bots/${botId}`, { allowed_app_ids: appIds, allowed_provider_ids: providerIds });
-    setEditBot(null);
-    load();
-  }
-
-  async function toggleBot(bot: AiBot) {
-    try {
-      await api.put(`/__config/admin/ai/bots/${bot._id}`, { is_active: !bot.is_active });
-      load();
-    } catch (e) { alert(String(e)); }
-  }
-
-  const outcomeColor: Record<string, string> = {
-    ok: "#166534", tool_error: "#92400e", scope_violation: "#b91c1c", denied: "#b91c1c",
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {error && <ErrorBanner message={error} />}
 
-      {/* ── Providers ─────────────────────────────────────────────────────── */}
+      {/* Bot Registry shortcut */}
+      <Card>
+        <SectionHead
+          title="Bot Registry"
+          action={<Btn size="sm" onClick={() => navigate("/bots")}>Open Bot Registry →</Btn>}
+        />
+        <div style={{ padding: "12px 16px", fontSize: 13, color: C.muted }}>
+          Bots are managed in the <strong>Bot Registry</strong> — register bots, configure rules, guardrails, bindings, limits and view per-bot audit trails there.
+        </div>
+      </Card>
+
+      {/* LLM Providers */}
       <Card>
         <SectionHead
           title={`LLM Providers (${providers.length})`}
           action={editable ? <Btn size="sm" onClick={() => setShowProviderForm(s => !s)}>{showProviderForm ? "Cancel" : "+ Add Provider"}</Btn> : undefined}
         />
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "#f0f7ff", fontSize: 12, color: "#1e40af" }}>
-          OpenAI-compatible endpoint (OpenAI, Azure, OpenRouter, Ollama, vLLM…).
-          The <strong>active provider</strong> powers the AI chat agent and MCP tools. API keys are encrypted at rest.
+          OpenAI-compatible endpoints (OpenAI, Azure, OpenRouter, Ollama, vLLM…). API keys are stored as vault references — never as plain text.
+          Assign providers to bots in the Bot Registry → Bindings tab.
         </div>
 
         {showProviderForm && (
@@ -147,20 +91,13 @@ export function AiTab() {
               <Field label="Name"><input style={inputStyle} value={pName} onChange={e => setPName(e.target.value)} placeholder="openai-prod" required /></Field>
               <Field label="Model"><input style={inputStyle} value={pModel} onChange={e => setPModel(e.target.value)} placeholder="gpt-4o-mini" required /></Field>
             </div>
-            <Field label="Base URL" hint="OpenAI-compatible chat/completions root, e.g. https://api.openai.com/v1">
+            <Field label="Base URL" hint="OpenAI-compatible root, e.g. https://api.openai.com/v1">
               <input style={inputStyle} value={pUrl} onChange={e => setPUrl(e.target.value)} placeholder="https://api.openai.com/v1" required />
             </Field>
-            <Field label="API Key (from vault)" hint="Keys are never entered or stored as plain values — pick a secret from Admin → Secrets; rotate it there and providers pick it up automatically">
-              <select
-                style={{ ...inputStyle, cursor: "pointer" }}
-                value={pSecretId}
-                onChange={e => setPSecretId(e.target.value)}
-                required
-              >
+            <Field label="API Key (from vault)" hint="Keys are never entered as plain text — pick a secret from Admin → Secrets; rotate it there and providers pick it up automatically">
+              <select style={{ ...inputStyle, cursor: "pointer" }} value={pSecretId} onChange={e => setPSecretId(e.target.value)} required>
                 <option value="">{vaultSecrets.length === 0 ? "No secrets in vault — create one in Admin → Secrets first" : "Select a secret…"}</option>
-                {vaultSecrets.map(v => (
-                  <option key={v._id} value={v._id}>{v.name}</option>
-                ))}
+                {vaultSecrets.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
               </select>
             </Field>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
@@ -189,98 +126,30 @@ export function AiTab() {
         )}
       </Card>
 
-      {/* ── Bots ──────────────────────────────────────────────────────────── */}
+      {/* Global tool-call audit (last 25) */}
       <Card>
-        <SectionHead
-          title={`AI Bots (${bots.length})`}
-          action={editable ? <Btn size="sm" onClick={() => setShowBotForm(s => !s)}>{showBotForm ? "Cancel" : "+ Register Bot"}</Btn> : undefined}
-        />
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "#f0f7ff", fontSize: 12, color: "#1e40af" }}>
-          Chatbots call <code>POST /__ai/chat</code> and <code>POST /mcp</code> with header <code>X-Bot-Key</code>.
-          Each request must bind the end user via <code>user.id</code> — the agent is scoped to that user's data only.
-        </div>
-
-        {showBotForm && (
-          <form onSubmit={addBot} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "#f8f9fa" }}>
-            {bError && <ErrorBanner message={bError} />}
-            <Field label="Bot Name"><input style={inputStyle} value={bName} onChange={e => setBName(e.target.value)} placeholder="member-portal-bot" required autoFocus /></Field>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-              <Btn type="submit" disabled={bSaving}>{bSaving ? "Generating…" : "Register Bot"}</Btn>
-            </div>
-          </form>
-        )}
-
-        {newKey && (
-          <div style={{ margin: "12px 16px", padding: 14, border: "1px solid #86efac", background: "#f0fdf4", borderRadius: C.radius }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#166534", marginBottom: 6 }}>✓ Bot "{newKey.name}" registered — copy the key now, it will not be shown again</div>
-            <code style={{ display: "block", padding: "8px 10px", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 12, wordBreak: "break-all" }}>{newKey.key}</code>
-            <div style={{ marginTop: 8, textAlign: "right" }}>
-              <Btn size="sm" variant="ghost" onClick={() => setNewKey(null)}>Done — I saved it</Btn>
-            </div>
-          </div>
-        )}
-
-        {loading ? <Spinner /> : (
-          <div style={{ padding: "8px 16px" }}>
-            {bots.length === 0 && <div style={{ color: C.muted, fontSize: 13, padding: "8px 0" }}>No bots registered yet.</div>}
-            {bots.map(b => (
-              <div key={b._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
-                    {b.name} {b.is_active ? <Badge text="active" /> : <Badge text="disabled" />}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.muted }}>
-                    {b.allowed_app_ids.length} app{b.allowed_app_ids.length !== 1 ? "s" : ""} · {b.allowed_provider_ids.length} provider{b.allowed_provider_ids.length !== 1 ? "s" : ""} ·
-                    Last used: {b.last_used_at ? new Date(b.last_used_at).toLocaleString() : "never"}
-                  </div>
-                </div>
-                {editable && (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn size="sm" variant="outline" onClick={() => openBotEditor(b)}>Edit</Btn>
-                    <Btn size="sm" variant="outline" onClick={() => toggleBot(b)}>{b.is_active ? "Disable" : "Enable"}</Btn>
-                    <Btn size="sm" variant="danger" onClick={() => setBotDelete(b)}>Delete</Btn>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* ── Tool call audit ───────────────────────────────────────────────── */}
-      <Card>
-        <SectionHead title="Recent AI Tool Calls" action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>} />
+        <SectionHead title="Recent Tool Calls (all bots)" action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>} />
         {loading ? <Spinner /> : (
           <div style={{ padding: "8px 16px" }}>
             {calls.length === 0 && <div style={{ color: C.muted, fontSize: 13, padding: "8px 0" }}>No tool calls yet.</div>}
             {calls.map(c => (
               <div key={c._id} style={{ padding: "7px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontWeight: 700, color: outcomeColor[c.outcome] ?? C.text }}>{c.outcome}</span>
+                  <span style={{ fontWeight: 700, color: OUTCOME_COLOR[c.outcome] ?? C.text }}>{c.outcome}</span>
                   <code>{c.tool_name}</code>
-                  <span style={{ color: C.muted }}>by {c.bot_name || "unknown bot"} · user {c.user_id || "—"} · {c.latency_ms}ms</span>
+                  <span style={{ color: C.muted }}>by {c.bot_name || "unknown"} · user {c.user_id || "—"} · {c.latency_ms}ms</span>
                 </div>
                 {c.detail && <div style={{ color: C.muted, marginTop: 2 }}>{c.detail}</div>}
-                <div style={{ color: C.muted, marginTop: 1 }}>{new Date(c.created_at).toLocaleString()}</div>
+                <div style={{ color: C.muted }}>{new Date(c.created_at).toLocaleString()}</div>
               </div>
             ))}
           </div>
         )}
       </Card>
 
-      {editBot && (
-        <BotBindingsModal
-          bot={editBot}
-          apps={appOptions}
-          providers={providers}
-          onClose={() => setEditBot(null)}
-          onSave={saveBindings}
-        />
-      )}
-
       {providerDelete && (
         <Confirm
-          message={`Delete provider "${providerDelete.name}"? The AI agent and MCP endpoint will stop working until another provider is configured.`}
+          message={`Delete provider "${providerDelete.name}"? Any bot using it will lose its assigned LLM until reassigned.`}
           danger
           onCancel={() => setProviderDelete(null)}
           onConfirm={async () => {
@@ -289,185 +158,6 @@ export function AiTab() {
           }}
         />
       )}
-
-      {botDelete && (
-        <Confirm
-          message={`Delete bot "${botDelete.name}"? Its API key stops working immediately — any chatbot using it will get 401.`}
-          danger
-          onCancel={() => setBotDelete(null)}
-          onConfirm={async () => {
-            try { await api.del(`/__config/admin/ai/bots/${botDelete._id}`); setBotDelete(null); load(); }
-            catch (e) { alert(String(e)); }
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── Bot bindings editor ───────────────────────────────────────────────────────
-
-function BotBindingsModal({ bot, apps, providers, onClose, onSave }: {
-  bot: AiBot;
-  apps: AppOption[];
-  providers: AiProvider[];
-  onClose: () => void;
-  onSave: (botId: string, appIds: string[], providerIds: string[]) => Promise<void>;
-}) {
-  const [appIds, setAppIds] = useState<string[]>(bot.allowed_app_ids ?? []);
-  const [providerIds, setProviderIds] = useState<string[]>(bot.allowed_provider_ids ?? []);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const exposedApps = apps.filter(a => a.ai_expose && a.status === "active");
-  const hiddenExposedCount = apps.filter(a => a.ai_expose && a.status !== "active").length;
-
-  async function submit() {
-    setSaving(true); setError("");
-    try {
-      await onSave(bot._id, appIds, providerIds);
-    } catch (e) {
-      setError(String(e));
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal title={`Configure "${bot.name}"`} onClose={onClose} width={640}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {error && <ErrorBanner message={error} />}
-
-        <div style={{ padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
-          Deny-by-default: this bot can only call the apps and use the providers selected below. Empty lists = no access.
-        </div>
-
-        {/* Allowed apps */}
-        <section>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Allowed Apps
-          </div>
-          <PickerSection
-            placeholder={exposedApps.length === 0 ? "No AI-exposed active apps available" : "+ Add app…"}
-            options={exposedApps
-              .filter(a => !appIds.includes(a._id))
-              .map(a => ({ value: a._id, label: `${a.name} (${a.base_path})` }))}
-            selected={appIds}
-            onAdd={id => setAppIds([...appIds, id])}
-            onRemove={id => setAppIds(appIds.filter(x => x !== id))}
-            emptyText={
-              exposedApps.length === 0
-                ? <>No AI-exposed active apps. Enable "AI Agent / MCP Exposure" on an app first{hiddenExposedCount > 0 ? ` (${hiddenExposedCount} exposed but not active)` : ""}.</>
-                : "No apps assigned — this bot cannot call anything yet."
-            }
-            renderMeta={(id: string) => {
-              const a = apps.find(x => x._id === id);
-              return a ? <code style={{ fontSize: 11, color: C.muted }}>{a.base_path}</code> : null;
-            }}
-          />
-        </section>
-
-        {/* Allowed providers */}
-        <section>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Allowed LLM Providers
-          </div>
-          <PickerSection
-            placeholder={providers.length === 0 ? "No providers configured — add one above first" : "+ Add provider…"}
-            options={providers
-              .filter(p => !providerIds.includes(p._id))
-              .map(p => ({ value: p._id, label: `${p.name} · ${p.model}` }))}
-            selected={providerIds}
-            onAdd={id => setProviderIds([...providerIds, id])}
-            onRemove={id => setProviderIds(providerIds.filter(x => x !== id))}
-            emptyText="No providers assigned — this bot cannot chat yet."
-            renderMeta={(id: string) => {
-              const p = providers.find(x => x._id === id);
-              return p ? <code style={{ fontSize: 11, color: C.muted }}>{p.base_url} · {p.model}</code> : null;
-            }}
-          />
-        </section>
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save Bindings"}</Btn>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Dropdown + selected-items box (add via dropdown, remove via ×) ───────────
-
-function PickerSection({ placeholder, options, selected, onAdd, onRemove, emptyText, renderMeta }: {
-  placeholder: string;
-  options: Array<{ value: string; label: string }>;
-  selected: string[];
-  onAdd: (id: string) => void;
-  onRemove: (id: string) => void;
-  emptyText: React.ReactNode;
-  renderMeta?: (id: string) => React.ReactNode;
-}) {
-  const disabled = options.length === 0;
-
-  return (
-    <div>
-      <select
-        value=""
-        disabled={disabled}
-        onChange={e => { if (e.target.value) onAdd(e.target.value); }}
-        style={{
-          ...inputStyle,
-          marginBottom: 8,
-          color: disabled ? C.muted : C.text,
-          cursor: disabled ? "not-allowed" : "pointer",
-        }}
-      >
-        <option value="">{placeholder}</option>
-        {options.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-
-      <div style={{
-        border: `1px solid ${C.border}`,
-        borderRadius: C.radius,
-        background: C.surface,
-        minHeight: 66,
-        maxHeight: 220,
-        overflowY: "auto",
-        padding: 6,
-      }}>
-        {selected.length === 0 && (
-          <div style={{ padding: "14px 8px", fontSize: 12, color: C.muted, textAlign: "center" }}>{emptyText}</div>
-        )}
-        {selected.map(id => (
-          <div key={id} style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "6px 10px", marginBottom: 4,
-            border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.bg,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-              <span style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {options.find(o => o.value === id)?.label.split(" (")[0] ?? id}
-              </span>
-              {renderMeta?.(id)}
-            </div>
-            <button
-              onClick={() => onRemove(id)}
-              title="Remove"
-              style={{
-                flexShrink: 0, width: 22, height: 22, borderRadius: C.radius,
-                border: `1px solid ${C.border}`, background: C.surface,
-                color: C.muted, fontSize: 13, lineHeight: 1, cursor: "pointer",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = C.danger; (e.currentTarget as HTMLButtonElement).style.borderColor = C.danger; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = C.muted; (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

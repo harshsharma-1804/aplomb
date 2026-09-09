@@ -187,6 +187,10 @@ export const ai_bots = sqliteTable("ai_bots", {
   // Deny-by-default bindings — empty = no access until admin assigns
   allowed_app_ids:      text("allowed_app_ids").notNull().default("[]"),
   allowed_provider_ids: text("allowed_provider_ids").notNull().default("[]"),
+  // Agent behaviour — injected into the system prompt / enforced in the loop
+  rules:         text("rules").notNull().default("[]"),       // JSON string[]
+  limits:        text("limits").notNull().default("{}"),      // JSON { max_tool_calls?, max_history_messages?, timeout_ms? }
+  persona:       text("persona").notNull().default(""),       // free-text custom instructions
   last_used_at:  text("last_used_at"),
   created_by:    text("created_by"),
   created_at:    text("created_at").notNull(),

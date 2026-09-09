@@ -37,10 +37,16 @@ function mapToLlmMessages(history: BotChatMessage[], userId: string): LlmMessage
   }));
 }
 
-function buildSystemPrompt(userId: string): string {
-  return [
-    `You are the API assistant for an organisation's gateway. You help the end user by calling the available API tools.`,
-    ``,
+function buildSystemPrompt(userId: string, persona: string, rules: string[]): string {
+  const lines: string[] = [];
+
+  if (persona?.trim()) {
+    lines.push(persona.trim(), "");
+  } else {
+    lines.push("You are the API assistant for an organisation's gateway. You help the end user by calling the available API tools.", "");
+  }
+
+  lines.push(
     `IMPORTANT — USER SCOPING: you are assisting user/member "${userId}" ONLY.`,
     `Every data request must be scoped to this user. Never request, query, or reference another user's or member's data. The system enforces this: tool calls referencing a different user id are blocked.`,
     ``,
@@ -51,7 +57,18 @@ function buildSystemPrompt(userId: string): string {
     `- Answer in the same language and tone as the user's question.`,
     `- Format answers for a chat interface: use plain text with bullet points or simple tables when listing items. Do not output raw JSON unless the user asks for it.`,
     `- If the question cannot be answered with the available tools, say so clearly and suggest what the user can ask instead.`,
-  ].join("\n");
+  );
+
+  if (rules.length > 0) {
+    lines.push(
+      ``,
+      `BOT-SPECIFIC RULES (HIGHEST PRIORITY — YOU MUST FOLLOW THESE ABOVE ALL OTHER GUIDELINES):`,
+      `These rules are set by the administrator. If a user request violates any rule, politely decline and briefly explain what you can help with instead.`,
+      ...rules.map((r, i) => `${i + 1}. ${r}`),
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function toolsToLlmFormat(allowedAppIds: string[]): LlmToolDef[] {
@@ -68,7 +85,7 @@ function toolsToLlmFormat(allowedAppIds: string[]): LlmToolDef[] {
 export async function runChatAgent(
   history: BotChatMessage[],
   userId: string,
-  bot: { id: string; name: string; allowedProviderIds: string[]; allowedAppIds: string[] }
+  bot: { id: string; name: string; allowedProviderIds: string[]; allowedAppIds: string[]; rules: string[]; persona: string; limits: { max_tool_calls?: number; max_history_messages?: number; timeout_ms?: number } }
 ): Promise<ChatAgentResult> {
   const db = getDb();
 
@@ -83,10 +100,18 @@ export async function runChatAgent(
     );
   }
 
+  const maxIter = bot.limits?.max_tool_calls ?? config.ai.maxIterations;
+  const maxHistory = bot.limits?.max_history_messages;
+
+  // Trim history if max_history_messages is set (keep most recent messages)
+  const trimmedHistory = maxHistory && history.length > maxHistory
+    ? history.slice(history.length - maxHistory)
+    : history;
+
   const tools = toolsToLlmFormat(bot.allowedAppIds);
   const llmMessages: LlmMessage[] = [
-    { role: "system", content: buildSystemPrompt(userId) },
-    ...mapToLlmMessages(history, userId),
+    { role: "system", content: buildSystemPrompt(userId, bot.persona, bot.rules) },
+    ...mapToLlmMessages(trimmedHistory, userId),
   ];
 
   let iterations = 0;
@@ -94,7 +119,7 @@ export async function runChatAgent(
   let warning: string | undefined;
   let finalContent: string | null = null;
 
-  while (iterations < config.ai.maxIterations) {
+  while (iterations < maxIter) {
     iterations++;
 
     const response = await chatCompletion(provider, llmMessages, tools);

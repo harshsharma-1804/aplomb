@@ -257,16 +257,11 @@ function AiExposeSection({ app, appId, onSaved, readonly }: { app: App; appId: s
           </div>
         </label>
         {aiExpose && (
-          <>
-            <div style={{ marginTop: 10, padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
-              🤖 This app is AI-exposed. Registered bots can ask the agent questions that trigger these endpoints. Only enable for apps whose data is safe for conversational access.
-            </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: C.muted }}>
-              ℹ AI-initiated calls skip runtime OIDC by design — the bot's <code>X-Bot-Key</code> plus the bound end-user id (scope-enforced per call) replace per-user tokens. Normal runtime traffic still enforces OIDC.
-            </div>
-          </>
+          <div style={{ marginTop: 10, padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
+            🤖 This app is AI-exposed. Assign it to bots in the <strong>Bot Registry → Bindings tab</strong>.
+            AI-initiated calls skip runtime OIDC — the bot key + bound user id (scope-enforced) replace per-user tokens. Normal traffic still enforces OIDC.
+          </div>
         )}
-        <BotsWithAccess appId={appId} />
       </div>
     </Card>
   );
@@ -494,21 +489,3 @@ function ErrorBanner({ message }: { message: string }) {
   return <div style={{ background: "#fff5f5", border: `1px solid #dc354530`, borderRadius: C.radius, padding: "10px 14px", color: "#dc3545", fontSize: 13, marginBottom: 12 }}>{message}</div>;
 }
 
-
-function BotsWithAccess({ appId }: { appId: string }) {
-  const [bots, setBots] = useState<Array<{ _id: string; name: string; allowed_app_ids: string[] }>>([]);
-
-  useEffect(() => {
-    api.get<{ results: Array<{ _id: string; name: string; allowed_app_ids: string[] }> }>("/__config/admin/ai/bots")
-      .then(d => setBots(d.results.filter(b => (b.allowed_app_ids ?? []).includes(appId))))
-      .catch(() => {});
-  }, [appId]);
-
-  if (bots.length === 0) return null;
-
-  return (
-    <div style={{ marginTop: 10, fontSize: 12, color: C.muted }}>
-      🤖 Bots with access ({bots.length}): {bots.map(b => b.name).join(", ")} — manage assignments in <strong>Settings → AI &amp; MCP</strong>
-    </div>
-  );
-}

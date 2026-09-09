@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { ai_tool_calls } from "../schema.js";
 import type { DrizzleDb } from "./types.js";
@@ -34,15 +34,15 @@ export const aiToolCallRepo = {
     }).run();
   },
 
-  recent(db: DrizzleDb, limit = 100) {
-    return db.select().from(ai_tool_calls)
-      .orderBy(desc(ai_tool_calls.created_at))
-      .limit(limit)
-      .all()
-      .map(r => ({
-        ...r,
-        _id: r.id,
-        tool_args: JSON.parse(r.tool_args ?? "{}"),
-      }));
+  recent(db: DrizzleDb, limit = 100, botId?: string) {
+    const q = db.select().from(ai_tool_calls);
+    const rows = botId
+      ? q.where(eq(ai_tool_calls.bot_id, botId)).orderBy(desc(ai_tool_calls.created_at)).limit(limit).all()
+      : q.orderBy(desc(ai_tool_calls.created_at)).limit(limit).all();
+    return rows.map(r => ({
+      ...r,
+      _id: r.id,
+      tool_args: JSON.parse(r.tool_args ?? "{}"),
+    }));
   },
 };

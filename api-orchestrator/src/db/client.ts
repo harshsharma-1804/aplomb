@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.js";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
+import { fileURLToPath } from "url";
 
 const DB_PATH = process.env["DB_PATH"] ?? "./data/orchestrator.db";
 
@@ -29,7 +30,8 @@ export async function initDb(): Promise<void> {
 
   _db = drizzle(_sqlite, { schema });
 
-  const migrationsFolder = new URL("./migrations", import.meta.url).pathname;
+  // fileURLToPath — .pathname keeps percent-encoding and breaks on paths with spaces
+  const migrationsFolder = fileURLToPath(new URL("./migrations", import.meta.url));
   migrate(_db, { migrationsFolder });
 
   console.log(`[db] SQLite initialised: ${DB_PATH}`);

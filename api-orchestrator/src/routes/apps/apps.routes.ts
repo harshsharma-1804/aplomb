@@ -153,7 +153,7 @@ router.put("/:id/session-auth", requirePermission("manage:apps"), (req, res) => 
     auth_mode: updated?.auth_mode,
     session_method: updated?.session_method,
     session_config: updated?.session_config,
-    effective_cookie_name: sessionCookieName(app as any),
+    effective_cookie_name: sessionCookieName(updated as any),
     dashboard_cookie_name: config.cookies.name,
   });
 });

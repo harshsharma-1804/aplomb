@@ -248,6 +248,7 @@ export interface BotLimits {
   // Scope enforcement
   scope_enforcement?: boolean;
   scope_description?: string;
+  scope_classification_prompt?: string;
   out_of_scope_message?: string;
   scope_context_messages?: number;
   // Hard behaviour controls

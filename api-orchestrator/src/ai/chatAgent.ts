@@ -100,11 +100,11 @@ async function classifyIntent(
   const classifyMessages: LlmMessage[] = [
     {
       role: "system",
-      content: `You are a domain classifier. Answer only YES or NO.\nDomain: ${scopeDescription}`,
+      content: scopeDescription,   // used as the full system prompt (caller provides the rubric)
     },
     {
       role: "user",
-      content: `${contextStr ? `Recent conversation:\n${contextStr}\n\n` : ""}Question: "${userMessage}"\nIs this question within the domain described above? Answer YES or NO only.`,
+      content: `${contextStr ? `Recent conversation:\n${contextStr}\n\n` : ""}User message: "${userMessage}"\nClassify: YES or NO`,
     },
   ];
   try {
@@ -138,11 +138,14 @@ export async function runChatAgent(
 
   // ── Domain scope classification (hard gate, optional) ───────────────────────
   const limits = bot.limits ?? {};
-  if (limits.scope_enforcement && limits.scope_description) {
+  if (limits.scope_enforcement && (limits.scope_description || limits.scope_classification_prompt)) {
     const latestMsg = history[history.length - 1];
     const userQuery = latestMsg?.message ?? "";
     const contextCount = limits.scope_context_messages ?? 4;
-    const inScope = await classifyIntent(userQuery, history.slice(0, -1), limits.scope_description, provider, contextCount);
+    // Use the full classification prompt if provided, otherwise wrap the short description
+    const classifierSystemPrompt = limits.scope_classification_prompt
+      ?? `You are a domain classifier. Answer only YES or NO.\nDomain: ${limits.scope_description}`;
+    const inScope = await classifyIntent(userQuery, history.slice(0, -1), classifierSystemPrompt, provider, contextCount);
     if (!inScope) {
       const refusal = limits.out_of_scope_message ?? "I can only help with questions about the topics available in this application.";
       return {

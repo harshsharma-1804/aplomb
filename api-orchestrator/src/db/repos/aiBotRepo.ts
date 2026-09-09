@@ -36,6 +36,13 @@ export interface BotLimits {
   // Scope enforcement (intent classification)
   scope_enforcement?: boolean;
   scope_description?: string;
+  /**
+   * Optional full classification rubric. When set, replaces the entire
+   * system message of the classification call (must instruct the model
+   * to answer YES or NO). When absent, scope_description is used with
+   * the built-in "Domain: ..." wrapper.
+   */
+  scope_classification_prompt?: string;
   out_of_scope_message?: string;
   scope_context_messages?: number;
   // Hard behaviour controls

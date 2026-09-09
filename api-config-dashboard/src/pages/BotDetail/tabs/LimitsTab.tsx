@@ -108,8 +108,21 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
           <ToggleField label="Enable scope enforcement" value={!!limits.scope_enforcement} onChange={v => setL("scope_enforcement", v)} readonly={readonly} />
           {limits.scope_enforcement && (
             <>
-              <Field label="Domain description" hint="The LLM classifies each question against this. Be specific about what topics are in scope.">
-                <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 72 }} value={limits.scope_description ?? ""} onChange={e => setL("scope_description", e.target.value || undefined)} placeholder="This bot helps members with health insurance — policies, claims, benefits, deductibles, coverage and account details." disabled={readonly} />
+              <Field label="Domain description" hint="Short summary used when no full classification prompt is set (2–4 sentences). Wrapped automatically as: 'Domain: …'">
+                <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={limits.scope_description ?? ""} onChange={e => setL("scope_description", e.target.value || undefined)} placeholder="This bot helps members with health insurance — policies, claims, benefits, deductibles, coverage and account details." disabled={readonly} />
+              </Field>
+
+              <Field
+                label="Full classification prompt (optional)"
+                hint="When set, this replaces the entire system message of the classification call. Write your full YES/NO rubric here — rules, examples, categories. The model must return YES (in scope) or NO (out of scope). Takes precedence over the domain description above."
+              >
+                <textarea
+                  style={{ ...inputStyle, resize: "vertical", minHeight: 200, fontFamily: "monospace", fontSize: 12 }}
+                  value={limits.scope_classification_prompt ?? ""}
+                  onChange={e => setL("scope_classification_prompt", e.target.value || undefined)}
+                  placeholder={`You are a domain classifier for a health insurance bot.\nAnswer only YES (in scope) or NO (out of scope).\n\nIN SCOPE examples:\n- What is a deductible?\n- Show my claims\n- What is my policy?\n\nOUT OF SCOPE examples:\n- Who is the prime minister?\n- What is Python?\n\nAnswer YES or NO only.`}
+                  disabled={readonly}
+                />
               </Field>
               <Field label="Out-of-scope message">
                 <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 56 }} value={limits.out_of_scope_message ?? ""} onChange={e => setL("out_of_scope_message", e.target.value || undefined)} placeholder="I can only help with questions about your insurance account." disabled={readonly} />

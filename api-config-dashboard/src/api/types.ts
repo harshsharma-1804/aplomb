@@ -270,6 +270,8 @@ export interface AiProvider {
   model: string;
   secret_id: string | null;
   secret_name: string | null;
+  /** true when secret_id is null — local/open models (Ollama, llama.cpp) that need no API key */
+  no_auth: boolean;
   is_active: boolean;
   created_at: string;
 }

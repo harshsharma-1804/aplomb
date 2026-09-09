@@ -15,15 +15,15 @@ router.get("/providers", requirePermission("manage:providers"), (req, res) => {
 });
 
 router.post("/providers", requirePermission("manage:providers"), (req, res) => {
-  const { name, base_url, model, secret_id, is_active } = req.body ?? {};
+  const { name, base_url, model, secret_id, no_auth, is_active } = req.body ?? {};
   if (!name || !base_url || !model) {
     res.status(400).json({ error: "name, base_url and model are required", code: "VALIDATION_ERROR" }); return;
   }
-  if (!secret_id) {
-    res.status(400).json({ error: "secret_id (vault reference) is required — plain API keys are not accepted", code: "VALIDATION_ERROR" }); return;
+  if (!secret_id && !no_auth) {
+    res.status(400).json({ error: "Provide secret_id (vault reference) or set no_auth: true for local/open models", code: "VALIDATION_ERROR" }); return;
   }
   try {
-    const provider = aiProviderRepo.create(getDb(), { name, base_url, model, secret_id, is_active, created_by: (req as any).dashboardUser?.id });
+    const provider = aiProviderRepo.create(getDb(), { name, base_url, model, secret_id: no_auth ? null : secret_id, is_active, created_by: (req as any).dashboardUser?.id });
     refreshToolRegistry();
     res.status(201).json(provider);
   } catch (e: any) {
@@ -94,9 +94,15 @@ router.put("/bots/:id", requirePermission("manage:providers"), (req, res) => {
         res.status(400).json({ error: `${field} must be an array of strings`, code: "VALIDATION_ERROR" }); return;
       }
     }
-    const updated = aiBotRepo.updateBindings(getDb(), id, { allowed_app_ids, allowed_provider_ids });
-    if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
-    res.json(updated); return;
+    try {
+      const updated = aiBotRepo.updateBindings(getDb(), id, { allowed_app_ids, allowed_provider_ids });
+      if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+      res.json(updated);
+    } catch (e: any) {
+      if (e.code === "APP_ALREADY_ASSIGNED") { res.status(409).json({ error: e.message, code: e.code }); return; }
+      res.status(500).json({ error: e.message ?? "Internal server error", code: "INTERNAL_ERROR" });
+    }
+    return;
   }
 
   // ── rules + persona ───────────────────────────────────────────────────────────

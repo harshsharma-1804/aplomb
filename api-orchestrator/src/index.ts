@@ -14,7 +14,7 @@ import { initCorsCache, isRuntimeOriginAllowed, stopCorsCachePolling } from "./c
 import { initToolRegistry } from "./ai/toolRegistry.js";
 import { warmJwksCache } from "./auth/oidcValidate.js";
 import { initLogger } from "./runtime/logger.js";
-import { bootstrapOrganization, bootstrapAdmin } from "./db/bootstrap.js";
+import { bootstrapOrganization, bootstrapAdmin, bootstrapBuiltinAiProvider } from "./db/bootstrap.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import rootRouter from "./routes/index.route.js";
 
@@ -138,6 +138,7 @@ async function start(): Promise<void> {
   await initDb();
   await bootstrapOrganization();
   await bootstrapAdmin();
+  bootstrapBuiltinAiProvider();
   initAppCache();
   initProviderCache();
   initAllowlistCache();

@@ -10,17 +10,27 @@ export function BindingsTab({ bot, onUpdated, readonly }: Props) {
   const [providerIds, setProviderIds] = useState<string[]>(bot.allowed_provider_ids ?? []);
   const [apps, setApps]               = useState<App[]>([]);
   const [providers, setProviders]     = useState<AiProvider[]>([]);
+  const [allBots, setAllBots]         = useState<AiBot[]>([]);
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState("");
   const [saved, setSaved]             = useState(false);
+
+  // Apps already assigned to other bots (app → bot is 1:1)
+  const takenAppIds = new Set(
+    allBots
+      .filter(b => b._id !== bot._id)
+      .flatMap(b => b.allowed_app_ids)
+  );
 
   useEffect(() => {
     Promise.all([
       api.get<ListResult<App>>("/__config/apps"),
       api.get<{ results: AiProvider[] }>("/__config/admin/ai/providers"),
-    ]).then(([a, p]) => {
+      api.get<{ results: AiBot[] }>("/__config/admin/ai/bots"),
+    ]).then(([a, p, b]) => {
       setApps(a.results.filter(app => app.ai_expose && app.status === "active"));
       setProviders(p.results);
+      setAllBots(b.results);
     }).catch(() => {});
   }, []);
 
@@ -30,7 +40,13 @@ export function BindingsTab({ bot, onUpdated, readonly }: Props) {
       const d = await api.put<AiBot>(`/__config/admin/ai/bots/${bot._id}`, { allowed_app_ids: appIds, allowed_provider_ids: providerIds });
       onUpdated(d);
       setSaved(true);
-    } catch (e) { setError(String(e)); }
+    } catch (e: any) {
+      if (String(e).includes('APP_ALREADY_ASSIGNED') || String(e).includes('already assigned to bot')) {
+        setError(String(e).replace('Error: ', ''));
+      } else {
+        setError(String(e));
+      }
+    }
     finally { setSaving(false); }
   }
 
@@ -51,7 +67,7 @@ export function BindingsTab({ bot, onUpdated, readonly }: Props) {
         <div style={{ padding: 16 }}>
           <PickerSection
             placeholder={apps.length === 0 ? "No AI-exposed active apps — enable 'AI Exposure' on an app first" : "+ Add app…"}
-            options={apps.filter(a => !appIds.includes(a._id)).map(a => ({ value: a._id, label: `${a.name} (${a.base_path})` }))}
+            options={apps.filter(a => !appIds.includes(a._id) && !takenAppIds.has(a._id)).map(a => ({ value: a._id, label: `${a.name} (${a.base_path})` }))}
             selected={appIds}
             onAdd={id => { setAppIds([...appIds, id]); setSaved(false); }}
             onRemove={id => { setAppIds(appIds.filter(x => x !== id)); setSaved(false); }}

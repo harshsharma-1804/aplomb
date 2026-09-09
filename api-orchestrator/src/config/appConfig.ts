@@ -109,6 +109,15 @@ export const config = {
     maxIterations: optionalNumber("AI_AGENT_MAX_ITERATIONS", 6),
     // Per-LLM-call timeout in ms.
     llmTimeoutMs: optionalNumber("AI_LLM_TIMEOUT_MS", 60_000),
+    // Built-in lightweight model (FunctionGemma 270M via Ollama).
+    // Seeded as a provider on first boot when enabled.
+    // The orchestrator starts independently of Ollama — unreachable Ollama returns AI_PROVIDER_ERROR.
+    builtinProvider: {
+      enabled:  optional("AI_BUILTIN_PROVIDER_ENABLED", "true") === "true",
+      baseUrl:  optional("AI_BUILTIN_PROVIDER_URL",   "http://host.docker.internal:11434/v1"),
+      model:    optional("AI_BUILTIN_PROVIDER_MODEL", "functiongemma"),
+      name:     "FunctionGemma (built-in)",
+    },
   },
 
   telemetry: {

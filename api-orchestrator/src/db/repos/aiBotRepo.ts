@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, ne } from "drizzle-orm";
 import { randomUUID, randomBytes } from "crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
 import { ai_bots, ai_providers } from "../schema.js";
@@ -71,6 +71,23 @@ export const aiBotRepo = {
   },
 
   updateBindings(db: DrizzleDb, id: string, input: { allowed_app_ids?: string[]; allowed_provider_ids?: string[] }) {
+    // App → Bot uniqueness: each app can only be assigned to one bot.
+    // A bot can still have many apps, but no two bots can share the same app.
+    if (input.allowed_app_ids !== undefined) {
+      const otherBots = db.select().from(ai_bots).where(ne(ai_bots.id, id)).all();
+      for (const appId of input.allowed_app_ids) {
+        const conflict = otherBots.find(b =>
+          (JSON.parse(b.allowed_app_ids ?? "[]") as string[]).includes(appId)
+        );
+        if (conflict) {
+          throw Object.assign(
+            new Error(`App "${appId}" is already assigned to bot "${conflict.name}" — remove it there first`),
+            { code: "APP_ALREADY_ASSIGNED" }
+          );
+        }
+      }
+    }
+
     const patch: Record<string, unknown> = {};
     if (input.allowed_app_ids      !== undefined) patch["allowed_app_ids"]      = JSON.stringify(input.allowed_app_ids);
     if (input.allowed_provider_ids !== undefined) patch["allowed_provider_ids"] = JSON.stringify(input.allowed_provider_ids);

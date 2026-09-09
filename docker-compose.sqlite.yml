@@ -66,6 +66,17 @@ services:
       start_period: 30s
       retries: 6
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    # Pull functiongemma (~301 MB) on first start; cached in ./data/ollama after that.
+    # The orchestrator starts independently — unreachable Ollama returns AI_PROVIDER_ERROR.
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 3 && ollama pull functiongemma && wait"]
+
 volumes: {}
 
 networks:

@@ -24,6 +24,7 @@ export function AiTab() {
   const [pUrl, setPUrl]               = useState("");
   const [pModel, setPModel]           = useState("");
   const [pSecretId, setPSecretId]     = useState("");
+  const [pNoAuth, setPNoAuth]         = useState(false);
   const [pError, setPError]           = useState("");
   const [pSaving, setPSaving]         = useState(false);
   const [providerDelete, setProviderDelete] = useState<AiProvider | null>(null);
@@ -51,8 +52,8 @@ export function AiTab() {
     e.preventDefault();
     setPSaving(true); setPError("");
     try {
-      await api.post("/__config/admin/ai/providers", { name: pName, base_url: pUrl, model: pModel, secret_id: pSecretId });
-      setPName(""); setPUrl(""); setPModel(""); setPSecretId(""); setShowProviderForm(false);
+      await api.post("/__config/admin/ai/providers", { name: pName, base_url: pUrl, model: pModel, ...(pNoAuth ? { no_auth: true } : { secret_id: pSecretId }) });
+      setPName(""); setPUrl(""); setPModel(""); setPSecretId(""); setPNoAuth(false); setShowProviderForm(false);
       load();
     } catch (err) { setPError(String(err)); }
     finally { setPSaving(false); }
@@ -94,12 +95,29 @@ export function AiTab() {
             <Field label="Base URL" hint="OpenAI-compatible root, e.g. https://api.openai.com/v1">
               <input style={inputStyle} value={pUrl} onChange={e => setPUrl(e.target.value)} placeholder="https://api.openai.com/v1" required />
             </Field>
-            <Field label="API Key (from vault)" hint="Keys are never entered as plain text — pick a secret from Admin → Secrets; rotate it there and providers pick it up automatically">
-              <select style={{ ...inputStyle, cursor: "pointer" }} value={pSecretId} onChange={e => setPSecretId(e.target.value)} required>
-                <option value="">{vaultSecrets.length === 0 ? "No secrets in vault — create one in Admin → Secrets first" : "Select a secret…"}</option>
-                {vaultSecrets.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
-              </select>
-            </Field>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              {([["vault", "🔒 Vault secret (requires API key)"], ["local", "🖥 No auth (local / open model)"]] as const).map(([val, label]) => (
+                <button key={val} type="button" onClick={() => setPNoAuth(val === "local")} style={{
+                  flex: 1, padding: "8px 12px", borderRadius: C.radius, cursor: "pointer",
+                  border: `2px solid ${(val === "local") === pNoAuth ? C.primary : C.border}`,
+                  background: (val === "local") === pNoAuth ? C.primary + "10" : C.surface,
+                  fontWeight: 600, fontSize: 12, color: (val === "local") === pNoAuth ? C.primary : C.text,
+                }}>{label}</button>
+              ))}
+            </div>
+            {!pNoAuth && (
+              <Field label="API Key (from vault)" hint="Keys are never entered as plain text — pick a secret from Admin → Secrets; rotate it there and providers pick it up automatically">
+                <select style={{ ...inputStyle, cursor: "pointer" }} value={pSecretId} onChange={e => setPSecretId(e.target.value)} required>
+                  <option value="">{vaultSecrets.length === 0 ? "No secrets in vault — create one in Admin → Secrets first" : "Select a secret…"}</option>
+                  {vaultSecrets.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+                </select>
+              </Field>
+            )}
+            {pNoAuth && (
+              <div style={{ padding: "8px 12px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: C.radius, fontSize: 12, color: "#166534" }}>
+                ✓ No API key required — the orchestrator will call this endpoint without an Authorization header. Suitable for Ollama, llama.cpp, and other local model servers.
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <Btn type="submit" disabled={pSaving}>{pSaving ? "Saving…" : "Add Provider"}</Btn>
             </div>
@@ -116,7 +134,7 @@ export function AiTab() {
                     {p.name} {p.is_active && <Badge text="active" />}
                   </div>
                   <div style={{ fontSize: 12, color: C.muted }}>
-                    {p.base_url} · <code>{p.model}</code> · key: {p.secret_id ? `🔒 vault (${p.secret_name ?? "secret"})` : "⚠ no key assigned"}
+                    {p.base_url} · <code>{p.model}</code> · {p.secret_id ? `🔒 vault (${p.secret_name ?? 'secret'})` : <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #86efac', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>local · no auth</span>}
                   </div>
                 </div>
                 {editable && <Btn size="sm" variant="danger" onClick={() => setProviderDelete(p)}>Delete</Btn>}

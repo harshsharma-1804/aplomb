@@ -26,6 +26,7 @@ function toSafe(db: DrizzleDb, row: typeof ai_providers.$inferSelect) {
     name: row.name, base_url: row.base_url, model: row.model,
     secret_id: row.secret_id ?? null,
     secret_name: secretName,
+    no_auth: !row.secret_id,   // true = local/open model, no API key required
     is_active: Boolean(row.is_active),
     created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at,
   };
@@ -35,8 +36,12 @@ export type CreateAiProviderInput = {
   name: string;
   base_url: string;
   model: string;
-  /** Required — reference to a Secrets-store entry. Keys are never accepted as plain values. */
-  secret_id: string;
+  /**
+   * Vault reference for the API key.
+   * null / undefined = no auth required (local models: Ollama, llama.cpp, etc.)
+   * Plain key values are never accepted.
+   */
+  secret_id?: string | null;
   is_active?: boolean;
   created_by?: string;
 };
@@ -45,7 +50,8 @@ export type UpdateAiProviderInput = Partial<CreateAiProviderInput> & {
   secret_id?: string;
 };
 
-function requireVaultSecret(db: DrizzleDb, secretId: string) {
+function requireVaultSecret(db: DrizzleDb, secretId: string | null | undefined) {
+  if (!secretId) return null;
   const secret = secretRepo.findById(db, secretId);
   if (!secret) throw new Error(`Secret '${secretId}' not found in vault`);
   return secret;
@@ -55,14 +61,14 @@ export const aiProviderRepo = {
   create(db: DrizzleDb, input: CreateAiProviderInput) {
     const id = randomUUID();
     const t = now();
-    const secret = requireVaultSecret(db, input.secret_id);
+    const secret = requireVaultSecret(db, input.secret_id ?? null);
 
     db.insert(ai_providers).values({
       id,
       name:       input.name.trim(),
       base_url:   input.base_url.trim().replace(/\/$/, ""),
       model:      input.model.trim(),
-      secret_id:  secret.id,
+      secret_id:  secret?.id ?? null,
       is_active:  input.is_active ?? true,
       created_by: input.created_by ?? null,
       created_at: t,
@@ -95,7 +101,10 @@ export const aiProviderRepo = {
     if (input.base_url  !== undefined) patch["base_url"]  = input.base_url.trim().replace(/\/$/, "");
     if (input.model     !== undefined) patch["model"]     = input.model.trim();
     if (input.is_active !== undefined) patch["is_active"] = input.is_active;
-    if (input.secret_id !== undefined) patch["secret_id"] = requireVaultSecret(db, input.secret_id).id;
+    if (input.secret_id !== undefined) {
+      const secret = requireVaultSecret(db, input.secret_id);
+      patch["secret_id"] = secret?.id ?? null;
+    }
 
     db.update(ai_providers).set(patch).where(eq(ai_providers.id, id)).run();
     return this.findByIdSafe(db, id);

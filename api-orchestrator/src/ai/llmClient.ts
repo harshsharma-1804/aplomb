@@ -36,14 +36,14 @@ export interface LlmProviderConfig {
 }
 
 /**
- * Resolves the provider API key at call time from the Secrets vault —
- * never stored in memory longer than the request, never logged,
- * never included in LLM messages. Plain-value keys are not supported.
+ * Resolves the provider API key at call time.
+ * - Vault reference (secret_id set) → resolved via the Secrets store
+ * - null secret_id → returns "" (no auth, local/open models like Ollama/llama.cpp)
+ * Key is never logged, never included in LLM messages, exists in memory
+ * only for the duration of the HTTP request.
  */
 export function resolveProviderKey(provider: LlmProviderConfig): string {
-  if (!provider.secret_id) {
-    throw new Error(`Provider '${provider.name}' has no vault secret assigned — assign one in Settings → AI & MCP`);
-  }
+  if (!provider.secret_id) return "";   // local model — no Authorization header needed
   return resolveSecret(provider.secret_id);
 }
 
@@ -69,7 +69,7 @@ export async function chatCompletion(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        ...(apiKey.trim() ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({
         model: provider.model,

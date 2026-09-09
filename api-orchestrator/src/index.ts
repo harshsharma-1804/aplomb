@@ -73,6 +73,12 @@ function runtimeCorsGuard(req: Request, res: Response, next: NextFunction) {
   if (p.startsWith("/__config") || p.startsWith("/auth") || p.startsWith("/__health")) {
     return next();
   }
+  // In unified mode, same-origin requests (dashboard SPA assets, page routes)
+  // have their Origin == Host — skip CORS entirely, they need no CORS headers.
+  if (config.dashboard.distPath) {
+    const origin = req.headers["origin"];
+    if (!origin || new URL(origin).host === req.headers["host"]) return next();
+  }
   return runtimeCors(req, res, next);
 }
 

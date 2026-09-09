@@ -1,5 +1,6 @@
 import { getDb } from "../db/client.js";
 import { getToolsForBot } from "./toolRegistry.js";
+import type { AppPermissionsMap } from "../db/repos/aiBotRepo.js";
 import { aiBotRepo } from "../db/repos/aiBotRepo.js";
 import { executeTool } from "./toolExecutor.js";
 import { chatCompletion, type LlmMessage, type LlmToolDef } from "./llmClient.js";
@@ -27,6 +28,7 @@ export interface ChatAgentResult {
     provider: string;
     model: string;
     warning?: string;
+    classified?: "out_of_scope" | "blocked";
   };
 }
 
@@ -71,8 +73,8 @@ function buildSystemPrompt(userId: string, persona: string, rules: string[]): st
   return lines.join("\n");
 }
 
-function toolsToLlmFormat(allowedAppIds: string[]): LlmToolDef[] {
-  return getToolsForBot(allowedAppIds).map(t => ({
+function toolsToLlmFormat(appPermissions: AppPermissionsMap): LlmToolDef[] {
+  return getToolsForBot(appPermissions).map(t => ({
     type: "function" as const,
     function: {
       name: t.name,
@@ -82,10 +84,43 @@ function toolsToLlmFormat(allowedAppIds: string[]): LlmToolDef[] {
   }));
 }
 
+
+/**
+ * Lightweight domain-scope classifier — asks the same LLM one simple
+ * YES/NO question before the main agent loop. Fails open (ambiguous → YES).
+ */
+async function classifyIntent(
+  userMessage: string,
+  recentMessages: BotChatMessage[],
+  scopeDescription: string,
+  provider: import("../ai/llmClient.js").LlmProviderConfig,
+  contextCount: number
+): Promise<boolean> {
+  const contextStr = recentMessages.slice(-contextCount).map(m => `${m.from}: ${m.message}`).join("\n");
+  const classifyMessages: LlmMessage[] = [
+    {
+      role: "system",
+      content: `You are a domain classifier. Answer only YES or NO.\nDomain: ${scopeDescription}`,
+    },
+    {
+      role: "user",
+      content: `${contextStr ? `Recent conversation:\n${contextStr}\n\n` : ""}Question: "${userMessage}"\nIs this question within the domain described above? Answer YES or NO only.`,
+    },
+  ];
+  try {
+    const resp = await chatCompletion(provider, classifyMessages);
+    const answer = (resp.content ?? "").trim().toUpperCase();
+    if (answer.startsWith("NO")) return false;
+    return true; // fail open: ambiguous or YES → allow
+  } catch {
+    return true; // fail open: classifier error → allow
+  }
+}
+
 export async function runChatAgent(
   history: BotChatMessage[],
   userId: string,
-  bot: { id: string; name: string; allowedProviderIds: string[]; allowedAppIds: string[]; rules: string[]; persona: string; limits: { max_tool_calls?: number; max_history_messages?: number; timeout_ms?: number } }
+  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap; rules: string[]; persona: string; limits: import("../db/repos/aiBotRepo.js").BotLimits }
 ): Promise<ChatAgentResult> {
   const db = getDb();
 
@@ -100,15 +135,46 @@ export async function runChatAgent(
     );
   }
 
-  const maxIter = bot.limits?.max_tool_calls ?? config.ai.maxIterations;
-  const maxHistory = bot.limits?.max_history_messages;
+
+  // ── Domain scope classification (hard gate, optional) ───────────────────────
+  const limits = bot.limits ?? {};
+  if (limits.scope_enforcement && limits.scope_description) {
+    const latestMsg = history[history.length - 1];
+    const userQuery = latestMsg?.message ?? "";
+    const contextCount = limits.scope_context_messages ?? 4;
+    const inScope = await classifyIntent(userQuery, history.slice(0, -1), limits.scope_description, provider, contextCount);
+    if (!inScope) {
+      const refusal = limits.out_of_scope_message ?? "I can only help with questions about the topics available in this application.";
+      return {
+        messages: [...history, { from: "bot", to: "user", message: refusal }],
+        meta: { iterations: 0, tool_calls: 0, provider: provider.name, model: provider.model, classified: "out_of_scope" as const },
+      };
+    }
+  }
+
+
+  // ── Topic blocklist (hard pre-LLM filter) ────────────────────────────────────
+  if (limits.topic_blocklist?.length) {
+    const latestMsg = history[history.length - 1]?.message?.toLowerCase() ?? "";
+    const blocked = limits.topic_blocklist.find(phrase => latestMsg.includes(phrase.toLowerCase()));
+    if (blocked) {
+      const refusal = limits.out_of_scope_message ?? "I can only help with questions about the topics available in this application.";
+      return {
+        messages: [...history, { from: "bot", to: "user", message: refusal }],
+        meta: { iterations: 0, tool_calls: 0, provider: provider.name, model: provider.model, classified: "blocked" as const },
+      };
+    }
+  }
+
+  const maxIter = limits.max_tool_calls ?? config.ai.maxIterations;
+  const maxHistory = limits.max_history_messages;
 
   // Trim history if max_history_messages is set (keep most recent messages)
   const trimmedHistory = maxHistory && history.length > maxHistory
     ? history.slice(history.length - maxHistory)
     : history;
 
-  const tools = toolsToLlmFormat(bot.allowedAppIds);
+  const tools = toolsToLlmFormat(bot.appPermissions);
   const llmMessages: LlmMessage[] = [
     { role: "system", content: buildSystemPrompt(userId, bot.persona, bot.rules) },
     ...mapToLlmMessages(trimmedHistory, userId),
@@ -142,7 +208,7 @@ export async function runChatAgent(
 
     for (const tc of response.tool_calls) {
       toolCallsMade++;
-      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, allowedAppIds: bot.allowedAppIds });
+      const exec = await executeTool(tc.name, tc.args, { botId: bot.id, botName: bot.name, userId, appPermissions: bot.appPermissions });
       llmMessages.push({
         role: "tool",
         tool_call_id: tc.id,
@@ -161,6 +227,22 @@ export async function runChatAgent(
     ]);
     finalContent = response.content;
     warning = "Tool call budget exhausted — response may be incomplete";
+    if (limits.fallback_message) finalContent = limits.fallback_message;
+  }
+
+
+
+  // ── Max response words ───────────────────────────────────────────────────────
+  if (limits.max_response_words && finalContent) {
+    const words = finalContent.split(/\s+/);
+    if (words.length > limits.max_response_words) {
+      finalContent = words.slice(0, limits.max_response_words).join(" ") + "…";
+    }
+  }
+
+  // ── Tool-only mode: discard response if no tool was called ───────────────────
+  if (limits.tool_only_mode && toolCallsMade === 0 && finalContent !== null) {
+    finalContent = limits.tool_only_refusal ?? "I can only answer questions using the available data tools for your account. Please ask about your specific account information.";
   }
 
   const reply: BotChatMessage = {

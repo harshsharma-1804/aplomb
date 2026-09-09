@@ -62,7 +62,7 @@ aiChatRouter.post("/chat", requireBotKey, async (req, res) => {
   const bot = (req as any).aiBot;
 
   try {
-    const result = await runChatAgent(payload.messages, payload.user.id, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, allowedAppIds: bot.allowed_app_ids, rules: bot.rules ?? [], persona: bot.persona ?? '', limits: bot.limits ?? {} });
+    const result = await runChatAgent(payload.messages, payload.user.id, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, appPermissions: bot.app_permissions ?? {}, rules: bot.rules ?? [], persona: bot.persona ?? '', limits: bot.limits ?? {} });
     res.json(result);
   } catch (e: any) {
     if (e.code === "AI_NOT_CONFIGURED") {
@@ -93,7 +93,7 @@ aiMcpRouter.post("/mcp", requireBotKey, async (req, res) => {
 
   const bot = (req as any).aiBot;
   try {
-    const response = await handleMcpRequest(body, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, allowedAppIds: bot.allowed_app_ids });
+    const response = await handleMcpRequest(body, { id: bot.id, name: bot.name, allowedProviderIds: bot.allowed_provider_ids, appPermissions: bot.app_permissions ?? {} });
     // Notifications (no id) get 202 with no body per MCP streamable HTTP
     if (body.id === undefined || body.id === null) {
       res.status(202).end();

@@ -77,7 +77,7 @@ router.post("/bots", requirePermission("manage:providers"), async (req, res) => 
 
 router.put("/bots/:id", requirePermission("manage:providers"), (req, res) => {
   const id = String(req.params["id"]);
-  const { is_active, allowed_app_ids, allowed_provider_ids, rules, persona, limits } = req.body ?? {};
+  const { is_active, allowed_app_ids, allowed_provider_ids, app_permissions, rules, persona, limits } = req.body ?? {};
 
   // ── active toggle ────────────────────────────────────────────────────────────
   if (is_active !== undefined) {
@@ -88,18 +88,30 @@ router.put("/bots/:id", requirePermission("manage:providers"), (req, res) => {
   }
 
   // ── bindings ─────────────────────────────────────────────────────────────────
-  if (allowed_app_ids !== undefined || allowed_provider_ids !== undefined) {
-    for (const [field, val] of [["allowed_app_ids", allowed_app_ids], ["allowed_provider_ids", allowed_provider_ids]] as const) {
-      if (val !== undefined && (!Array.isArray(val) || !val.every(v => typeof v === "string"))) {
-        res.status(400).json({ error: `${field} must be an array of strings`, code: "VALIDATION_ERROR" }); return;
-      }
+  if (app_permissions !== undefined) {
+    if (typeof app_permissions !== "object" || Array.isArray(app_permissions)) {
+      res.status(400).json({ error: "app_permissions must be an object", code: "VALIDATION_ERROR" }); return;
     }
     try {
-      const updated = aiBotRepo.updateBindings(getDb(), id, { allowed_app_ids, allowed_provider_ids });
+      const updated = aiBotRepo.updateAppPermissions(getDb(), id, app_permissions);
       if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
       res.json(updated);
     } catch (e: any) {
       if (e.code === "APP_ALREADY_ASSIGNED") { res.status(409).json({ error: e.message, code: e.code }); return; }
+      res.status(500).json({ error: e.message ?? "Internal server error", code: "INTERNAL_ERROR" });
+    }
+    return;
+  }
+
+  if (allowed_provider_ids !== undefined) {
+    if (!Array.isArray(allowed_provider_ids) || !allowed_provider_ids.every(v => typeof v === "string")) {
+      res.status(400).json({ error: "allowed_provider_ids must be an array of strings", code: "VALIDATION_ERROR" }); return;
+    }
+    try {
+      const updated = aiBotRepo.updateBindings(getDb(), id, { allowed_provider_ids });
+      if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+      res.json(updated);
+    } catch (e: any) {
       res.status(500).json({ error: e.message ?? "Internal server error", code: "INTERNAL_ERROR" });
     }
     return;
@@ -128,7 +140,22 @@ router.put("/bots/:id", requirePermission("manage:providers"), (req, res) => {
     res.json(updated); return;
   }
 
-  res.status(400).json({ error: "Nothing to update — send is_active, allowed_app_ids, allowed_provider_ids, rules, persona or limits", code: "VALIDATION_ERROR" });
+  res.status(400).json({ error: "Nothing to update — send is_active, app_permissions, allowed_provider_ids, rules, persona or limits", code: "VALIDATION_ERROR" });
+});
+
+router.put("/bots/:id/apps/:appId/permissions", requirePermission("manage:providers"), (req, res) => {
+  const { read, write } = req.body ?? {};
+  if (typeof read !== "boolean" || typeof write !== "boolean") {
+    res.status(400).json({ error: "read and write (boolean) are required", code: "VALIDATION_ERROR" }); return;
+  }
+  try {
+    const updated = aiBotRepo.updateOneAppPermission(getDb(), String(req.params["id"]), String(req.params["appId"]), { read, write });
+    if (!updated) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+    res.json(updated);
+  } catch (e: any) {
+    if (e.code === "APP_ALREADY_ASSIGNED") { res.status(409).json({ error: e.message, code: e.code }); return; }
+    res.status(500).json({ error: e.message ?? "Internal server error", code: "INTERNAL_ERROR" });
+  }
 });
 
 router.delete("/bots/:id", requirePermission("manage:providers"), (req, res) => {

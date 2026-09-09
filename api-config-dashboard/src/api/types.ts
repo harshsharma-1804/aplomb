@@ -245,7 +245,21 @@ export interface BotLimits {
   max_tool_calls?: number;
   max_history_messages?: number;
   timeout_ms?: number;
+  // Scope enforcement
+  scope_enforcement?: boolean;
+  scope_description?: string;
+  out_of_scope_message?: string;
+  scope_context_messages?: number;
+  // Hard behaviour controls
+  tool_only_mode?: boolean;
+  tool_only_refusal?: string;
+  topic_blocklist?: string[];
+  fallback_message?: string;
+  max_response_words?: number;
 }
+
+export interface AppPermission { read: boolean; write: boolean; }
+export type AppPermissionsMap = Record<string, AppPermission>;
 
 export interface AiBot {
   _id: string;
@@ -254,6 +268,7 @@ export interface AiBot {
   is_active: boolean;
   allowed_app_ids: string[];
   allowed_provider_ids: string[];
+  app_permissions: AppPermissionsMap;
   rules: string[];
   persona: string;
   limits: BotLimits;

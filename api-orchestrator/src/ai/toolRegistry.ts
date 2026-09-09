@@ -2,6 +2,7 @@ import { getDb } from "../db/client.js";
 import { appRepo } from "../db/repos/appRepo.js";
 import { endpointRepo } from "../db/repos/endpointRepo.js";
 import type { ISchemaField } from "../runtime/inputValidator.js";
+import type { AppPermissionsMap } from "../db/repos/aiBotRepo.js";
 
 // Backend ISchemaField lacks item_type (frontend-only field) — the DB JSON
 // blob may still carry it, so read it defensively here.
@@ -169,14 +170,22 @@ export function getTools(): ToolDef[] {
   return cache;
 }
 
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 /**
- * Per-bot tool catalog — bot's allowed apps ∩ AI-exposed apps.
- * Deny-by-default: a bot with no assigned apps sees no tools.
+ * Per-bot tool catalog filtered by app_permissions (read/write per app).
+ * - read: true  → GET / HEAD tools for that app are visible
+ * - write: true → POST / PUT / PATCH / DELETE tools for that app are visible
+ * Deny-by-default: no permissions = no tools.
  */
-export function getToolsForBot(allowedAppIds: string[]): ToolDef[] {
-  if (!allowedAppIds.length) return [];
-  const allowed = new Set(allowedAppIds);
-  return getTools().filter(t => allowed.has(t._exec.app_id));
+export function getToolsForBot(appPermissions: AppPermissionsMap): ToolDef[] {
+  if (!Object.keys(appPermissions).length) return [];
+  return getTools().filter(t => {
+    const perm = appPermissions[t._exec.app_id];
+    if (!perm) return false;
+    const isWrite = WRITE_METHODS.has(t._exec.method.toUpperCase());
+    return isWrite ? perm.write : perm.read;
+  });
 }
 
 export function findTool(name: string): ToolDef | undefined {
@@ -184,9 +193,9 @@ export function findTool(name: string): ToolDef | undefined {
 }
 
 /**
- * Find a tool for a specific bot — same as findTool but restricted to
- * the bot's allowed apps. Used by tools/call enforcement.
+ * Find a tool for a specific bot — checks app_permissions for the tool's app
+ * AND the HTTP method group (read/write). Used by tools/call enforcement.
  */
-export function findToolForBot(name: string, allowedAppIds: string[]): ToolDef | undefined {
-  return getToolsForBot(allowedAppIds).find(t => t.name === name);
+export function findToolForBot(name: string, appPermissions: AppPermissionsMap): ToolDef | undefined {
+  return getToolsForBot(appPermissions).find(t => t.name === name);
 }

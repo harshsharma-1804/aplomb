@@ -1,7 +1,9 @@
 import { getDb } from "../db/client.js";
 import { appRepo } from "../db/repos/appRepo.js";
 import { endpointRepo } from "../db/repos/endpointRepo.js";
+import { scriptRepo } from "../db/repos/scriptRepo.js";
 import { findToolForBot, type ToolDef } from "./toolRegistry.js";
+import type { AppPermissionsMap } from "../db/repos/aiBotRepo.js";
 import { aiToolCallRepo } from "../db/repos/aiToolCallRepo.js";
 import { validateInput } from "../runtime/inputValidator.js";
 import { applyTransform } from "../runtime/transform.js";
@@ -9,24 +11,26 @@ import { buildBody } from "../runtime/bodyBuilder.js";
 import { callUpstream } from "../runtime/upstream.js";
 import { resolveEnvVars } from "../runtime/router.js";
 import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
+import { buildContext } from "../runtime/ctxBuilder.js";
+import { runScript } from "../runtime/scriptRunner.js";
 
 /**
  * Executes a tool call on behalf of the AI agent.
  *
- * Security layers applied here:
- *   1. Tool must exist in the registry (opt-in exposed endpoints only)
- *   2. User-scope guard — any user-identifier arg must match the authenticated
- *      end user bound to the chat request; mismatches are blocked + audited
- *   3. Input validation against the endpoint's schema
- *   4. Full runtime pipeline: env resolution → allowlist → circuit breaker
- *      + pool → transform (identical to normal traffic)
+ * Security layers:
+ *   1. Tool must exist in registry (opt-in exposed endpoints, permission-filtered)
+ *   2. User-scope guard — user-identifier args must match bound userId
+ *   3. Input validation against endpoint schema
+ *   4. Full runtime pipeline: script dispatch (if script_mode != "none"),
+ *      env resolution, host allowlist, circuit breaker, transform
+ *      — identical behaviour to normal runtime traffic
  */
 
 export interface ToolExecutionContext {
   botId: string;
   botName: string;
   userId: string;
-  allowedAppIds: string[];
+  appPermissions: AppPermissionsMap;
 }
 
 export interface ToolExecutionResult {
@@ -37,10 +41,10 @@ export interface ToolExecutionResult {
 }
 
 // Argument keys that reference an end-user identifier
-const USER_ID_KEYS = new Set(["memberid", "user_id", "member_id", "userid", "memberid", "id"]);
+const USER_ID_KEYS = new Set(["memberid", "user_id", "member_id", "userid", "id"]);
 const USER_ID_VALUE_PATTERN = /^(MED|USR|MBR)[-_]?\w+/i;
 
-function checkUserScope(tool: ToolDef, args: Record<string, unknown>, userId: string): string | null {
+function checkUserScope(_tool: ToolDef, args: Record<string, unknown>, userId: string): string | null {
   for (const [k, v] of Object.entries(args)) {
     if (typeof v !== "string" || !v) continue;
     const key = k.toLowerCase();
@@ -60,13 +64,13 @@ export async function executeTool(
   const db = getDb();
   const started = Date.now();
 
-  const tool = findToolForBot(toolName, ctx.allowedAppIds);
+  const tool = findToolForBot(toolName, ctx.appPermissions);
   if (!tool) {
     aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "denied", detail: "Unknown tool or app not in this bot's assigned list" });
     return { ok: false, error: `Unknown tool '${toolName}' or its app is not assigned to this bot`, outcome: "denied" };
   }
 
-  // ── User-scope guard ────────────────────────────────────────────────────────
+  // ── User-scope guard ─────────────────────────────────────────────────────────
   const scopeViolation = checkUserScope(tool, rawArgs, ctx.userId);
   if (scopeViolation) {
     aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "scope_violation", detail: scopeViolation, latency_ms: Date.now() - started });
@@ -86,13 +90,13 @@ export async function executeTool(
       return { ok: false, error: "Tool's endpoint is inactive", outcome: "tool_error" };
     }
 
-    // ── Split args: path params + query params + body ────────────────────────
+    // ── Split args into path params / query params / body ────────────────────
     const pathParams: Record<string, string> = {};
     const queryParams: Record<string, string> = {};
     const body: Record<string, unknown> = {};
 
-    const pathParamNames = new Set(((ep.path_params ?? []) as any[]).map(p => p.name));
-    const queryParamNames = new Set(((ep.query_params ?? []) as any[]).map(q => q.frontend_param));
+    const pathParamNames = new Set(((ep.path_params ?? []) as any[]).map((p: any) => p.name));
+    const queryParamNames = new Set(((ep.query_params ?? []) as any[]).map((q: any) => q.frontend_param));
 
     for (const [k, v] of Object.entries(rawArgs)) {
       if (pathParamNames.has(k)) pathParams[k] = String(v);
@@ -100,7 +104,7 @@ export async function executeTool(
       else body[k] = v;
     }
 
-    // ── Validate body against input schema (same as normal traffic) ──────────
+    // ── Input validation ─────────────────────────────────────────────────────
     const request = (ep.request ?? {}) as any;
     if (["POST", "PUT", "PATCH"].includes(ep.method) && request.input_schema?.length > 0) {
       const { valid, errors } = validateInput(body, request.input_schema, request.validation);
@@ -111,13 +115,43 @@ export async function executeTool(
       }
     }
 
-    // ── Build upstream request (same pipeline as runtime) ────────────────────
+    const scriptMode = (ep as any).script_mode ?? "none";
+    const scriptFileId = (ep as any).script_file_id ?? null;
+    const scriptLogs: Array<{ level: string; message: string; data?: Record<string, unknown>; ts: string }> = [];
+    const orgId = "";
+
+    // Helper — load and verify a script exists
+    function resolveScript() {
+      if (!scriptFileId) throw Object.assign(new Error("No script file assigned to this endpoint"), { code: "SCRIPT_LOAD_ERROR" });
+      const script = scriptRepo.findById(db, String(scriptFileId));
+      if (!script) throw Object.assign(new Error("Assigned script file not found"), { code: "SCRIPT_LOAD_ERROR" });
+      return script;
+    }
+
+    // ── script_full: entire response from script, no upstream call ───────────
+    if (scriptMode === "script_full") {
+      const scriptCtx = buildContext(app, orgId, body, pathParams, queryParams, null, scriptLogs);
+      const script = resolveScript();
+      const scriptResult = await runScript(script as any, scriptCtx, "script_full");
+      if (!scriptResult || scriptResult.body === undefined) {
+        aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "tool_error", detail: "Script did not return a response", latency_ms: Date.now() - started });
+        return { ok: false, error: "Script did not return a valid response", outcome: "tool_error" };
+      }
+      let transformed: unknown = scriptResult.body;
+      try { transformed = applyTransform(scriptResult.body, (ep.output_schema ?? []) as any, (ep.field_mappings ?? []) as any); } catch { /* keep raw */ }
+      const ok = (scriptResult.status ?? 200) < 400;
+      aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: ok ? "ok" : "tool_error", detail: ok ? undefined : `Script returned ${scriptResult.status}`, latency_ms: Date.now() - started });
+      return ok
+        ? { ok: true, result: transformed, outcome: "ok" }
+        : { ok: false, error: `Script returned ${scriptResult.status}: ${JSON.stringify(transformed).slice(0, 300)}`, outcome: "tool_error" };
+    }
+
+    // ── Build upstream URL + headers ─────────────────────────────────────────
     const urlTemplate = await resolveEnvVars((ep.upstream as any).url ?? "", app);
     const resolvedUrl = urlTemplate.replace(/\{([^}]+)\}/g, (match: string, name: string) => {
       const val = pathParams[name] ?? pathParams[name.toLowerCase()];
       return val !== undefined ? encodeURIComponent(val) : match;
     });
-
     const qs = new URLSearchParams(queryParams).toString();
     const finalUrl = qs ? `${resolvedUrl}?${qs}` : resolvedUrl;
 
@@ -136,15 +170,49 @@ export async function executeTool(
       if (sh.name) headers[sh.name] = await resolveEnvVars(sh.value ?? "", app);
     }
 
+    // ── script_pre / script_pre_post: run pre-hook before upstream ───────────
+    if (scriptMode === "script_pre" || scriptMode === "script_pre_post") {
+      const scriptCtx = buildContext(app, orgId, body, pathParams, queryParams, null, scriptLogs);
+      const script = resolveScript();
+      const earlyReturn = await runScript(script as any, scriptCtx, "script_pre");
+      if (earlyReturn) {
+        let transformed: unknown = earlyReturn.body;
+        try { transformed = applyTransform(earlyReturn.body, (ep.output_schema ?? []) as any, (ep.field_mappings ?? []) as any); } catch { /* keep raw */ }
+        const ok = (earlyReturn.status ?? 200) < 400;
+        aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: ok ? "ok" : "tool_error", latency_ms: Date.now() - started });
+        return ok
+          ? { ok: true, result: transformed, outcome: "ok" }
+          : { ok: false, error: `Pre-hook returned ${earlyReturn.status}`, outcome: "tool_error" };
+      }
+      if (scriptCtx.upstreamOverrides?.url) Object.assign(headers, scriptCtx.upstreamOverrides.headers ?? {});
+    }
+
+    // ── Upstream call ────────────────────────────────────────────────────────
     const result = await callUpstream(ep as any, finalUrl, (ep.upstream as any).method ?? tool._exec.method, headers, upstreamBody, null);
 
     let upstreamJson: unknown;
     try { upstreamJson = JSON.parse(result.body); } catch { upstreamJson = result.body; }
 
+    // ── script_post / script_pre_post: run post-hook on upstream result ──────
+    if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
+      const scriptCtx = buildContext(app, orgId, body, pathParams, queryParams, null, scriptLogs);
+      const script = resolveScript();
+      const upstreamArg = { status: result.status, body: upstreamJson, headers: result.headers ?? {} };
+      const postResult = await runScript(script as any, scriptCtx, scriptMode === "script_post" ? "script_post" : "script_pre_post", upstreamArg);
+      if (postResult) {
+        let transformed: unknown = postResult.body;
+        try { transformed = applyTransform(postResult.body, (ep.output_schema ?? []) as any, (ep.field_mappings ?? []) as any); } catch { /* keep raw */ }
+        const ok = (postResult.status ?? result.status) < 400;
+        aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: ok ? "ok" : "tool_error", latency_ms: Date.now() - started });
+        return ok
+          ? { ok: true, result: transformed, outcome: "ok" }
+          : { ok: false, error: `Post-hook returned ${postResult.status}`, outcome: "tool_error" };
+      }
+    }
+
+    // ── Transform + return ───────────────────────────────────────────────────
     let transformed: unknown = upstreamJson;
-    try {
-      transformed = applyTransform(upstreamJson, (ep.output_schema ?? []) as any, (ep.field_mappings ?? []) as any);
-    } catch { /* keep raw */ }
+    try { transformed = applyTransform(upstreamJson, (ep.output_schema ?? []) as any, (ep.field_mappings ?? []) as any); } catch { /* keep raw */ }
 
     const latency = Date.now() - started;
     const ok = result.status < 400;

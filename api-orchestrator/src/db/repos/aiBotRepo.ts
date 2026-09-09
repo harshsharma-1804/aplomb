@@ -8,16 +8,38 @@ const now = () => new Date().toISOString();
 
 function withId<T extends { id: string }>(row: T) { return { ...row, _id: row.id }; }
 
+// ── Permission types ──────────────────────────────────────────────────────────
+
+export interface AppPermission {
+  read: boolean;
+  write: boolean;
+}
+
+/** Map of app_id → permissions. Replaces / extends allowed_app_ids. */
+export type AppPermissionsMap = Record<string, AppPermission>;
+
 export interface BotLimits {
   max_tool_calls?: number;
   max_history_messages?: number;
   timeout_ms?: number;
+  // Scope enforcement
+  scope_enforcement?: boolean;
+  scope_description?: string;
+  out_of_scope_message?: string;
+  scope_context_messages?: number;
+  // Hard behaviour controls
+  tool_only_mode?: boolean;
+  tool_only_refusal?: string;
+  topic_blocklist?: string[];
+  fallback_message?: string;
+  max_response_words?: number;
 }
 
 export type SerializedBot = {
   id: string; _id: string; name: string; is_active: boolean;
-  allowed_app_ids: string[];
+  allowed_app_ids: string[];          // derived from app_permissions (backward compat)
   allowed_provider_ids: string[];
+  app_permissions: AppPermissionsMap;
   rules: string[];
   limits: BotLimits;
   persona: string;
@@ -26,11 +48,31 @@ export type SerializedBot = {
   created_at: string;
 };
 
+/**
+ * Auto-migrate: if app_permissions is empty but allowed_app_ids has entries,
+ * promote the existing apps to { read: true, write: true }.
+ */
+function parsePermissions(row: typeof ai_bots.$inferSelect): AppPermissionsMap {
+  const perms: AppPermissionsMap = JSON.parse(row.app_permissions ?? "{}");
+  if (Object.keys(perms).length === 0) {
+    const ids: string[] = JSON.parse(row.allowed_app_ids ?? "[]");
+    for (const id of ids) perms[id] = { read: true, write: true };
+  }
+  return perms;
+}
+
 function serialize(row: typeof ai_bots.$inferSelect): SerializedBot {
+  const appPerms = parsePermissions(row);
+  // derive allowed_app_ids: apps where at least one permission is true
+  const allowedAppIds = Object.entries(appPerms)
+    .filter(([, p]) => p.read || p.write)
+    .map(([id]) => id);
+
   return {
     ...row,
     _id: row.id,
-    allowed_app_ids:      JSON.parse(row.allowed_app_ids ?? "[]"),
+    app_permissions:      appPerms,
+    allowed_app_ids:      allowedAppIds,
     allowed_provider_ids: JSON.parse(row.allowed_provider_ids ?? "[]"),
     rules:                JSON.parse(row.rules ?? "[]"),
     limits:               JSON.parse(row.limits ?? "{}"),
@@ -38,8 +80,29 @@ function serialize(row: typeof ai_bots.$inferSelect): SerializedBot {
   };
 }
 
+// ── Uniqueness helper ─────────────────────────────────────────────────────────
+
+function checkAppConflicts(db: DrizzleDb, botId: string, appIds: string[]) {
+  const otherBots = db.select().from(ai_bots).where(ne(ai_bots.id, botId)).all();
+  for (const appId of appIds) {
+    const conflict = otherBots.find(b => {
+      const perms: AppPermissionsMap = JSON.parse(b.app_permissions ?? "{}");
+      if (Object.keys(perms).length) return !!perms[appId];
+      // fall back to legacy allowed_app_ids for bots not yet migrated
+      return (JSON.parse(b.allowed_app_ids ?? "[]") as string[]).includes(appId);
+    });
+    if (conflict) {
+      throw Object.assign(
+        new Error(`App "${appId}" is already assigned to bot "${conflict.name}" — remove it there first`),
+        { code: "APP_ALREADY_ASSIGNED" }
+      );
+    }
+  }
+}
+
+// ── Repo ──────────────────────────────────────────────────────────────────────
+
 export const aiBotRepo = {
-  // Returns the plaintext key ONCE — it is never stored or retrievable afterwards.
   async create(db: DrizzleDb, input: { name: string; created_by?: string }) {
     const id = randomUUID();
     const apiKey = `obk_${randomBytes(24).toString("base64url")}`;
@@ -51,6 +114,7 @@ export const aiBotRepo = {
       is_active:            true,
       allowed_app_ids:      "[]",
       allowed_provider_ids: "[]",
+      app_permissions:      "{}",
       rules:                "[]",
       limits:               "{}",
       persona:              "",
@@ -70,26 +134,39 @@ export const aiBotRepo = {
     return row ? serialize(row) : null;
   },
 
-  updateBindings(db: DrizzleDb, id: string, input: { allowed_app_ids?: string[]; allowed_provider_ids?: string[] }) {
-    // App → Bot uniqueness: each app can only be assigned to one bot.
-    // A bot can still have many apps, but no two bots can share the same app.
-    if (input.allowed_app_ids !== undefined) {
-      const otherBots = db.select().from(ai_bots).where(ne(ai_bots.id, id)).all();
-      for (const appId of input.allowed_app_ids) {
-        const conflict = otherBots.find(b =>
-          (JSON.parse(b.allowed_app_ids ?? "[]") as string[]).includes(appId)
-        );
-        if (conflict) {
-          throw Object.assign(
-            new Error(`App "${appId}" is already assigned to bot "${conflict.name}" — remove it there first`),
-            { code: "APP_ALREADY_ASSIGNED" }
-          );
-        }
-      }
-    }
+  // Update app_permissions map (and keep allowed_app_ids in sync for legacy compat)
+  updateAppPermissions(db: DrizzleDb, botId: string, perms: AppPermissionsMap) {
+    const appIds = Object.entries(perms).filter(([, p]) => p.read || p.write).map(([id]) => id);
+    checkAppConflicts(db, botId, appIds);
+    const allowedAppIds = JSON.stringify(appIds);
+    db.update(ai_bots).set({
+      app_permissions: JSON.stringify(perms),
+      allowed_app_ids: allowedAppIds,
+    }).where(eq(ai_bots.id, botId)).run();
+    return this.findById(db, botId);
+  },
 
+  // Update a single app's permissions without touching others
+  updateOneAppPermission(db: DrizzleDb, botId: string, appId: string, perm: AppPermission) {
+    const bot = db.select().from(ai_bots).where(eq(ai_bots.id, botId)).get();
+    if (!bot) return null;
+    const perms: AppPermissionsMap = parsePermissions(bot);
+    // If adding a new app → check conflict
+    if (!perms[appId]) checkAppConflicts(db, botId, [appId]);
+    if (perm.read || perm.write) {
+      perms[appId] = perm;
+    } else {
+      delete perms[appId];  // neither read nor write = unassign
+    }
+    return this.updateAppPermissions(db, botId, perms);
+  },
+
+  // Legacy bindings update (providers only now; apps go through updateAppPermissions)
+  updateBindings(db: DrizzleDb, id: string, input: { allowed_provider_ids?: string[]; app_permissions?: AppPermissionsMap }) {
+    if (input.app_permissions !== undefined) {
+      return this.updateAppPermissions(db, id, input.app_permissions);
+    }
     const patch: Record<string, unknown> = {};
-    if (input.allowed_app_ids      !== undefined) patch["allowed_app_ids"]      = JSON.stringify(input.allowed_app_ids);
     if (input.allowed_provider_ids !== undefined) patch["allowed_provider_ids"] = JSON.stringify(input.allowed_provider_ids);
     if (!Object.keys(patch).length) return this.findById(db, id);
     db.update(ai_bots).set(patch).where(eq(ai_bots.id, id)).run();
@@ -107,11 +184,18 @@ export const aiBotRepo = {
   },
 
   updateLimits(db: DrizzleDb, id: string, limits: BotLimits) {
-    const clean: BotLimits = {};
-    if (limits.max_tool_calls        != null) clean.max_tool_calls        = Math.max(1, Math.min(limits.max_tool_calls, 20));
-    if (limits.max_history_messages  != null) clean.max_history_messages  = Math.max(1, Math.min(limits.max_history_messages, 100));
-    if (limits.timeout_ms            != null) clean.timeout_ms            = Math.max(5000, Math.min(limits.timeout_ms, 120_000));
-    db.update(ai_bots).set({ limits: JSON.stringify(clean) }).where(eq(ai_bots.id, id)).run();
+    // Existing bots: merge into existing limits blob (preserve other keys)
+    const existing = db.select().from(ai_bots).where(eq(ai_bots.id, id)).get();
+    if (!existing) return null;
+    const current: BotLimits = JSON.parse(existing.limits ?? "{}");
+    const merged: BotLimits = { ...current, ...limits };
+    // Clamp numeric fields
+    if (merged.max_tool_calls        != null) merged.max_tool_calls        = Math.max(1, Math.min(merged.max_tool_calls, 20));
+    if (merged.max_history_messages  != null) merged.max_history_messages  = Math.max(1, Math.min(merged.max_history_messages, 100));
+    if (merged.timeout_ms            != null) merged.timeout_ms            = Math.max(5000, Math.min(merged.timeout_ms, 120_000));
+    if (merged.max_response_words    != null) merged.max_response_words    = Math.max(10, Math.min(merged.max_response_words, 2000));
+    if (merged.scope_context_messages != null) merged.scope_context_messages = Math.max(1, Math.min(merged.scope_context_messages, 10));
+    db.update(ai_bots).set({ limits: JSON.stringify(merged) }).where(eq(ai_bots.id, id)).run();
     return this.findById(db, id);
   },
 
@@ -121,7 +205,6 @@ export const aiBotRepo = {
     return row ? serialize(row) : null;
   },
 
-  // Verifies an X-Bot-Key value; returns the serialized bot or null.
   async verifyKey(db: DrizzleDb, apiKey: string) {
     const bots = db.select().from(ai_bots).where(eq(ai_bots.is_active, true)).all();
     for (const bot of bots) {
@@ -134,7 +217,6 @@ export const aiBotRepo = {
     return null;
   },
 
-  // Resolves the first active provider in the bot's ordered list.
   getActiveProviderFull(db: DrizzleDb, allowedProviderIds: string[]) {
     if (!allowedProviderIds.length) return null;
     const candidates = db.select().from(ai_providers).all()

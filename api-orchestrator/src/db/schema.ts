@@ -187,6 +187,10 @@ export const ai_bots = sqliteTable("ai_bots", {
   // Deny-by-default bindings — empty = no access until admin assigns
   allowed_app_ids:      text("allowed_app_ids").notNull().default("[]"),
   allowed_provider_ids: text("allowed_provider_ids").notNull().default("[]"),
+  // Per-app read/write permissions map: { app_id: { read: bool, write: bool } }
+  // Replaces/extends allowed_app_ids — allowed_app_ids is now derived from this map.
+  // Auto-migrated from allowed_app_ids to { read: true, write: true } for existing bots.
+  app_permissions:      text("app_permissions").notNull().default("{}"),
   // Agent behaviour — injected into the system prompt / enforced in the loop
   rules:         text("rules").notNull().default("[]"),       // JSON string[]
   limits:        text("limits").notNull().default("{}"),      // JSON { max_tool_calls?, max_history_messages?, timeout_ms? }

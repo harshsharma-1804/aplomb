@@ -5,14 +5,14 @@ import type { AiBot } from "../../api/types";
 import { Badge, Btn, Spinner, ErrorBanner, C } from "../../components";
 import { useSession } from "../../auth/SessionContext";
 import { OverviewTab } from "./tabs/OverviewTab";
-import { RulesTab } from "./tabs/RulesTab";
+import { BehaviourTab } from "./tabs/BehaviourTab";
 import { BindingsTab } from "./tabs/BindingsTab";
 import { LimitsTab } from "./tabs/LimitsTab";
 import { AuditTab } from "./tabs/AuditTab";
 
 const TABS = [
   { key: "overview",  label: "Overview"  },
-  { key: "rules",     label: "Rules"     },
+  { key: "rules",     label: "Behaviour" },
   { key: "bindings",  label: "Bindings"  },
   { key: "limits",    label: "Limits"    },
   { key: "audit",     label: "Audit"     },
@@ -80,7 +80,7 @@ export function BotDetailPage() {
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         {tab === "overview"  && <OverviewTab  bot={bot} onUpdated={setBot} readonly={readonly} />}
-        {tab === "rules"     && <RulesTab     bot={bot} onUpdated={setBot} readonly={readonly} />}
+        {tab === "rules"     && <BehaviourTab     bot={bot} onUpdated={setBot} readonly={readonly} />}
         {tab === "bindings"  && <BindingsTab  bot={bot} onUpdated={setBot} readonly={readonly} />}
         {tab === "limits"    && <LimitsTab    bot={bot} onUpdated={setBot} readonly={readonly} />}
         {tab === "audit"     && <AuditTab     bot={bot} />}

@@ -266,9 +266,9 @@ export async function runChatAgent(
   };
 }
 
-export function validateBotPayload(payload: any): { user: { id: string }; messages: BotChatMessage[] } {
+export function validateBotPayload(payload: any): { user?: { id: string }; messages: BotChatMessage[] } {
   if (!payload || !Array.isArray(payload.messages)) {
-    throw Object.assign(new Error("Body must be { user: {id}, messages: [{from, to, message}, ...] }"), { code: "VALIDATION_ERROR" });
+    throw Object.assign(new Error("Body must be { messages: [{from, to, message}, ...] } — user.id only required for bot-key auth"), { code: "VALIDATION_ERROR" });
   }
   if (payload.messages.length === 0) {
     throw Object.assign(new Error("messages array must not be empty"), { code: "VALIDATION_ERROR" });
@@ -278,9 +278,12 @@ export function validateBotPayload(payload: any): { user: { id: string }; messag
       throw Object.assign(new Error('Each message must be { from: string, to: string, message: string }'), { code: "VALIDATION_ERROR" });
     }
   }
+  // user.id is OPTIONAL — session-cookie callers don't send it (identity comes
+  // from the orc_sid session server-side). Bot-key callers must supply it; that
+  // requirement is enforced in the route, not here.
   const userId = payload.user?.id;
-  if (!userId || typeof userId !== "string") {
-    throw Object.assign(new Error("user.id is required — the bot must bind the chat to the authenticated end user"), { code: "USER_CONTEXT_REQUIRED" });
+  if (userId !== undefined && typeof userId !== "string") {
+    throw Object.assign(new Error("user.id must be a string when provided"), { code: "VALIDATION_ERROR" });
   }
-  return { user: { id: userId }, messages: payload.messages as BotChatMessage[] };
+  return { user: userId ? { id: userId } : undefined, messages: payload.messages as BotChatMessage[] };
 }

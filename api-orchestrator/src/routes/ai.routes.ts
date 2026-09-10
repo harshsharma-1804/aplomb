@@ -160,9 +160,17 @@ aiChatRouter.post("/chat", async (req, res) => {
 
   const bot = (req as any).aiBot;
   const sessionCtx = (req as any).sessionCtx as { appId: string; sub: string } | undefined;
-  // Verified identity wins — client-supplied user.id is ignored for sessions.
-  // Session mode scopes the bot to the session's app only (defence in depth).
-  const userId = sessionCtx ? sessionCtx.sub : payload.user.id;
+  // Identity precedence: verified session wins; bot-key callers must supply
+  // user.id themselves. A session-mode caller may omit `user` entirely.
+  let userId: string;
+  if (sessionCtx) {
+    userId = sessionCtx.sub;
+  } else if (payload.user?.id) {
+    userId = payload.user.id;
+  } else {
+    res.status(400).json({ error: "user.id is required when authenticating with X-Bot-Key (session callers can omit it)", code: "USER_CONTEXT_REQUIRED" });
+    return;
+  }
   const effectivePermissions = sessionCtx
     ? { [sessionCtx.appId]: (bot.app_permissions ?? {})[sessionCtx.appId] ?? { read: true, write: false } }
     : (bot.app_permissions ?? {});

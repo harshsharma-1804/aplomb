@@ -136,9 +136,13 @@ async function classifyIntent(
   ];
   try {
     const resp = await chatCompletion(provider, classifyMessages);
-    const answer = (resp.content ?? "").trim().toUpperCase();
-    if (answer.startsWith("NO")) return false;
-    return true; // fail open: ambiguous or YES → allow
+    const answer = (resp.content ?? "").toUpperCase();
+    // Verdict = the LAST standalone YES/NO token in the reply. Models often
+    // reason first ("The user asks about the ocean… so the answer is NO") —
+    // startsWith() missed those and wrongly passed out-of-scope messages.
+    const verdicts = answer.match(/\b(YES|NO)\b/g);
+    if (!verdicts || verdicts.length === 0) return true; // no verdict — fail open
+    return verdicts[verdicts.length - 1] !== "NO";
   } catch {
     return true; // fail open: classifier error → allow
   }

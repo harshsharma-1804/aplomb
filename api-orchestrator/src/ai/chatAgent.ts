@@ -2,7 +2,7 @@ import { getDb } from "../db/client.js";
 import { getToolsForBot } from "./toolRegistry.js";
 import type { AppPermissionsMap } from "../db/repos/aiBotRepo.js";
 import { aiBotRepo } from "../db/repos/aiBotRepo.js";
-import { executeTool } from "./toolExecutor.js";
+import { executeTool, isIdentityArgName } from "./toolExecutor.js";
 import { chatCompletion, type LlmMessage, type LlmToolDef } from "./llmClient.js";
 import { config } from "../config/appConfig.js";
 
@@ -82,6 +82,34 @@ function toolsToLlmFormat(appPermissions: AppPermissionsMap): LlmToolDef[] {
       parameters: t.parameters,
     },
   }));
+}
+
+/**
+ * Session mode: strip identity-bearing arguments (memberId, userId, …) from the
+ * tool schemas the LLM sees. The gateway injects the verified session sub in
+ * executeTool — the model must never supply (or hallucinate) an identity.
+ */
+function stripIdentityArgs(tools: LlmToolDef[]): LlmToolDef[] {
+  return tools.map(t => {
+    const params = t.function.parameters as any;
+    if (!params || typeof params !== "object" || !params.properties) return t;
+    const props = { ...params.properties };
+    let changed = false;
+    for (const key of Object.keys(props)) {
+      if (isIdentityArgName(key)) { delete props[key]; changed = true; }
+    }
+    if (!changed) return t;
+    const required: string[] | undefined = Array.isArray(params.required)
+      ? params.required.filter((r: string) => !isIdentityArgName(r))
+      : undefined;
+    return {
+      ...t,
+      function: {
+        ...t.function,
+        parameters: { ...params, properties: props, ...(required ? { required } : {}) },
+      },
+    };
+  });
 }
 
 
@@ -177,7 +205,9 @@ export async function runChatAgent(
     ? history.slice(history.length - maxHistory)
     : history;
 
-  const tools = toolsToLlmFormat(bot.appPermissions);
+  const tools = bot.session
+    ? stripIdentityArgs(toolsToLlmFormat(bot.appPermissions))
+    : toolsToLlmFormat(bot.appPermissions);
   const llmMessages: LlmMessage[] = [
     { role: "system", content: buildSystemPrompt(userId, bot.persona, bot.rules) },
     ...mapToLlmMessages(trimmedHistory, userId),

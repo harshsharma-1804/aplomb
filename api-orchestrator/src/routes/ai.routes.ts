@@ -93,28 +93,35 @@ function resolveSessionAuth(req: Request, requestedBotId?: string): SessionAuthC
   return { error: "A valid session cookie or X-Bot-Key is required", code: "MISSING_BOT_KEY" };
 }
 
-// ── Per-bot rate limiting (sliding 60s window, in-memory) ─────────────────────
+// ── Rate limiting (sliding 60s window, in-memory) ─────────────────────────────
+// Bucket key: bot-key callers → per bot. Session callers → per bot+user, so
+// one user's volume can never exhaust another user's budget on a shared bot.
 
 const rateBuckets = new Map<string, number[]>();
 
-function checkRateLimit(botId: string, limitPerMin: number): boolean {
+function checkRateLimit(bucketKey: string, limitPerMin: number): boolean {
   const nowMs = Date.now();
-  const bucket = (rateBuckets.get(botId) ?? []).filter(ts => nowMs - ts < 60_000);
+  const bucket = (rateBuckets.get(bucketKey) ?? []).filter(ts => nowMs - ts < 60_000);
   if (bucket.length >= limitPerMin) {
-    rateBuckets.set(botId, bucket);
+    rateBuckets.set(bucketKey, bucket);
     return false;
   }
   bucket.push(nowMs);
-  rateBuckets.set(botId, bucket);
+  rateBuckets.set(bucketKey, bucket);
   return true;
 }
 
 function applyRateLimit(req: Request, res: Response): boolean {
   const bot = (req as any).aiBot;
+  const sessionCtx = (req as any).sessionCtx as { sub: string } | undefined;
   const limit = bot?.limits?.rate_limit_per_min;
   if (!limit || Number(limit) <= 0) return true;
-  if (!checkRateLimit(bot.id, Number(limit))) {
-    res.status(429).json({ error: `Rate limit exceeded — max ${limit} requests per minute for this bot`, code: "RATE_LIMITED" });
+  const bucketKey = sessionCtx ? `${bot.id}:${sessionCtx.sub}` : bot.id;
+  if (!checkRateLimit(bucketKey, Number(limit))) {
+    res.status(429).json({
+      error: `Rate limit exceeded — max ${limit} requests per minute${sessionCtx ? " for your account" : " for this bot"}`,
+      code: "RATE_LIMITED",
+    });
     return false;
   }
   return true;

@@ -184,6 +184,8 @@ export interface Endpoint {
   request: RequestConfig;
   upstream: Upstream;
   query_params: QueryParam[];
+  /** Argument names that carry the end-user identity — forced to the session's verified ID in session mode */
+  identity_args?: string[];
   sample_response: { json: unknown; captured_at: string } | null;
   output_schema: SchemaField[];
   field_mappings: FieldMapping[];

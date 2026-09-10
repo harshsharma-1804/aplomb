@@ -59,6 +59,7 @@ export interface SessionAuthContext {
   bot: ReturnType<typeof aiBotRepo.findById> & object;
   appId: string;
   sub: string;
+  email: string | null;
   sessionId: string;
 }
 
@@ -88,7 +89,7 @@ function resolveSessionAuth(req: Request, requestedBotId?: string): SessionAuthC
     if (!bot || !bot.is_active) {
       return { error: "The bot bound to this session is unavailable", code: "BOT_UNAVAILABLE" };
     }
-    return { bot, appId: app.id, sub: principal.sub, sessionId: principal.sessionId };
+    return { bot, appId: app.id, sub: principal.sub, email: principal.email, sessionId: principal.sessionId };
   }
   return { error: "A valid session cookie or X-Bot-Key is required", code: "MISSING_BOT_KEY" };
 }
@@ -152,7 +153,7 @@ aiChatRouter.post("/chat", async (req, res) => {
       return;
     }
     (req as any).aiBot = sess.bot;
-    (req as any).sessionCtx = { appId: sess.appId, sub: sess.sub, sessionId: sess.sessionId };
+    (req as any).sessionCtx = { appId: sess.appId, sub: sess.sub, email: sess.email, sessionId: sess.sessionId };
   }
 
   if (!applyRateLimit(req, res)) return;
@@ -166,7 +167,7 @@ aiChatRouter.post("/chat", async (req, res) => {
   }
 
   const bot = (req as any).aiBot;
-  const sessionCtx = (req as any).sessionCtx as { appId: string; sub: string } | undefined;
+  const sessionCtx = (req as any).sessionCtx as { appId: string; sub: string; email?: string | null } | undefined;
   // Identity precedence: verified session wins; bot-key callers must supply
   // user.id themselves. A session-mode caller may omit `user` entirely.
   let userId: string;
@@ -184,7 +185,7 @@ aiChatRouter.post("/chat", async (req, res) => {
   const allowedProviderIds = bot.allowed_provider_ids;
 
   try {
-    const result = await runChatAgent(payload.messages, userId, { id: bot.id, name: bot.name, allowedProviderIds, appPermissions: effectivePermissions, rules: bot.rules ?? [], persona: bot.persona ?? '', limits: bot.limits ?? {}, session: sessionCtx ? { appId: sessionCtx.appId, sub: sessionCtx.sub } : undefined });
+    const result = await runChatAgent(payload.messages, userId, { id: bot.id, name: bot.name, allowedProviderIds, appPermissions: effectivePermissions, rules: bot.rules ?? [], persona: bot.persona ?? '', limits: bot.limits ?? {}, session: sessionCtx ? { appId: sessionCtx.appId, sub: sessionCtx.sub, email: sessionCtx.email } : undefined });
     res.json(result);
   } catch (e: any) {
     if (e.code === "AI_NOT_CONFIGURED") {

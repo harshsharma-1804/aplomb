@@ -18,6 +18,10 @@ export interface ToolDef {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  // Endpoint-declared identity argument names (e.g. ["memberId"], ["sub"]).
+  // In session mode these are stripped from the LLM schema and pinned
+  // server-side to the verified session sub.
+  identity_args: string[];
   // execution metadata — never sent to the LLM
   _exec: {
     app_id: string;
@@ -123,6 +127,7 @@ export function buildTools(): ToolDef[] {
       tools.push({
         name: toolName,
         description,
+        identity_args: ((ep as any).identity_args ?? []) as string[],
         parameters: {
           type: "object",
           properties,

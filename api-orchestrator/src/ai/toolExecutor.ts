@@ -137,12 +137,15 @@ export async function executeTool(
         return { ok: false, error: "Session is not valid for this app", outcome: "denied" };
       }
 
-      const argNames = new Set<string>([
-        ...Object.keys(rawArgs),
-        ...(((ep.path_params ?? []) as any[]).map(p => String(p.name))),
-      ]);
+      // Identity args: endpoint-declared when available (works for any domain —
+      // memberId, sub, patientId, account_id, …); name-heuristic fallback for
+      // endpoints that haven't declared anything.
+      const declared: string[] = Array.isArray((ep as any).identity_args) ? (ep as any).identity_args : [];
+      const argNames = declared.length
+        ? declared
+        : [...Object.keys(rawArgs), ...(((ep.path_params ?? []) as any[]).map(p => String(p.name)))].filter(isIdentityArgName);
       for (const name of argNames) {
-        if (isIdentityArgName(name) && rawArgs[name] !== ctx.session.sub) {
+        if (rawArgs[name] !== ctx.session.sub) {
           const modelValue = rawArgs[name] !== undefined ? String(rawArgs[name]) : "(not provided)";
           rawArgs[name] = ctx.session.sub;
           aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: { [name]: ctx.session.sub }, outcome: "ok", detail: `Identity pin: '${name}' forced to session sub — model supplied: ${modelValue}` });

@@ -585,6 +585,7 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
     method:      endpoint.method,
     path:        endpoint.path,
     description: endpoint.description ?? "",
+    identity_args: (endpoint.identity_args ?? []).join(", "),
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -603,7 +604,11 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
     ev.preventDefault();
     setSaving(true); setError(""); setSaved(false);
     try {
-      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}`, form);
+      const identityArgs = form.identity_args.split(",").map(s => s.trim()).filter(Boolean);
+      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}`, {
+        name: form.name, method: form.method, path: form.path, description: form.description,
+        identity_args: identityArgs,
+      });
       onSaved(ep);
       setSaved(true);
     } catch (e) { setError(String(e)); }
@@ -641,6 +646,18 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
 
         <Field label="Description">
           <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 56 }} value={form.description} onChange={set("description")} />
+        </Field>
+
+        <Field
+          label="Identity arguments"
+          hint="Comma-separated arg names that carry the end-user identity (e.g. memberId). In session mode the gateway forces these to the verified session ID — the LLM's value is discarded."
+        >
+          <input
+            style={inputStyle}
+            value={form.identity_args}
+            onChange={set("identity_args")}
+            placeholder="e.g. memberId"
+          />
         </Field>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, marginBottom: 16 }}>

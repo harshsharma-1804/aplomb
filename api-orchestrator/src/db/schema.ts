@@ -124,6 +124,10 @@ export const endpoints = sqliteTable("endpoints", {
   // JSON blobs — request/response schema can grow arbitrarily deep
   path_params:     text("path_params").notNull().default("[]"),
   query_params:    text("query_params").notNull().default("[]"),
+  // Argument names that carry the end-user identity (e.g. ["memberId"], ["sub"]).
+  // In session mode the gateway forces these to the verified session sub —
+  // the LLM's value is discarded. Empty = name-heuristic fallback.
+  identity_args:   text("identity_args").notNull().default("[]"),
   request:         text("request").notNull().default("{}"),
   upstream:        text("upstream").notNull().default("{}"),
   output_schema:   text("output_schema").notNull().default("[]"),

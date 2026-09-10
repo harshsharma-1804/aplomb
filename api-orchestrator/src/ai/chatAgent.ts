@@ -39,37 +39,34 @@ function mapToLlmMessages(history: BotChatMessage[], userId: string): LlmMessage
   }));
 }
 
-function buildSystemPrompt(userId: string, persona: string, rules: string[]): string {
+/**
+ * The gateway authors NO behavioural text. The system prompt is exactly the
+ * bot's configured persona + rules, joined verbatim. The only text processing
+ * is placeholder substitution of verified identity facts, which a bot opts
+ * into by using them:
+ *   {{member_id}} / {{user_id}} / {{sub}}  → verified identity
+ *     (session sub in session mode; the bot-key caller's declared user.id otherwise)
+ *   {{member_email}} / {{user_email}}      → verified email (empty when unavailable)
+ *
+ * Mechanics (identity pinning, scope guard, audit) are enforced in code and
+ * do not depend on what the model is told here.
+ */
+const IDENTITY_FACT_RE = /\{\{(member_id|user_id|sub|member_email|user_email)\}\}/g;
+
+function buildSystemPrompt(userId: string, email: string | null | undefined, persona: string, rules: string[]): string {
+  const facts: Record<string, string> = {
+    member_id: userId,
+    user_id: userId,
+    sub: userId,
+    member_email: email ?? "",
+    user_email: email ?? "",
+  };
+  const substitute = (text: string) => text.replace(IDENTITY_FACT_RE, (_, key: string) => facts[key] ?? "");
   const lines: string[] = [];
-
-  if (persona?.trim()) {
-    lines.push(persona.trim(), "");
-  } else {
-    lines.push("You are the API assistant for an organisation's gateway. You help the end user by calling the available API tools.", "");
+  if (persona?.trim()) lines.push(substitute(persona.trim()));
+  for (const rule of rules) {
+    if (rule.trim()) lines.push(substitute(rule.trim()));
   }
-
-  lines.push(
-    `IMPORTANT — USER SCOPING: you are assisting user/member "${userId}" ONLY.`,
-    `Every data request must be scoped to this user. Never request, query, or reference another user's or member's data. The system enforces this: tool calls referencing a different user id are blocked.`,
-    ``,
-    `GUIDELINES:`,
-    `- Use the provided tools to answer questions. Prefer calling a tool over guessing.`,
-    `- If multiple tool calls are needed, make them one at a time as you receive results.`,
-    `- If a tool returns an error, explain it simply to the user — do not expose raw stack traces or internal details.`,
-    `- Answer in the same language and tone as the user's question.`,
-    `- Format answers for a chat interface: use plain text with bullet points or simple tables when listing items. Do not output raw JSON unless the user asks for it.`,
-    `- If the question cannot be answered with the available tools, say so clearly and suggest what the user can ask instead.`,
-  );
-
-  if (rules.length > 0) {
-    lines.push(
-      ``,
-      `BOT-SPECIFIC RULES (HIGHEST PRIORITY — YOU MUST FOLLOW THESE ABOVE ALL OTHER GUIDELINES):`,
-      `These rules are set by the administrator. If a user request violates any rule, politely decline and briefly explain what you can help with instead.`,
-      ...rules.map((r, i) => `${i + 1}. ${r}`),
-    );
-  }
-
   return lines.join("\n");
 }
 
@@ -85,22 +82,24 @@ function toolsToLlmFormat(appPermissions: AppPermissionsMap): LlmToolDef[] {
 }
 
 /**
- * Session mode: strip identity-bearing arguments (memberId, userId, …) from the
- * tool schemas the LLM sees. The gateway injects the verified session sub in
- * executeTool — the model must never supply (or hallucinate) an identity.
+ * Session mode: strip identity-bearing arguments from the tool schemas the LLM
+ * sees. Endpoint-declared identity args take precedence; the name heuristic
+ * covers endpoints that haven't declared. The gateway injects the verified
+ * session sub in executeTool — the model must never supply an identity.
  */
 function stripIdentityArgs(tools: LlmToolDef[]): LlmToolDef[] {
   return tools.map(t => {
-    const params = t.function.parameters as any;
-    if (!params || typeof params !== "object" || !params.properties) return t;
-    const props = { ...params.properties };
-    let changed = false;
-    for (const key of Object.keys(props)) {
-      if (isIdentityArgName(key)) { delete props[key]; changed = true; }
+    const declared: string[] = Array.isArray((t as any).identity_args) ? (t as any).identity_args : [];
+    if (declared.length === 0 && !Object.keys((t.function.parameters as any)?.properties ?? {}).some(isIdentityArgName)) {
+      return t;
     }
-    if (!changed) return t;
+    const params = t.function.parameters as any;
+    const props = { ...(params.properties ?? {}) };
+    for (const key of Object.keys(props)) {
+      if (declared.includes(key) || isIdentityArgName(key)) delete props[key];
+    }
     const required: string[] | undefined = Array.isArray(params.required)
-      ? params.required.filter((r: string) => !isIdentityArgName(r))
+      ? params.required.filter((r: string) => !declared.includes(r) && !isIdentityArgName(r))
       : undefined;
     return {
       ...t,
@@ -148,7 +147,7 @@ async function classifyIntent(
 export async function runChatAgent(
   history: BotChatMessage[],
   userId: string,
-  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap; rules: string[]; persona: string; limits: import("../db/repos/aiBotRepo.js").BotLimits; session?: { appId: string; sub: string } }
+  bot: { id: string; name: string; allowedProviderIds: string[]; appPermissions: AppPermissionsMap; rules: string[]; persona: string; limits: import("../db/repos/aiBotRepo.js").BotLimits; session?: { appId: string; sub: string; email?: string | null } }
 ): Promise<ChatAgentResult> {
   const db = getDb();
 
@@ -209,7 +208,7 @@ export async function runChatAgent(
     ? stripIdentityArgs(toolsToLlmFormat(bot.appPermissions))
     : toolsToLlmFormat(bot.appPermissions);
   const llmMessages: LlmMessage[] = [
-    { role: "system", content: buildSystemPrompt(userId, bot.persona, bot.rules) },
+    { role: "system", content: buildSystemPrompt(userId, bot.session?.email, bot.persona, bot.rules) },
     ...mapToLlmMessages(trimmedHistory, userId),
   ];
 

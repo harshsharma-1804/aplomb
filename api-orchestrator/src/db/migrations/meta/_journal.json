@@ -71,6 +71,13 @@
       "when": 1788526531451,
       "tag": "0009_app_users_auth_config",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788526531452,
+      "tag": "0010_endpoint_identity_args",
+      "breakpoints": true
     }
   ]
 }

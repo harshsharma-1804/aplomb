@@ -52,10 +52,43 @@ const DDL = `
     description TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
     deprecated_at TEXT, auth_required INTEGER NOT NULL DEFAULT 1, ai_expose INTEGER NOT NULL DEFAULT 0,
     mode TEXT NOT NULL DEFAULT 'prod',
+    auth_mode TEXT NOT NULL DEFAULT 'bearer',
+    session_method TEXT NOT NULL DEFAULT 'both',
+    session_config TEXT NOT NULL DEFAULT '{}',
     app_env TEXT NOT NULL DEFAULT '[]',
     allowed_provider_ids TEXT NOT NULL DEFAULT '[]',
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS app_sessions (
+    id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL REFERENCES apps(id),
+    sub TEXT NOT NULL,
+    email TEXT,
+    issuer TEXT NOT NULL,
+    device_label TEXT NOT NULL,
+    ua_hash TEXT NOT NULL,
+    last_seen_ip TEXT,
+    idp_token_ct TEXT, idp_token_iv TEXT, idp_token_tag TEXT,
+    bot_snapshot TEXT NOT NULL DEFAULT '[]',
+    idle_expires_at TEXT NOT NULL,
+    absolute_expires_at TEXT NOT NULL,
+    last_active_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_app_sessions_app_sub ON app_sessions(app_id, sub);
+  CREATE INDEX IF NOT EXISTS idx_app_sessions_idle_expires ON app_sessions(idle_expires_at);
+  CREATE INDEX IF NOT EXISTS idx_app_sessions_absolute_expires ON app_sessions(absolute_expires_at);
+  CREATE TABLE IF NOT EXISTS app_users (
+    id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL REFERENCES apps(id),
+    username TEXT NOT NULL, email TEXT NOT NULL,
+    password_hash TEXT NOT NULL, sub TEXT NOT NULL,
+    display_name TEXT, is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_username_unique ON app_users(app_id, username);
+  CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_email_unique ON app_users(app_id, email);
   CREATE TABLE IF NOT EXISTS endpoints (
     id TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES apps(id),
     name TEXT NOT NULL, description TEXT DEFAULT '',
@@ -65,6 +98,7 @@ const DDL = `
     path_params TEXT NOT NULL DEFAULT '[]', query_params TEXT NOT NULL DEFAULT '[]',
     request TEXT NOT NULL DEFAULT '{}', upstream TEXT NOT NULL DEFAULT '{}',
     output_schema TEXT NOT NULL DEFAULT '[]', field_mappings TEXT NOT NULL DEFAULT '[]',
+    identity_args TEXT NOT NULL DEFAULT '[]',
     sample_response TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     UNIQUE(app_id, method, path)
   );

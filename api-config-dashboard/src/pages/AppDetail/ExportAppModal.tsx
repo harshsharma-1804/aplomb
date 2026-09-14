@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { App, ExportEnvMode } from "../../api/types";
+import { useState, useEffect } from "react";
+import type { App, AiBot, ExportEnvMode } from "../../api/types";
+import { api } from "../../api/client";
 import { Modal, Btn, C } from "../../components";
 
 interface Props {
@@ -11,11 +12,28 @@ export function ExportAppModal({ app, onClose }: Props) {
   const [inclEndpoints, setInclEndpoints] = useState(true);
   const [inclScripts,   setInclScripts]   = useState(true);
   const [inclEnv,       setInclEnv]       = useState(true);
+  const [inclBot,       setInclBot]       = useState(false);
+  const [boundBot,      setBoundBot]      = useState<AiBot | null>(null);
   const [envMode,       setEnvMode]       = useState<ExportEnvMode>("keys");
   const [downloading,   setDownloading]   = useState(false);
   const [error,         setError]         = useState("");
 
   const hasEnv = (app.app_env ?? []).length > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ results: AiBot[] }>("/__config/admin/ai/bots")
+      .then(d => {
+        if (cancelled) return;
+        const bot = d.results.find(b => b.allowed_app_ids.includes(app._id));
+        if (bot) {
+          setBoundBot(bot);
+          setInclBot(true);
+        }
+      })
+      .catch(() => { /* non-fatal — checkbox simply not offered */ });
+    return () => { cancelled = true; };
+  }, [app._id]);
 
   async function handleExport() {
     setDownloading(true);
@@ -24,6 +42,7 @@ export function ExportAppModal({ app, onClose }: Props) {
       const include: string[] = [];
       if (inclEndpoints) include.push("endpoints");
       if (inclScripts)   include.push("scripts");
+      if (inclBot && boundBot) include.push("bots");
 
       const params = new URLSearchParams({
         include: include.join(","),
@@ -60,7 +79,7 @@ export function ExportAppModal({ app, onClose }: Props) {
     }
   }
 
-  const nothingSelected = !inclEndpoints && !inclScripts && !inclEnv;
+  const nothingSelected = !inclEndpoints && !inclScripts && !inclEnv && !(inclBot && boundBot);
 
   return (
     <Modal title={`Export "${app.name}"`} onClose={onClose}>
@@ -90,6 +109,14 @@ export function ExportAppModal({ app, onClose }: Props) {
               label="Scripts"
               hint="All app scripts (source only — recompiled on import)"
             />
+            {boundBot && (
+              <CheckRow
+                checked={inclBot}
+                onChange={setInclBot}
+                label={`AI bot — ${boundBot.name}`}
+                hint="Bot definition, rules, limits + its AI providers (the bot gets a NEW key on import — keys can never be exported)"
+              />
+            )}
           </div>
         </section>
 
@@ -126,7 +153,7 @@ export function ExportAppModal({ app, onClose }: Props) {
 
         {/* ── Secret note ─────────────────────────────────────────────── */}
         <div style={{ padding: "8px 12px", background: "#f0fdf4", border: `1px solid #86efac`, borderRadius: C.radius, fontSize: 12, color: "#166534" }}>
-          Secret values are never exported regardless of your selection. Secret references export as key names only — ensure the same secrets exist on the target instance.
+          Secret values are never exported regardless of your selection. Secret references export as key names only — ensure the same secrets exist on the target instance. AI provider API keys follow the same rule: providers export by name, the import links them to a same-named secret.
         </div>
 
         {/* ── Format ──────────────────────────────────────────────────── */}

@@ -367,8 +367,29 @@ export interface AiToolCall {
 export type ExportEnvMode = "none" | "keys" | "values";
 
 export interface ExportOptions {
-  include: Array<"endpoints" | "scripts">;
+  include: Array<"endpoints" | "scripts" | "bots">;
   env: ExportEnvMode;
+}
+
+/** Bot definition as it travels in an app export bundle. */
+export interface ExportedBot {
+  name: string;
+  is_active: boolean;
+  persona: string;
+  rules: string[];
+  limits: Record<string, unknown>;
+  app_permission: { read: boolean; write: boolean };
+  provider_names: string[];
+}
+
+/** AI provider definition — API key material is never exported, only the secret NAME. */
+export interface ExportedAiProvider {
+  name: string;
+  base_url: string;
+  model: string;
+  no_auth: boolean;
+  secret_name: string | null;
+  is_active: boolean;
 }
 
 export interface AppExport {
@@ -391,6 +412,8 @@ export interface AppExport {
     description: string;
     folder: string | null;
   }>;
+  bots?: ExportedBot[];
+  ai_providers?: ExportedAiProvider[];
 }
 
 export interface ImportOptions {
@@ -403,6 +426,9 @@ export interface ImportResult {
   app: App;
   endpoints_created: number;
   scripts_created: number;
+  bots_created: number;
+  /** Newly generated bot keys — shown once, never retrievable again. */
+  bot_keys: Array<{ name: string; api_key: string }>;
   warnings: string[];
 }
 

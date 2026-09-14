@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { getDb } from "../../db/client.js";
+import { appRepo } from "../../db/repos/appRepo.js";
 import { aiProviderRepo } from "../../db/repos/aiProviderRepo.js";
 import { aiBotRepo } from "../../db/repos/aiBotRepo.js";
 import { aiToolCallRepo } from "../../db/repos/aiToolCallRepo.js";
 import { refreshToolRegistry } from "../../ai/toolRegistry.js";
+import { buildBotBundle, importProviders, importBotBundle } from "../../ai/botTransfer.js";
 import { requirePermission } from "../../auth/rbac.js";
 
 const router = Router();
@@ -161,6 +163,70 @@ router.put("/bots/:id/apps/:appId/permissions", requirePermission("manage:provid
 router.delete("/bots/:id", requirePermission("manage:providers"), (req, res) => {
   aiBotRepo.delete(getDb(), String(req.params["id"]));
   res.json({ success: true });
+});
+
+// ── Bot export / import (standalone, independent of the app bundle) ───────────
+// Same transfer format as the app bundle's bots section: references travel by
+// NAME / base_path, key material never travels — every import generates a
+// fresh bot key, returned once.
+
+router.get("/bots/:id/export", requirePermission("manage:providers"), (req, res) => {
+  const db = getDb();
+  const bot = aiBotRepo.findById(db, String(req.params["id"]));
+  if (!bot) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+
+  const bundle = buildBotBundle(db, [bot]);
+  const payload = {
+    export_version: "1",
+    kind:           "bot",
+    exported_at:    new Date().toISOString(),
+    exported_from:  "orchestrator v1.0.0",
+    ...bundle,
+  };
+
+  const filename = `${bot.name.replace(/[^a-zA-Z0-9-_]/g, "-")}-bot-export-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.json(payload);
+});
+
+router.post("/bots/import", requirePermission("manage:providers"), async (req, res) => {
+  const { payload } = req.body ?? {};
+  if (!payload || payload.export_version !== "1") {
+    res.status(400).json({ error: "Unsupported or missing export_version — only version 1 is supported", code: "UNSUPPORTED_EXPORT_VERSION" });
+    return;
+  }
+  if (payload.kind && payload.kind !== "bot") {
+    res.status(400).json({ error: `This is a '${payload.kind}' bundle, not a bot bundle — use the app import instead`, code: "WRONG_BUNDLE_KIND" });
+    return;
+  }
+  if (!Array.isArray(payload.bots) || payload.bots.length === 0) {
+    res.status(400).json({ error: "Bundle contains no bots", code: "NO_BOTS_IN_BUNDLE" });
+    return;
+  }
+
+  const warnings: string[] = [];
+  const db = getDb();
+  const providerNameToId = importProviders(db, payload.ai_providers, warnings, (req as any).dashboardUser?.id);
+
+  // App bindings resolve against apps that already exist on this instance
+  const appByBasePath = new Map<string, string>();
+  for (const a of appRepo.list(db)) appByBasePath.set(a.base_path, a.id);
+
+  const { created } = await importBotBundle(
+    db,
+    payload.bots,
+    providerNameToId,
+    (bp: string) => appByBasePath.get(bp) ?? null,
+    warnings,
+    (req as any).dashboardUser?.id
+  );
+
+  res.status(201).json({
+    bots_created: created.length,
+    bot_keys:     created,
+    warnings,
+  });
 });
 
 // ── Tool call audit ───────────────────────────────────────────────────────────

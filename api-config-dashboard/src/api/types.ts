@@ -371,14 +371,15 @@ export interface ExportOptions {
   env: ExportEnvMode;
 }
 
-/** Bot definition as it travels in an app export bundle. */
+/** Bot definition as it travels in an export bundle (app or standalone). */
 export interface ExportedBot {
   name: string;
   is_active: boolean;
   persona: string;
   rules: string[];
   limits: Record<string, unknown>;
-  app_permission: { read: boolean; write: boolean };
+  /** App bindings by base_path — resolved against the target instance on import. */
+  apps: Array<{ base_path: string; name: string; permission: { read: boolean; write: boolean } }>;
   provider_names: string[];
 }
 
@@ -390,6 +391,23 @@ export interface ExportedAiProvider {
   no_auth: boolean;
   secret_name: string | null;
   is_active: boolean;
+}
+
+/** Standalone bot bundle (kind: "bot") — independent of the app bundle. */
+export interface BotExport {
+  export_version: "1";
+  kind: "bot";
+  exported_at: string;
+  exported_from: string;
+  bots: ExportedBot[];
+  ai_providers: ExportedAiProvider[];
+}
+
+export interface BotImportResult {
+  bots_created: number;
+  /** Newly generated bot keys — shown once, never retrievable again. */
+  bot_keys: Array<{ name: string; api_key: string }>;
+  warnings: string[];
 }
 
 export interface AppExport {

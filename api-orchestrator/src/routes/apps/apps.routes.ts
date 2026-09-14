@@ -13,7 +13,7 @@ import { refreshToolRegistry } from "../../ai/toolRegistry.js";
 import { appUserRepo } from "../../db/repos/appUserRepo.js";
 import { appSessionRepo, resolveSessionConfig } from "../../db/repos/appSessionRepo.js";
 import { aiBotRepo } from "../../db/repos/aiBotRepo.js";
-import { aiProviderRepo } from "../../db/repos/aiProviderRepo.js";
+import { buildBotBundle, importProviders, importBotBundle } from "../../ai/botTransfer.js";
 import { validateCookieName, sessionCookieName } from "../../auth/appSessionAuth.js";
 import { config } from "../../config/appConfig.js";
 
@@ -346,44 +346,16 @@ router.get("/:id/export", requirePermission("export:app"), (req, res) => {
   const { id: _id, created_by: _cb, created_at: _ca, updated_at: _ua, ...appRest } = app as any;
   const slug = (appRest.base_path as string).replace(/\//g, "-").replace(/^-/, "") || "app";
 
-  // ── Bots + AI providers ────────────────────────────────────────────────────
-  let exportedBots: unknown[] = [];
-  let exportedAiProviders: unknown[] = [];
+  // ── Bots + AI providers (shared bot transfer format) ───────────────────────
+  let botBundle: ReturnType<typeof buildBotBundle> | null = null;
   if (include.has("bots")) {
     const botsForApp = aiBotRepo.listSafe(db).filter(b => b.allowed_app_ids.includes(String(appId)));
-    const providerIds = new Set<string>();
-    for (const b of botsForApp) {
-      for (const pid of b.allowed_provider_ids) providerIds.add(String(pid));
-      const perms = b.app_permissions[String(appId)] ?? { read: true, write: true };
-      exportedBots.push({
-        name:            b.name,
-        is_active:       b.is_active,
-        persona:         b.persona,
-        rules:           b.rules,
-        limits:          b.limits,
-        app_permission:  perms,
-        // Providers referenced BY NAME — provider ids are instance-specific
-        provider_names:  b.allowed_provider_ids
-          .map(pid => aiProviderRepo.findByIdSafe(db, String(pid))?.name)
-          .filter((n): n is string => Boolean(n)),
-      });
-    }
-    for (const pid of providerIds) {
-      const p = aiProviderRepo.findByIdSafe(db, pid);
-      if (!p) continue;
-      exportedAiProviders.push({
-        name:        p.name,
-        base_url:    p.base_url,
-        model:       p.model,
-        no_auth:     p.no_auth,
-        secret_name: p.secret_name ?? null,
-        is_active:   p.is_active,
-      });
-    }
+    botBundle = buildBotBundle(db, botsForApp);
   }
 
   const payload = {
     export_version:  "1",
+    kind:            "app",
     exported_at:     new Date().toISOString(),
     exported_from:   "orchestrator v1.0.0",
     export_options:  { include: [...include], env: envMode },
@@ -394,7 +366,7 @@ router.get("/:id/export", requirePermission("export:app"), (req, res) => {
     },
     endpoints: exportedEndpoints,
     scripts:   exportedScripts,
-    ...(include.has("bots") ? { bots: exportedBots, ai_providers: exportedAiProviders } : {}),
+    ...(botBundle ? { bots: botBundle.bots, ai_providers: botBundle.ai_providers } : {}),
   };
 
   const filename = `${slug}-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -526,109 +498,26 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       endpointsCreated++;
     }
 
-    // ── AI providers (from bot export) ────────────────────────────────────────
-    // Matched by NAME against existing providers; created when missing. API keys
-    // live in the secret vault and are never exported — providers are linked by
-    // secret name, or created without a key (warning tells the user to set it).
-    const providerNameToId = new Map<string, string>();
-    for (const p of (payload as any).ai_providers ?? []) {
-      try {
-        const existing = aiProviderRepo.listSafe(db).find(x => x.name.toLowerCase() === String(p.name).toLowerCase());
-        if (existing) {
-          providerNameToId.set(String(p.name).toLowerCase(), existing.id);
-          if (existing.base_url !== p.base_url || existing.model !== p.model) {
-            warnings.push(`AI provider '${p.name}' already exists on this instance with a different base_url/model — keeping the existing provider. Verify its settings in Admin → AI Providers.`);
-          }
-          continue;
-        }
-        let secretId: string | null = null;
-        if (p.secret_name) {
-          const secret = secretRepo.findByName(db, String(p.secret_name));
-          if (secret) {
-            secretId = secret.id;
-          } else {
-            warnings.push(`AI provider '${p.name}' needs a secret named '${p.secret_name}' (its API key), but no secret with that name exists on this instance. The provider was NOT created — create the secret in Admin → Secrets, then add the provider in Admin → AI Providers, then bind it to the imported bot.`);
-            continue;
-          }
-        }
-        const created = aiProviderRepo.create(db, {
-          name: String(p.name),
-          base_url: String(p.base_url),
-          model: String(p.model),
-          secret_id: secretId,
-          is_active: Boolean(p.is_active),
-          created_by: req.dashboardUser?.id,
-        });
-        providerNameToId.set(String(p.name).toLowerCase(), created.id);
-        if (!secretId && !p.no_auth) {
-          warnings.push(`AI provider '${p.name}' was created WITHOUT an API key (its secret '${p.secret_name}' does not exist here) — set the key before using it.`);
-        }
-      } catch (e: any) {
-        warnings.push(`AI provider '${p.name}' could not be imported: ${e.message}`);
-      }
-    }
+    // ── Bots + AI providers (shared bot transfer format) ──────────────────────
+    // Providers are matched/created by name (API keys never travel — providers
+    // link by secret name). Bots are created with FRESH keys (returned once in
+    // bot_keys). App bindings resolve by base_path: the imported app matches
+    // the bundle's own base_path; other apps must already exist here.
+    const providerNameToId = importProviders(db, (payload as any).ai_providers, warnings, req.dashboardUser?.id);
 
-    // ── Bots (from bot export) ────────────────────────────────────────────────
-    // A fresh bot key is generated on import (keys are stored hashed and can
-    // never be exported) — the new key is returned once in bot_keys below.
-    const botKeys: Array<{ name: string; api_key: string }> = [];
-    let botsCreated = 0;
-    for (const b of (payload as any).bots ?? []) {
-      try {
-        // Name collision → suffix like scripts
-        const existingNames = new Set(aiBotRepo.listSafe(db).map(x => x.name.toLowerCase()));
-        let name = String(b.name);
-        let suffix = 2;
-        while (existingNames.has(name.toLowerCase())) {
-          name = `${b.name}-${suffix}`;
-          suffix++;
-          if (suffix > 2) warnings.push(`Bot '${b.name}' already exists on this instance — imported as '${name}'. Update the calling frontend's configuration if it referenced the old name.`);
-        }
+    const appBasePaths = new Map<string, string>();
+    for (const a of appRepo.list(db)) appBasePaths.set(a.base_path, a.id);
+    appBasePaths.set(targetBasePath, newAppId); // the freshly imported app wins
 
-        const { bot, api_key } = await aiBotRepo.create(db, { name, created_by: req.dashboardUser?.id });
-
-        // Provider bindings (by name → instance ids)
-        const mappedIds = [...new Set(((b.provider_names ?? []) as string[])
-          .map((pn: string) => providerNameToId.get(String(pn).toLowerCase()))
-          .filter((id): id is string => Boolean(id)))];
-        const unmapped = ((b.provider_names ?? []) as string[]).filter((pn: string) => !providerNameToId.has(String(pn).toLowerCase()));
-        if (unmapped.length) {
-          warnings.push(`Bot '${name}' references AI provider(s) not available on this instance: ${unmapped.join(", ")} — bind a provider manually in the bot's Bindings tab.`);
-        }
-        if (mappedIds.length || unmapped.length === 0) {
-          await aiBotRepo.updateBindings(db, bot.id, { allowed_provider_ids: mappedIds });
-        }
-
-        // Behaviour
-        await aiBotRepo.updateRules(db, bot.id, Array.isArray(b.rules) ? b.rules : [], String(b.persona ?? ""));
-        if (b.limits && typeof b.limits === "object") {
-          await aiBotRepo.updateLimits(db, bot.id, b.limits);
-        }
-        if (b.is_active === false) {
-          aiBotRepo.setActive(db, bot.id, false);
-        }
-
-        // App binding — one bot per app; the app may already be owned by another bot
-        try {
-          await aiBotRepo.updateOneAppPermission(db, bot.id, newAppId, b.app_permission ?? { read: true, write: true });
-        } catch (e: any) {
-          if (e.code === "APP_ALREADY_ASSIGNED") {
-            warnings.push(`Bot '${name}' could not be bound to the imported app — this instance already has a bot for that app. Bind it manually in Bots → Bindings (after unassigning the other bot).`);
-          } else {
-            throw e;
-          }
-        }
-
-        botKeys.push({ name, api_key });
-        createdBotIds.push(bot.id);
-        botsCreated++;
-      } catch (e: any) {
-        warnings.push(`Bot '${b.name}' could not be imported: ${e.message}`);
-      }
-    }
-    if (botsCreated > 0) {
-      warnings.push("IMPORTANT: new bot keys were generated during import (bot keys are stored hashed and can never be exported). Copy them from the result screen NOW — they are shown only once. Update the calling frontend to use the new X-Bot-Key.");
-    }
+    const { created: createdBots, botIds } = await importBotBundle(
+      db,
+      (payload as any).bots,
+      providerNameToId,
+      (bp: string) => appBasePaths.get(bp) ?? null,
+      warnings,
+      req.dashboardUser?.id
+    );
+    createdBotIds.push(...botIds);
 
     // ── Finalise ───────────────────────────────────────────────────────────────
     refreshApp(newAppId);
@@ -638,8 +527,8 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       app: newApp,
       endpoints_created: endpointsCreated,
       scripts_created:   scriptsCreated,
-      bots_created:      botsCreated,
-      bot_keys:          botKeys,
+      bots_created:      createdBots.length,
+      bot_keys:          createdBots,
       warnings,
     });
   } catch (err: any) {

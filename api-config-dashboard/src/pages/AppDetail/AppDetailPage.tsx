@@ -12,6 +12,8 @@ import { MappingTab } from "./tabs/MappingTab";
 import { TestTab } from "./tabs/TestTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { ScriptsTab } from "./tabs/ScriptsTab";
+import { UsersTab } from "./tabs/UsersTab";
+import { SessionsTab } from "./tabs/SessionsTab";
 import { ExportAppModal } from "./ExportAppModal";
 
 const TABS = [
@@ -32,7 +34,7 @@ export function AppDetailPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [activeTab, setActiveTab] = useState("response-schema");
-  const [topTab, setTopTab] = useState<"endpoints" | "scripts" | "settings">("endpoints");
+  const [topTab, setTopTab] = useState<"endpoints" | "users" | "sessions" | "scripts" | "settings">("endpoints");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddEndpoint, setShowAddEndpoint] = useState(false);
@@ -160,7 +162,7 @@ export function AppDetailPage() {
 
       {/* ── Top-level tabs: Endpoints | Settings ───────────────────────── */}
       <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, flexShrink: 0 }}>
-        {([{ key: "endpoints", label: "Endpoints" }, { key: "scripts", label: "Scripts" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
+        {([{ key: "endpoints", label: "Endpoints" }, { key: "users", label: "Users" }, { key: "sessions", label: "Sessions" }, { key: "scripts", label: "Scripts" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
           <button key={t.key} onClick={() => setTopTab(t.key)} style={{
             padding: "8px 16px", background: "none", border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 600,
@@ -170,6 +172,20 @@ export function AppDetailPage() {
           }}>{t.label}</button>
         ))}
       </div>
+
+      {/* ── Users tab (gateway-auth app users) ─────────────────────────── */}
+      {topTab === "users" && (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <UsersTab appId={appId!} app={app} />
+        </div>
+      )}
+
+      {/* ── Sessions tab (active devices + revoke) ─────────────────────── */}
+      {topTab === "sessions" && (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <SessionsTab appId={appId!} />
+        </div>
+      )}
 
       {/* ── Scripts tab ────────────────────────────────────────────────── */}
       {topTab === "scripts" && (
@@ -569,6 +585,7 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
     method:      endpoint.method,
     path:        endpoint.path,
     description: endpoint.description ?? "",
+    identity_args: (endpoint.identity_args ?? []).join(", "),
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -587,7 +604,11 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
     ev.preventDefault();
     setSaving(true); setError(""); setSaved(false);
     try {
-      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}`, form);
+      const identityArgs = form.identity_args.split(",").map(s => s.trim()).filter(Boolean);
+      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}`, {
+        name: form.name, method: form.method, path: form.path, description: form.description,
+        identity_args: identityArgs,
+      });
       onSaved(ep);
       setSaved(true);
     } catch (e) { setError(String(e)); }
@@ -625,6 +646,18 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
 
         <Field label="Description">
           <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 56 }} value={form.description} onChange={set("description")} />
+        </Field>
+
+        <Field
+          label="Identity arguments"
+          hint="Comma-separated arg names that carry the end-user identity (e.g. memberId). In session mode the gateway forces these to the verified session ID — the LLM's value is discarded."
+        >
+          <input
+            style={inputStyle}
+            value={form.identity_args}
+            onChange={set("identity_args")}
+            placeholder="e.g. memberId"
+          />
         </Field>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, marginBottom: 16 }}>

@@ -36,6 +36,18 @@ export interface App {
   allowed_provider_ids: string[];
   /** When false the runtime skips OIDC validation — dev/demo only */
   auth_required: boolean;
+  /** Runtime authentication mode — see AppScopedSessions-9.md */
+  auth_mode: "bearer" | "session" | "both";
+  /** Which session login flow is live (when auth_mode ≠ bearer) */
+  session_method: "gateway" | "identity" | "both";
+  /** Session auth tuning */
+  session_config: {
+    cookie_name?: string;
+    ttl_idle_min?: number;
+    max_age_min?: number;
+    max_sessions_per_user?: number;
+    ua_enforce?: "off" | "flag" | "enforce";
+  };
   /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
   ai_expose: boolean;
   /** Environment this app belongs to — shown in UI and X-Orchestrator-Mode header */
@@ -172,6 +184,8 @@ export interface Endpoint {
   request: RequestConfig;
   upstream: Upstream;
   query_params: QueryParam[];
+  /** Argument names that carry the end-user identity — forced to the session's verified ID in session mode */
+  identity_args?: string[];
   sample_response: { json: unknown; captured_at: string } | null;
   output_schema: SchemaField[];
   field_mappings: FieldMapping[];
@@ -241,10 +255,41 @@ export interface HostAllowlistEntry {
 
 // ── AI / Bots ─────────────────────────────────────────────────────────────────
 
+// ── App sessions & app users (AppScopedSessions-9) ────────────────────────────
+
+export interface AppUser {
+  _id: string;
+  app_id: string;
+  username: string;
+  email: string;
+  sub: string;
+  display_name: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppSessionSummary {
+  id: string;
+  app_id: string;
+  sub: string;
+  email: string | null;
+  issuer: string;
+  device_label: string;
+  last_seen_ip: string | null;
+  last_active_at: string;
+  idle_expires_at: string;
+  absolute_expires_at: string;
+  created_at: string;
+  is_current?: boolean;
+}
+
 export interface BotLimits {
   max_tool_calls?: number;
   max_history_messages?: number;
   timeout_ms?: number;
+  /** Max /__ai/chat + /mcp requests per minute (0/absent = unlimited) */
+  rate_limit_per_min?: number;
   // Scope enforcement
   scope_enforcement?: boolean;
   scope_description?: string;

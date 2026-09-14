@@ -15,6 +15,7 @@ import { resolveSecret } from "../secrets/resolver.js";
 import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
 import { buildContext } from "./ctxBuilder.js";
 import { runScript } from "./scriptRunner.js";
+import { handleAppAuthRoute, resolveSessionForRequest, RESERVED_APP_AUTH_PATHS } from "../auth/appSessionAuth.js";
 
 export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
@@ -131,13 +132,29 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   const relativePath = requestPath.slice(app.base_path.length) || "/";
   const appId = String((app as any).id ?? (app as any)._id);
 
-  // ── Parallel: OIDC validation + endpoint lookup ────────────────────────────
-  // Endpoint lookup is synchronous (SQLite local disk, ~0ms).
-  // OIDC validation is async (JWKS verify). Start it as a promise so it
-  // runs while we do endpoint path matching below.
+  // ── Reserved app-auth endpoints (login / session/verify / logout / me / devices)
+  // Handled BEFORE endpoint auth — /login and /session/verify are unauthenticated.
+  if (RESERVED_APP_AUTH_PATHS.has(relativePath)) {
+    const handled = await handleAppAuthRoute(req, res, app, relativePath);
+    if (handled) return;
+  }
+
+  // ── Authentication — auth_required is the master switch; auth_mode picks how ─
+  //   No Auth (auth_required=false)      → open, no checks (dev/demo only)
+  //   Required + auth_mode bearer        → OIDC bearer per request (legacy behaviour)
+  //   Required + auth_mode session/both  → orc_sid cookie; bearer wins in "both" when present
+  const authMode = (app as any).auth_mode ?? "bearer";
+  const authRequired = app.auth_required !== false;
+  const useBearer = !authRequired
+    ? false
+    : authMode === "bearer"
+      ? true
+      : authMode === "both" && !!authHeader?.startsWith("Bearer ");
+  const useSession = authRequired && (authMode === "session" || (authMode === "both" && !useBearer));
+
   let oidcPromise: Promise<import("../auth/oidcValidate.js").NormalisedPrincipal | null> = Promise.resolve(null);
 
-  if (app.auth_required !== false) {
+  if (useBearer) {
     if (!authHeader?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Unauthorized", code: "MISSING_TOKEN" });
       return;
@@ -167,6 +184,13 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     oidcPromise = validateToken(token, provider as any).catch(() => {
       throw Object.assign(new Error("Unauthorized"), { _oidcFail: true });
     });
+  } else if (useSession) {
+    const sess = resolveSessionForRequest(req, app);
+    if (!sess.ok) {
+      res.status(sess.status).json({ error: sess.error, code: sess.code });
+      return;
+    }
+    principal = sess.normalised as import("../auth/oidcValidate.js").NormalisedPrincipal;
   }
 
   // Endpoint lookup — synchronous SQLite read

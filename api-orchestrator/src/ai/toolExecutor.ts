@@ -32,6 +32,12 @@ export interface ToolExecutionContext {
   userId: string;
   appPermissions: AppPermissionsMap;
   scopeGuard?: ScopeGuardConfig;
+  /**
+   * Present when the call is authenticated via an app-scoped session (orc_sid)
+   * instead of a bot key. When set, tool execution is restricted to this app
+   * and userId is the verified session sub.
+   */
+  session?: { appId: string; sub: string };
 }
 
 export interface ToolExecutionResult {
@@ -67,6 +73,15 @@ function checkUserScope(args: Record<string, unknown>, userId: string, guard: Sc
   return null;
 }
 
+/**
+ * Identity argument detection — args whose value IS the end-user identity.
+ * In session mode these are pinned server-side (see executeTool); the LLM's
+ * value is discarded, making cross-member access structurally impossible.
+ */
+export function isIdentityArgName(name: string): boolean {
+  return /^(member|user)[_-]?id$/i.test(name);
+}
+
 export async function executeTool(
   toolName: string,
   rawArgs: Record<string, unknown>,
@@ -82,11 +97,9 @@ export async function executeTool(
   }
 
   // ── User-scope guard (configurable from dashboard, disabled by default) ──────
-  const scopeViolation = checkUserScope(rawArgs, ctx.userId, ctx.scopeGuard);
-  if (scopeViolation) {
-    aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "scope_violation", detail: scopeViolation, latency_ms: Date.now() - started });
-    return { ok: false, error: scopeViolation, outcome: "scope_violation" };
-  }
+  // NOTE: runs AFTER session identity pinning below, so a pinned id can never
+  // trip it — the guard only judges args the model was allowed to influence.
+  let scopeViolation: string | null = null;
 
   try {
     const app = appRepo.findById(db, tool._exec.app_id);
@@ -99,6 +112,52 @@ export async function executeTool(
     if (!ep || !ep.is_active) {
       aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "tool_error", detail: "Endpoint inactive", latency_ms: Date.now() - started });
       return { ok: false, error: "Tool's endpoint is inactive", outcome: "tool_error" };
+    }
+
+    // ── Session-mode guard + identity pinning ─────────────────────────────────
+    // 1. Apps that authenticate end users via orc_sid sessions (auth_required +
+    //    auth_mode session/both) must never be reachable with a bare bot key —
+    //    that would let a leaked X-Bot-Key read any member's data.
+    // 2. WHENEVER a verified session context is present (any app auth mode),
+    //    the session owns the identity: it is pinned to this app and any
+    //    member/user-id argument is replaced with the session sub. The LLM's
+    //    value — correct or hallucinated — is discarded, so cross-member
+    //    access is structurally impossible, not merely denied.
+    const appAuthMode = (app as any).auth_mode ?? "bearer";
+    const sessionAuthApp = Boolean(app.auth_required) && (appAuthMode === "session" || appAuthMode === "both");
+
+    if (sessionAuthApp && !ctx.session) {
+      aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "denied", detail: "App requires an authenticated session (auth_required + session auth) — bot-key calls are not accepted", latency_ms: Date.now() - started });
+      return { ok: false, error: "This app requires an authenticated end-user session — login first", outcome: "denied" };
+    }
+
+    if (ctx.session) {
+      if (ctx.session.appId !== tool._exec.app_id) {
+        aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "denied", detail: `Session is bound to a different app (${ctx.session.appId})`, latency_ms: Date.now() - started });
+        return { ok: false, error: "Session is not valid for this app", outcome: "denied" };
+      }
+
+      // Identity args: endpoint-declared when available (works for any domain —
+      // memberId, sub, patientId, account_id, …); name-heuristic fallback for
+      // endpoints that haven't declared anything.
+      const declared: string[] = Array.isArray((ep as any).identity_args) ? (ep as any).identity_args : [];
+      const argNames = declared.length
+        ? declared
+        : [...Object.keys(rawArgs), ...(((ep.path_params ?? []) as any[]).map(p => String(p.name)))].filter(isIdentityArgName);
+      for (const name of argNames) {
+        if (rawArgs[name] !== ctx.session.sub) {
+          const modelValue = rawArgs[name] !== undefined ? String(rawArgs[name]) : "(not provided)";
+          rawArgs[name] = ctx.session.sub;
+          aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: { [name]: ctx.session.sub }, outcome: "ok", detail: `Identity pin: '${name}' forced to session sub — model supplied: ${modelValue}` });
+        }
+      }
+    }
+
+    // Scope guard runs on PINNED args — the session identity can never violate it.
+    scopeViolation = checkUserScope(rawArgs, ctx.userId, ctx.scopeGuard);
+    if (scopeViolation) {
+      aiToolCallRepo.record(db, { bot_id: ctx.botId, bot_name: ctx.botName, user_id: ctx.userId, tool_name: toolName, tool_args: rawArgs, outcome: "scope_violation", detail: scopeViolation, latency_ms: Date.now() - started });
+      return { ok: false, error: scopeViolation, outcome: "scope_violation" };
     }
 
     // ── Split args into path params / query params / body ────────────────────

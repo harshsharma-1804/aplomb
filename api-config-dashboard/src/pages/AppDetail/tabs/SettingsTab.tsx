@@ -128,10 +128,21 @@ function GeneralSection({ app, appId, onSaved, readonly }: { app: App; appId: st
 
 function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: string; onSaved: (a: App) => void; readonly: boolean }) {
   const [authRequired, setAuthRequired]   = useState(app.auth_required !== false);
+  const [authMode, setAuthMode]           = useState<App["auth_mode"]>(app.auth_mode ?? "bearer");
+  const [sessionMethod, setSessionMethod] = useState<App["session_method"]>(app.session_method ?? "both");
   const [allowedIds, setAllowedIds]       = useState<string[]>(app.allowed_provider_ids ?? []);
   const [providers, setProviders]         = useState<IdentityProvider[]>([]);
+  const [cookieName, setCookieName]       = useState(app.session_config?.cookie_name ?? "");
+  const [ttlIdle, setTtlIdle]             = useState(app.session_config?.ttl_idle_min ?? 30);
+  const [maxAge, setMaxAge]               = useState(app.session_config?.max_age_min ?? 480);
+  const [maxSessions, setMaxSessions]     = useState(app.session_config?.max_sessions_per_user ?? 5);
+  const [uaEnforce, setUaEnforce]         = useState<"off" | "flag" | "enforce">(app.session_config?.ua_enforce ?? "flag");
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState("");
+  const [saved, setSaved]                 = useState(false);
+
+  const sessionAuthOn = authRequired && (authMode === "session" || authMode === "both");
+  const identityInPlay = authRequired && (authMode === "bearer" || (sessionAuthOn && ["identity", "both"].includes(sessionMethod)));
 
   useEffect(() => {
     api.get<ListResult<IdentityProvider>>("/__config/admin/identity-providers")
@@ -141,35 +152,87 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
 
   function toggleProvider(id: string) {
     setAllowedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    setSaved(false);
   }
 
   async function save() {
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setSaved(false);
     try {
-      const updated = await api.put<App>(`/__config/apps/${appId}`, {
+      // 1. Master switch + provider allowlist (regular app update)
+      let updated = await api.put<App>(`/__config/apps/${appId}`, {
         auth_required: authRequired,
-        allowed_provider_ids: authRequired ? allowedIds : [],
+        allowed_provider_ids: identityInPlay ? allowedIds : [],
       });
+      // 2. Session auth config (only when session mode is in play)
+      if (sessionAuthOn) {
+        const cfg = await api.put<{ auth_mode: App["auth_mode"]; session_method: App["session_method"]; session_config: App["session_config"] }>(
+          `/__config/apps/${appId}/session-auth`,
+          {
+            auth_mode: authMode,
+            session_method: sessionMethod,
+            session_config: {
+              cookie_name: cookieName.trim() || undefined,
+              ttl_idle_min: ttlIdle,
+              max_age_min: maxAge,
+              max_sessions_per_user: maxSessions,
+              ua_enforce: uaEnforce,
+            },
+          },
+        );
+        updated = { ...updated, auth_mode: cfg.auth_mode, session_method: cfg.session_method, session_config: cfg.session_config };
+      }
       onSaved(updated);
+      setSaved(true);
     } catch (e) { setError(String(e)); }
     finally { setSaving(false); }
   }
 
+  const pickStyle = (active: boolean, danger = false) => ({
+    flex: 1, padding: "10px 14px", borderRadius: C.radius, cursor: readonly ? "default" : "pointer",
+    border: `2px solid ${active ? (danger ? C.warning : C.primary) : C.border}`,
+    background: active ? (danger ? "#fff8e1" : C.primary + "10") : C.surface,
+    textAlign: "left" as const,
+  });
+
+  function ProviderChecklist() {
+    return (
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+          Allowed Identity Providers
+        </div>
+        <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
+          Leave all unchecked to accept tokens from any active provider.
+        </p>
+        {providers.length === 0 && (
+          <p style={{ fontSize: 12, color: C.muted }}>No identity providers configured. Go to <strong>Admin → Identity Providers</strong> to add one.</p>
+        )}
+        {providers.map(p => (
+          <label key={p._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: C.radius, border: `1px solid ${allowedIds.includes(p._id) ? C.primary : C.border}`, background: allowedIds.includes(p._id) ? C.primary + "08" : C.surface, marginBottom: 6, cursor: readonly ? "default" : "pointer" }}>
+            <input type="checkbox" checked={allowedIds.includes(p._id)} onChange={() => !readonly && toggleProvider(p._id)} disabled={readonly} />
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+              <code style={{ fontSize: 11, color: C.muted }}>{p.issuer}</code>
+            </div>
+            <Badge text={p.is_active ? "active" : "inactive"} />
+          </label>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <Card>
-      <SectionHead title="Runtime Authentication" action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn> : undefined} />
+      <SectionHead title="Runtime Authentication" action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined} />
       <div style={{ padding: 16 }}>
         {error && <ErrorBanner message={error} />}
 
+        {/* ── Master switch: No Auth / Required Auth ─────────────────────── */}
         <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-          {[{ val: true, label: "🔒 Required", hint: "Validate bearer token on every request" },
-            { val: false, label: "🔓 Open", hint: "No token needed — dev / demo only" }].map(opt => (
-            <button key={String(opt.val)} onClick={() => !readonly && setAuthRequired(opt.val)} style={{
-              flex: 1, padding: "10px 14px", borderRadius: C.radius, cursor: readonly ? "default" : "pointer",
-              border: `2px solid ${authRequired === opt.val ? (opt.val ? C.primary : C.warning) : C.border}`,
-              background: authRequired === opt.val ? (opt.val ? C.primary + "10" : "#fff8e1") : C.surface,
-              textAlign: "left",
-            }}>
+          {[
+            { val: true, label: "🔒 Required Auth", hint: "Every caller must authenticate — pick how below" },
+            { val: false, label: "🔓 No Auth", hint: "Anyone can call this app — dev / demo only" },
+          ].map(opt => (
+            <button key={String(opt.val)} onClick={() => !readonly && (setAuthRequired(opt.val), setSaved(false))} style={pickStyle(authRequired === opt.val, !opt.val)}>
               <div style={{ fontWeight: 600, fontSize: 13 }}>{opt.label}</div>
               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{opt.hint}</div>
             </button>
@@ -177,34 +240,92 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
         </div>
 
         {!authRequired && (
-          <div style={{ padding: "10px 14px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
-            ⚠ <strong>Auth bypass is ON.</strong> This app accepts requests without any token.
+          <div style={{ padding: "10px 14px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e" }}>
+            ⚠ <strong>Auth bypass is ON.</strong> This app accepts requests without any token or session.
             Use for local development and demos only. Never leave this enabled in production.
           </div>
         )}
 
+        {/* ── Required Auth → how to authenticate ────────────────────────── */}
         {authRequired && (
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
-              Allowed Identity Providers
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+              Authentication Method
             </div>
-            <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-              Leave all unchecked to accept tokens from any active provider.
-            </p>
-            {providers.length === 0 && (
-              <p style={{ fontSize: 12, color: C.muted }}>No identity providers configured. Go to <strong>Admin → Identity Providers</strong> to add one.</p>
-            )}
-            {providers.map(p => (
-              <label key={p._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: C.radius, border: `1px solid ${allowedIds.includes(p._id) ? C.primary : C.border}`, background: allowedIds.includes(p._id) ? C.primary + "08" : C.surface, marginBottom: 6, cursor: readonly ? "default" : "pointer" }}>
-                <input type="checkbox" checked={allowedIds.includes(p._id)} onChange={() => !readonly && toggleProvider(p._id)} disabled={readonly} />
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
-                  <code style={{ fontSize: 11, color: C.muted }}>{p.issuer}</code>
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              {[
+                { val: "bearer", label: "🔑 Bearer (OIDC)", hint: "End clients send a verified IdP token on every request" },
+                { val: "session", label: "🍪 Session", hint: "Users log in once via this app's login path; orc_sid cookie afterwards" },
+                { val: "both", label: "🔀 Both", hint: "Bearer wins when a token is present, else the session cookie" },
+              ].map(opt => (
+                <button key={opt.val} onClick={() => !readonly && (setAuthMode(opt.val as App["auth_mode"]), setSaved(false))} style={pickStyle(authMode === opt.val)}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{opt.label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Bearer → providers */}
+            {authMode === "bearer" && <ProviderChecklist />}
+
+            {/* Session / Both → session login config */}
+            {sessionAuthOn && (
+              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+                  Session Login
                 </div>
-                <Badge text={p.is_active ? "active" : "inactive"} />
-              </label>
-            ))}
-          </div>
+                <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+                  {[
+                    { val: "gateway", label: "🗄 Gateway auth", hint: `POST {base_path}/login — username/email + password against this app's users` },
+                    { val: "identity", label: "🌐 Identity Provider", hint: `POST {base_path}/session/verify — verifies an IdP token (SSO)` },
+                    { val: "both", label: "🔀 Both", hint: "Both login paths are live" },
+                  ].map(opt => (
+                    <button key={opt.val} onClick={() => !readonly && (setSessionMethod(opt.val as App["session_method"]), setSaved(false))} style={pickStyle(sessionMethod === opt.val)}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{opt.label}</div>
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{opt.hint}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {["identity", "both"].includes(sessionMethod) && (
+                  <div style={{ marginBottom: 14 }}>
+                    <ProviderChecklist />
+                  </div>
+                )}
+                {["gateway", "both"].includes(sessionMethod) && (
+                  <div style={{ padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af", marginBottom: 14 }}>
+                    Gateway users are managed in the <strong>Users</strong> tab of this app.
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0 12px", marginBottom: 4 }}>
+                  <Field label="Idle timeout (min)">
+                    <input type="number" min={5} max={1440} style={inputStyle} value={ttlIdle} onChange={e => { setTtlIdle(parseInt(e.target.value) || 30); setSaved(false); }} disabled={readonly} />
+                  </Field>
+                  <Field label="Absolute cap (h)">
+                    <input type="number" min={1} max={168} style={inputStyle} value={Math.round(maxAge / 60)} onChange={e => { setMaxAge((parseInt(e.target.value) || 8) * 60); setSaved(false); }} disabled={readonly} />
+                  </Field>
+                  <Field label="Max sessions/user">
+                    <input type="number" min={1} max={20} style={inputStyle} value={maxSessions} onChange={e => { setMaxSessions(parseInt(e.target.value) || 5); setSaved(false); }} disabled={readonly} />
+                  </Field>
+                  <Field label="Device fingerprint">
+                    <select style={inputStyle} value={uaEnforce} onChange={e => { setUaEnforce(e.target.value as "off" | "flag" | "enforce"); setSaved(false); }} disabled={readonly}>
+                      <option value="off">Off</option>
+                      <option value="flag">Flag only</option>
+                      <option value="enforce">Enforce UA</option>
+                    </select>
+                  </Field>
+                </div>
+                <p style={{ fontSize: 11, color: C.muted, margin: "0 0 12px" }}>
+                  Sessions die after the idle timeout, no later than the absolute cap. IP changes are never punished — IP is metadata only.
+                </p>
+
+                <Field label="Session cookie name" hint="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie.">
+                  <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
+                </Field>
+              </div>
+            )}
+          </>
         )}
       </div>
     </Card>
@@ -259,7 +380,8 @@ function AiExposeSection({ app, appId, onSaved, readonly }: { app: App; appId: s
         {aiExpose && (
           <div style={{ marginTop: 10, padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
             🤖 This app is AI-exposed. Assign it to bots in the <strong>Bot Registry → Bindings tab</strong>.
-            AI-initiated calls skip runtime OIDC — the bot key + bound user id (scope-enforced) replace per-user tokens. Normal traffic still enforces OIDC.
+            If this app uses session auth, AI calls must present a valid orc_sid session — a bare bot key is not accepted
+            (a leaked key can never read member data). Normal bearer traffic is unaffected.
           </div>
         )}
       </div>

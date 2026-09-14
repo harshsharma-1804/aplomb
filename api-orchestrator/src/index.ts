@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 import { join } from "path";
 import { config } from "./config/appConfig.js";
-import { initDb, closeDb } from "./db/client.js";
+import { initDb, closeDb, getDb } from "./db/client.js";
 import { initAppCache, stopAppCachePolling, getAppByPath } from "./cache/appCache.js";
 import { initProviderCache, stopProviderCachePolling } from "./cache/providerCache.js";
 import { initAllowlistCache, stopAllowlistCachePolling } from "./cache/allowlistCache.js";
@@ -16,6 +16,7 @@ import { warmJwksCache } from "./auth/oidcValidate.js";
 import { initLogger } from "./runtime/logger.js";
 import { bootstrapOrganization, bootstrapAdmin, bootstrapBuiltinAiProvider } from "./db/bootstrap.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
+import { appSessionRepo } from "./db/repos/appSessionRepo.js";
 import rootRouter from "./routes/index.route.js";
 
 const app = express();
@@ -147,6 +148,12 @@ async function start(): Promise<void> {
   warmJwksCache();
   initLogger();
 
+  // Expired app-session purge (both clocks) + 7-day-old revoked rows — hourly
+  const sessionPurge = setInterval(() => {
+    try { const n = appSessionRepo.purgeExpired(getDb()); if (n) console.log(`[sessions] Purged ${n} expired app sessions`); } catch {}
+  }, 3600_000);
+  sessionPurge.unref();
+
   const server = app.listen(config.server.port, "0.0.0.0", () => {
     console.log(`[server] api-orchestrator running on http://0.0.0.0:${config.server.port}`);
     console.log(`[server] Dashboard CORS: ${config.cors.allowedOrigins.join(", ")}`);
@@ -159,6 +166,7 @@ async function start(): Promise<void> {
     stopProviderCachePolling();
     stopAllowlistCachePolling();
     stopCorsCachePolling();
+    clearInterval(sessionPurge);
     server.close(() => { closeDb(); process.exit(0); });
     setTimeout(() => process.exit(1), 10_000);
   }

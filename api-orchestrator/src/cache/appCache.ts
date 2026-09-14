@@ -1,10 +1,11 @@
 import { getDb } from "../db/client.js";
-import { appRepo } from "../db/repos/appRepo.js";
+import { appRepo, type SessionConfig } from "../db/repos/appRepo.js";
 
 export type CachedApp = {
   id: string; name: string; base_path: string; description: string | null;
   status: string; deprecated_at: string | null; auth_required: boolean;
   mode: string; app_env: any[]; allowed_provider_ids: string[];
+  auth_mode: string; session_method: string; session_config: SessionConfig;
   created_by: string | null; created_at: string; updated_at: string;
 };
 

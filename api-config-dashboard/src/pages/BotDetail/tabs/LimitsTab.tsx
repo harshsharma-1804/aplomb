@@ -61,6 +61,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
           <NumField label="Max history messages" hint="Most recent N messages sent to LLM (default: unlimited, max: 100)" value={limits.max_history_messages} onChange={v => setNum("max_history_messages", v)} placeholder="unlimited" readonly={readonly} />
           <NumField label="LLM timeout (ms)" hint="Wait time before giving up (default: 60000, range: 5000–120000)" value={limits.timeout_ms} onChange={v => setNum("timeout_ms", v)} placeholder="60000" readonly={readonly} />
           <NumField label="Max response words" hint="Truncate bot responses longer than this (default: unlimited, max: 2000)" value={limits.max_response_words} onChange={v => setNum("max_response_words", v)} placeholder="unlimited" readonly={readonly} />
+          <NumField label="Rate limit (req/min)" hint="Max /__ai/chat + /mcp requests per minute — abuse protection (0 = unlimited)" value={limits.rate_limit_per_min} onChange={v => setNum("rate_limit_per_min", v)} placeholder="unlimited" readonly={readonly} />
         </div>
       </Card>
 

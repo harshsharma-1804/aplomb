@@ -15,6 +15,7 @@ export type CreateEndpointInput = {
   folder?: string | null;
   path_params?: unknown[];
   query_params?: unknown[];
+  identity_args?: string[];
   request?: Record<string, unknown>;
   upstream?: Record<string, unknown>;
   output_schema?: unknown[];
@@ -32,6 +33,7 @@ function serialize(row: typeof endpoints.$inferSelect) {
     folder:          row.folder ?? null,
     path_params:     JSON.parse(row.path_params    ?? "[]"),
     query_params:    JSON.parse(row.query_params   ?? "[]"),
+    identity_args:   JSON.parse(row.identity_args  ?? "[]"),
     request:         JSON.parse(row.request        ?? "{}"),
     upstream:        JSON.parse(row.upstream       ?? "{}"),
     output_schema:   JSON.parse(row.output_schema  ?? "[]"),
@@ -58,6 +60,7 @@ export const endpointRepo = {
       folder:         input.folder ?? null,
       path_params:    JSON.stringify(input.path_params    ?? []),
       query_params:   JSON.stringify(input.query_params   ?? []),
+      identity_args:  JSON.stringify(input.identity_args  ?? []),
       request:        JSON.stringify(input.request        ?? {}),
       upstream:       JSON.stringify(input.upstream       ?? {}),
       output_schema:  JSON.stringify(input.output_schema  ?? []),
@@ -97,6 +100,7 @@ export const endpointRepo = {
     if (input.folder         !== undefined) patch["folder"]         = input.folder ?? null;
     if (input.path_params    !== undefined) patch["path_params"]    = JSON.stringify(input.path_params);
     if (input.query_params   !== undefined) patch["query_params"]   = JSON.stringify(input.query_params);
+    if ((input as any).identity_args !== undefined) patch["identity_args"] = JSON.stringify((input as any).identity_args);
     if (input.request        !== undefined) patch["request"]        = JSON.stringify(input.request);
     if (input.upstream       !== undefined) patch["upstream"]       = JSON.stringify(input.upstream);
     if (input.output_schema  !== undefined) patch["output_schema"]  = JSON.stringify(input.output_schema);

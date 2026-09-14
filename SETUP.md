@@ -72,15 +72,16 @@ The easiest way to move apps between installations is the **export/import bundle
 
 **Important — secrets:** if the bundle used `env=keys`, re-enter the secret values after import (App → Environment / Env Vars). If you change `SECRETS_ENCRYPTION_KEY` between installations, values encrypted on the source cannot be decrypted on the target.
 
-## 7. Set up an AI bot (manual — bot export is not available yet)
+## 7. AI bot (included in the export bundle)
 
-Bot definitions are **not** part of the app export at this stage. Recreate them by hand:
+If the source installation exported the app **with its bot** (Export → "AI bot" checkbox), the import recreates it automatically — persona, rules, limits, and its AI providers. Two things to know:
 
-1. **Admin → AI Providers → Add**: name, base URL (e.g., `https://<your-llm-host>/v1`), API key, model name.
-2. **Bots → Create**: name, select the provider, bind the app(s) it may use tools from, add **Rules** (verbatim instructions the gateway passes to the model) and optionally a **Persona**.
-3. In the bot's **Limits** tab, set rate limits and scope enforcement as needed.
-4. Your frontend calls the bot via `POST {app_base_path}/__ai/chat` with the `X-Bot-Key` header (key shown on the bot page), sending `{ "messages": [...] }` (+ `user.id` for bot-key callers).
-5. Optional: run a local LLM — either `docker compose -f docker-compose.sqlite.yml up -d ollama` (bundled service), or your own host Ollama at `http://host.docker.internal:11434/v1` (add it as a provider).
+- **A new bot key is generated on import** (keys are stored hashed and can never be exported). The import result screen shows it once — copy it and update your frontend's `X-Bot-Key` header.
+- **Provider API keys are never exported.** Providers are re-linked by secret name: if a secret named exactly like on the source exists (Admin → Secrets), the provider links to it; otherwise the import tells you which secret to create and which provider to bind manually.
+
+If the bundle has no bot (or you prefer manual setup): Admin → AI Providers → Add (name, base URL, API key, model), then Bots → Create (bind apps, add Rules/Persona, set Limits). Your frontend calls the bot via `POST /__ai/chat` with the `X-Bot-Key` header, sending `{ "messages": [{ "from": "user", "to": "bot", "message": "..." }] }` (+ `user.id` for bot-key callers).
+
+Optional local LLM: `docker compose -f docker-compose.sqlite.yml up -d ollama` (bundled service), or your own host Ollama at `http://host.docker.internal:11434/v1` (add it as a provider).
 
 ## 8. Verify everything works
 

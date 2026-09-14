@@ -49,6 +49,9 @@ const DDL = `
     description TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
     deprecated_at TEXT, auth_required INTEGER NOT NULL DEFAULT 1, ai_expose INTEGER NOT NULL DEFAULT 0,
     mode TEXT NOT NULL DEFAULT 'prod',
+    auth_mode TEXT NOT NULL DEFAULT 'bearer',
+    session_method TEXT NOT NULL DEFAULT 'both',
+    session_config TEXT NOT NULL DEFAULT '{}',
     app_env TEXT NOT NULL DEFAULT '[]',
     allowed_provider_ids TEXT NOT NULL DEFAULT '[]',
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -62,6 +65,7 @@ const DDL = `
     path_params TEXT NOT NULL DEFAULT '[]', query_params TEXT NOT NULL DEFAULT '[]',
     request TEXT NOT NULL DEFAULT '{}', upstream TEXT NOT NULL DEFAULT '{}',
     output_schema TEXT NOT NULL DEFAULT '[]', field_mappings TEXT NOT NULL DEFAULT '[]',
+    identity_args TEXT NOT NULL DEFAULT '[]',
     sample_response TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     UNIQUE(app_id, method, path)
   );

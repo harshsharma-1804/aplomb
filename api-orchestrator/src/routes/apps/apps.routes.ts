@@ -12,6 +12,8 @@ import { compileTypeScript } from "../../runtime/scriptRunner.js";
 import { refreshToolRegistry } from "../../ai/toolRegistry.js";
 import { appUserRepo } from "../../db/repos/appUserRepo.js";
 import { appSessionRepo, resolveSessionConfig } from "../../db/repos/appSessionRepo.js";
+import { aiBotRepo } from "../../db/repos/aiBotRepo.js";
+import { buildBotBundle, importProviders, importBotBundle } from "../../ai/botTransfer.js";
 import { validateCookieName, sessionCookieName } from "../../auth/appSessionAuth.js";
 import { config } from "../../config/appConfig.js";
 
@@ -257,8 +259,13 @@ router.delete("/:id/users/:userId", requirePermission("manage:apps"), (req, res)
 
 // ── GET /apps/:id/export ───────────────────────────────────────────────────────
 // Query params:
-//   include = comma-separated list of "endpoints","scripts"  (default: both)
-//   env     = "none" | "keys" | "values"                     (default: "keys")
+//   include = comma-separated list of "endpoints","scripts","bots"  (default: endpoints,scripts)
+//   env     = "none" | "keys" | "values"                            (default: "keys")
+//
+// "bots" includes the AI bot(s) bound to this app (one bot per app by uniqueness
+// rule) plus the AI provider definitions those bots reference. Provider API keys
+// live in the secret vault — they are NEVER exported; providers export with the
+// secret NAME and the import links (or asks for) the secret on the target.
 
 router.get("/:id/export", requirePermission("export:app"), (req, res) => {
   const db = getDb();
@@ -339,8 +346,16 @@ router.get("/:id/export", requirePermission("export:app"), (req, res) => {
   const { id: _id, created_by: _cb, created_at: _ca, updated_at: _ua, ...appRest } = app as any;
   const slug = (appRest.base_path as string).replace(/\//g, "-").replace(/^-/, "") || "app";
 
+  // ── Bots + AI providers (shared bot transfer format) ───────────────────────
+  let botBundle: ReturnType<typeof buildBotBundle> | null = null;
+  if (include.has("bots")) {
+    const botsForApp = aiBotRepo.listSafe(db).filter(b => b.allowed_app_ids.includes(String(appId)));
+    botBundle = buildBotBundle(db, botsForApp);
+  }
+
   const payload = {
     export_version:  "1",
+    kind:            "app",
     exported_at:     new Date().toISOString(),
     exported_from:   "orchestrator v1.0.0",
     export_options:  { include: [...include], env: envMode },
@@ -351,6 +366,7 @@ router.get("/:id/export", requirePermission("export:app"), (req, res) => {
     },
     endpoints: exportedEndpoints,
     scripts:   exportedScripts,
+    ...(botBundle ? { bots: botBundle.bots, ai_providers: botBundle.ai_providers } : {}),
   };
 
   const filename = `${slug}-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -372,6 +388,7 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
   }
 
   const warnings: string[] = [];
+  const createdBotIds: string[] = [];
   const targetName     = options.name      ?? payload.app.name;
   const targetBasePath = options.base_path ?? payload.app.base_path;
 
@@ -383,6 +400,12 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       return;
     }
     // overwrite: true — delete existing app + its data
+    // Unbind any bot bound to the existing app first (bot itself survives — it
+    // may be bound to other apps; dangling app bindings must not remain)
+    for (const b of aiBotRepo.listSafe(db).filter(x => x.allowed_app_ids.includes(String(existing.id)))) {
+      aiBotRepo.updateOneAppPermission(db, b.id, String(existing.id), { read: false, write: false });
+      warnings.push(`Bot '${b.name}' was unbound from the overwritten app — re-bind it manually if it should serve the imported app.`);
+    }
     endpointRepo.deleteByAppId(db, existing.id);
     scriptRepo.deleteByAppId(db, existing.id);
     versionHistoryRepo.deleteByAppId(db, existing.id);
@@ -475,6 +498,27 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       endpointsCreated++;
     }
 
+    // ── Bots + AI providers (shared bot transfer format) ──────────────────────
+    // Providers are matched/created by name (API keys never travel — providers
+    // link by secret name). Bots are created with FRESH keys (returned once in
+    // bot_keys). App bindings resolve by base_path: the imported app matches
+    // the bundle's own base_path; other apps must already exist here.
+    const providerNameToId = importProviders(db, (payload as any).ai_providers, warnings, req.dashboardUser?.id);
+
+    const appBasePaths = new Map<string, string>();
+    for (const a of appRepo.list(db)) appBasePaths.set(a.base_path, a.id);
+    appBasePaths.set(targetBasePath, newAppId); // the freshly imported app wins
+
+    const { created: createdBots, botIds } = await importBotBundle(
+      db,
+      (payload as any).bots,
+      providerNameToId,
+      (bp: string) => appBasePaths.get(bp) ?? null,
+      warnings,
+      req.dashboardUser?.id
+    );
+    createdBotIds.push(...botIds);
+
     // ── Finalise ───────────────────────────────────────────────────────────────
     refreshApp(newAppId);
     writeHistory(newAppId, "imported", `App imported: ${targetName} (from export file)`, req);
@@ -483,10 +527,13 @@ router.post("/import", requirePermission("manage:apps"), async (req, res) => {
       app: newApp,
       endpoints_created: endpointsCreated,
       scripts_created:   scriptsCreated,
+      bots_created:      createdBots.length,
+      bot_keys:          createdBots,
       warnings,
     });
   } catch (err: any) {
     // Rollback — delete the partially-created app so no phantom remains
+    for (const botId of createdBotIds) aiBotRepo.delete(db, botId);
     endpointRepo.deleteByAppId(db, newAppId);
     scriptRepo.deleteByAppId(db, newAppId);
     appRepo.delete(db, newAppId);

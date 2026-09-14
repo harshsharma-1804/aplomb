@@ -29,6 +29,7 @@ export function BotDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<TabKey>("overview");
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     if (!botId) return;
@@ -38,6 +39,34 @@ export function BotDetailPage() {
       setBot(d);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
+  }
+
+  async function handleExport() {
+    if (!bot) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/__config/admin/ai/bots/${bot._id}/export`, { credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `${bot.name}-bot-export.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename!;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExporting(false);
+    }
   }
 
   useEffect(() => { load(); }, [botId]);
@@ -62,6 +91,11 @@ export function BotDetailPage() {
             {bot.allowed_app_ids.length} app{bot.allowed_app_ids.length !== 1 ? "s" : ""} · {bot.allowed_provider_ids.length} provider{bot.allowed_provider_ids.length !== 1 ? "s" : ""} · {bot.rules.length} rule{bot.rules.length !== 1 ? "s" : ""}
           </div>
         </div>
+        {can("manage:providers") && (
+          <Btn size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
+            {exporting ? "Preparing…" : "Export ↓"}
+          </Btn>
+        )}
       </div>
 
       {/* Tab bar */}

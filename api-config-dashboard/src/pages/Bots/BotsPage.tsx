@@ -4,12 +4,14 @@ import { api } from "../../api/client";
 import type { AiBot, AiProvider, ListResult } from "../../api/types";
 import { Card, SectionHead, Table, Btn, Badge, Field, inputStyle, Spinner, ErrorBanner, Confirm, C } from "../../components";
 import { useSession } from "../../auth/SessionContext";
+import { ImportBotModal } from "./ImportBotModal";
 
 export function BotsPage() {
   const [bots, setBots] = useState<AiBot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AiBot | null>(null);
   const [newKey, setNewKey] = useState<{ name: string; key: string } | null>(null);
   const navigate = useNavigate();
@@ -72,8 +74,20 @@ export function BotsPage() {
             Register and configure chatbot clients. Each bot gets a unique key, its own app bindings, rules, and LLM provider.
           </p>
         </div>
-        {can("manage:providers") && <Btn onClick={() => setShowCreate(true)}>+ Register Bot</Btn>}
+        {can("manage:providers") && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="outline" onClick={() => setShowImport(true)}>Import Bot ↑</Btn>
+            <Btn onClick={() => setShowCreate(true)}>+ Register Bot</Btn>
+          </div>
+        )}
       </div>
+
+      {showImport && (
+        <ImportBotModal
+          onClose={() => setShowImport(false)}
+          onImported={load}
+        />
+      )}
 
       {error && <ErrorBanner message={error} />}
 

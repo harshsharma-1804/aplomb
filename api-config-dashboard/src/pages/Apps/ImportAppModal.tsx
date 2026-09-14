@@ -148,6 +148,12 @@ export function ImportAppModal({ onClose, onImported }: Props) {
                 <PreviewRow label="Base path"  value={parsed.app.base_path} code />
                 <PreviewRow label="Endpoints"  value={`${parsed.endpoints.length}`} />
                 <PreviewRow label="Scripts"    value={`${parsed.scripts.length}`} />
+                {(parsed.bots?.length ?? 0) > 0 && (
+                  <PreviewRow label="Bot(s)"     value={parsed.bots!.map(b => b.name).join(", ")} />
+                )}
+                {(parsed.ai_providers?.length ?? 0) > 0 && (
+                  <PreviewRow label="AI providers" value={parsed.ai_providers!.map(p => `${p.name} (${p.model})`).join(", ")} />
+                )}
                 {parsed.export_options?.include && (
                   <PreviewRow label="Included" value={parsed.export_options.include.join(", ")} />
                 )}
@@ -273,8 +279,33 @@ export function ImportAppModal({ onClose, onImported }: Props) {
                 <PreviewRow label="App"       value={result.app.name} />
                 <PreviewRow label="Endpoints" value={`${result.endpoints_created} created`} />
                 <PreviewRow label="Scripts"   value={`${result.scripts_created} created`} />
+                {(result.bots_created ?? 0) > 0 && (
+                  <PreviewRow label="Bots"    value={`${result.bots_created} created`} />
+                )}
               </div>
             </div>
+
+            {(result.bot_keys?.length ?? 0) > 0 && (
+              <div style={{ border: `2px solid ${C.danger}`, borderRadius: C.radius, overflow: "hidden" }}>
+                <div style={{ background: "#fef2f2", padding: "10px 14px", borderBottom: `1px solid #fca5a5`, fontWeight: 700, fontSize: 13, color: "#b91c1c" }}>
+                  🔑 New bot key{result.bot_keys.length !== 1 ? "s" : ""} — copy now, shown only once
+                </div>
+                <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                  {result.bot_keys.map(bk => (
+                    <div key={bk.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{bk.name}</div>
+                        <code style={{ background: C.bg, border: `1px solid ${C.border}`, padding: "4px 8px", borderRadius: 4, fontSize: 12, wordBreak: "break-all", display: "block" }}>{bk.api_key}</code>
+                      </div>
+                      <Btn size="sm" variant="outline" onClick={() => { navigator.clipboard?.writeText(bk.api_key); }}>Copy</Btn>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 12, color: C.muted }}>
+                    Bot keys are stored hashed and can never be exported — update the calling frontend's <code>X-Bot-Key</code> header to the new value.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {result.warnings.length > 0 && (
               <div style={{ border: `1px solid #fcd34d`, borderRadius: C.radius, overflow: "hidden" }}>

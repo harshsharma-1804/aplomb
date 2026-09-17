@@ -70,7 +70,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                 ))}
               </div>
               {users.map(u => (
-                <div key={u._id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg }}>
+                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: u.is_active ? C.text : C.muted }}>{u.display_name || u.username}</div>
                     <code style={{ fontSize: 11, color: C.muted }}>@{u.username}</code>
@@ -82,7 +82,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                     <div style={{ display: "flex", gap: 6 }}>
                       <Btn size="sm" variant="ghost" onClick={() => setResetUser(u)}>Reset PW</Btn>
                       <Btn size="sm" variant="ghost" onClick={async () => {
-                        try { await api.put(`/__config/apps/${appId}/users/${u._id}`, { is_active: !u.is_active }); load(); }
+                        try { await api.put(`/__config/apps/${appId}/users/${u.id}`, { is_active: !u.is_active }); load(); }
                         catch (e) { alert(String(e)); }
                       }}>{u.is_active ? "Disable" : "Enable"}</Btn>
                       <button onClick={() => setDeleteUser(u)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
@@ -102,7 +102,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           danger
           message={`Delete user "${deleteUser.username}"? Their active sessions on this app will be revoked immediately.`}
           onConfirm={async () => {
-            try { await api.del(`/__config/apps/${appId}/users/${deleteUser._id}`); setDeleteUser(null); load(); }
+            try { await api.del(`/__config/apps/${appId}/users/${deleteUser.id}`); setDeleteUser(null); load(); }
             catch (e) { alert(String(e)); }
           }}
           onCancel={() => setDeleteUser(null)}
@@ -161,7 +161,7 @@ function ResetPasswordModal({ appId, user, onClose, onDone }: { appId: string; u
   async function submit(ev: React.FormEvent) {
     ev.preventDefault(); setSaving(true); setError("");
     try {
-      await api.put(`/__config/apps/${appId}/users/${user._id}/password`, { password });
+      await api.put(`/__config/apps/${appId}/users/${user.id}/password`, { password });
       onDone();
     } catch (e) { setError(String(e)); setSaving(false); }
   }

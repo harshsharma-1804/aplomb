@@ -258,7 +258,7 @@ export interface HostAllowlistEntry {
 // ── App sessions & app users (AppScopedSessions-9) ────────────────────────────
 
 export interface AppUser {
-  _id: string;
+  id: string;
   app_id: string;
   username: string;
   email: string;

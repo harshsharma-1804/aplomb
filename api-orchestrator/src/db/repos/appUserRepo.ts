@@ -21,7 +21,12 @@ export type CreateAppUserInput = {
   username: string;
   email: string;
   password: string;
-  sub: string;
+  /**
+   * Verified identity bound into the session (e.g. a member ID on
+   * member-scoped apps). Optional — defaults to the username for apps
+   * whose users have no external identity (e.g. admin consoles).
+   */
+  sub?: string;
   display_name?: string;
 };
 
@@ -50,7 +55,7 @@ export const appUserRepo = {
       username: input.username.trim(),
       email: input.email.trim().toLowerCase(),
       password_hash,
-      sub: input.sub.trim(),
+      sub: input.sub?.trim() || input.username.trim(),
       display_name: input.display_name ?? null,
       is_active: true,
       created_at: t,

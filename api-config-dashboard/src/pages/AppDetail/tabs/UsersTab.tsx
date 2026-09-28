@@ -56,7 +56,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
         <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
           These users authenticate <strong>only</strong> against this app via <code>POST {app.base_path}/login</code>.
           They cannot log in to the admin dashboard, and dashboard admins cannot use their credentials here.
-          <code>sub</code> is the member/user ID forwarded as the session identity (e.g. MED2026...).
+          <code>sub</code> is the identity bound into the session — it defaults to the username when not set (member-scoped apps set it to the member ID, e.g. MED2026...).
         </div>
         <div style={{ padding: 16 }}>
           {error && <ErrorBanner message={error} />}
@@ -65,12 +65,12 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           ) : (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
-                {["USERNAME", "EMAIL", "SUB (MEMBER ID)", "STATUS", ""].map(h => (
+                {["USERNAME", "EMAIL", "SUB (IDENTITY)", "STATUS", ""].map(h => (
                   <span key={h} style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</span>
                 ))}
               </div>
               {users.map(u => (
-                <div key={u._id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg }}>
+                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: u.is_active ? C.text : C.muted }}>{u.display_name || u.username}</div>
                     <code style={{ fontSize: 11, color: C.muted }}>@{u.username}</code>
@@ -82,7 +82,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                     <div style={{ display: "flex", gap: 6 }}>
                       <Btn size="sm" variant="ghost" onClick={() => setResetUser(u)}>Reset PW</Btn>
                       <Btn size="sm" variant="ghost" onClick={async () => {
-                        try { await api.put(`/__config/apps/${appId}/users/${u._id}`, { is_active: !u.is_active }); load(); }
+                        try { await api.put(`/__config/apps/${appId}/users/${u.id}`, { is_active: !u.is_active }); load(); }
                         catch (e) { alert(String(e)); }
                       }}>{u.is_active ? "Disable" : "Enable"}</Btn>
                       <button onClick={() => setDeleteUser(u)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
@@ -102,7 +102,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           danger
           message={`Delete user "${deleteUser.username}"? Their active sessions on this app will be revoked immediately.`}
           onConfirm={async () => {
-            try { await api.del(`/__config/apps/${appId}/users/${deleteUser._id}`); setDeleteUser(null); load(); }
+            try { await api.del(`/__config/apps/${appId}/users/${deleteUser.id}`); setDeleteUser(null); load(); }
             catch (e) { alert(String(e)); }
           }}
           onCancel={() => setDeleteUser(null)}
@@ -141,8 +141,8 @@ function AddUserModal({ appId, onClose, onCreated }: { appId: string; onClose: (
         <Field label="Password" hint="At least 8 characters — shown to you once, stored as an argon2 hash">
           <input type="password" style={inputStyle} value={form.password} onChange={set("password")} required minLength={8} />
         </Field>
-        <Field label="Sub (member/user ID)" hint="Bound into the session as the verified identity — e.g. MED202609070001">
-          <input style={inputStyle} value={form.sub} onChange={set("sub")} required />
+        <Field label="Sub (identity) — optional" hint="Bound into the session as the verified identity. Leave empty to use the username — e.g. MED202609070001 for member-scoped apps.">
+          <input style={inputStyle} value={form.sub} onChange={set("sub")} placeholder="defaults to username" />
         </Field>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
           <Btn variant="ghost" type="button" onClick={onClose}>Cancel</Btn>
@@ -161,7 +161,7 @@ function ResetPasswordModal({ appId, user, onClose, onDone }: { appId: string; u
   async function submit(ev: React.FormEvent) {
     ev.preventDefault(); setSaving(true); setError("");
     try {
-      await api.put(`/__config/apps/${appId}/users/${user._id}/password`, { password });
+      await api.put(`/__config/apps/${appId}/users/${user.id}/password`, { password });
       onDone();
     } catch (e) { setError(String(e)); setSaving(false); }
   }

@@ -197,8 +197,8 @@ router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => 
   const appId = param(param(req.params["id"]));
   if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
   const { username, email, password, sub, display_name } = req.body ?? {};
-  if (!username || !email || !password || !sub) {
-    res.status(400).json({ error: "username, email, password and sub are required", code: "VALIDATION_ERROR" }); return;
+  if (!username || !email || !password) {
+    res.status(400).json({ error: "username, email and password are required (sub is optional — defaults to the username)", code: "VALIDATION_ERROR" }); return;
   }
   if (String(password).length < 8) {
     res.status(400).json({ error: "Password must be at least 8 characters", code: "WEAK_PASSWORD" }); return;

@@ -11,6 +11,7 @@ export function ProvidersPage() {
   const [editing, setEditing] = useState<IdentityProvider | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<IdentityProvider | null>(null);
+  const [copiedId, setCopiedId] = useState("");
 
   async function load() {
     setLoading(true);
@@ -23,11 +24,24 @@ export function ProvidersPage() {
   }
   useEffect(() => { load(); }, []);
 
+  async function copyId(p: IdentityProvider) {
+    try { await navigator.clipboard.writeText(p._id); setCopiedId(p._id); setTimeout(() => setCopiedId(""), 1500); } catch { /* clipboard unavailable */ }
+  }
+
   const cols = [
     { key: "name", label: "Name" },
     { key: "issuer", label: "Issuer", render: (v: unknown) => <code style={{ fontSize: 11 }}>{String(v)}</code> },
     { key: "client_id", label: "Brokered login", render: (v: unknown) =>
       v ? <Badge text="configured" /> : <span style={{ fontSize: 11, color: C.muted }}>token-verify only</span> },
+    { key: "_id", label: "Provider ID", render: (v: unknown, row: Record<string, unknown>) => {
+        const p = row as unknown as IdentityProvider;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <code style={{ fontSize: 10, color: C.muted }} title={p._id}>{p._id.slice(0, 8)}…</code>
+            <Btn size="sm" variant="ghost" onClick={() => copyId(p)}>{copiedId === p._id ? "Copied ✓" : "Copy"}</Btn>
+          </div>
+        );
+      }},
     { key: "is_active", label: "Status", render: (v: unknown) => <Badge text={v ? "active" : "inactive"} /> },
     { key: "_id", label: "Actions", render: (_: unknown, row: Record<string, unknown>) => (
       <div style={{ display: "flex", gap: 6 }}>
@@ -76,7 +90,12 @@ function ProviderModal({ provider, onClose, onDone, secrets }: {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState("");
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function copyId(p: IdentityProvider) {
+    try { await navigator.clipboard.writeText(p._id); setCopiedId(p._id); setTimeout(() => setCopiedId(""), 1500); } catch { /* clipboard unavailable */ }
+  }
 
   async function submit(ev: React.FormEvent) {
     ev.preventDefault(); setSaving(true); setError("");
@@ -104,6 +123,13 @@ function ProviderModal({ provider, onClose, onDone, secrets }: {
     <Modal title={provider ? "Edit Identity Provider" : "Add Identity Provider"} onClose={onClose} width={560}>
       <form onSubmit={submit}>
         {error && <ErrorBanner message={error} />}
+        {provider && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: C.bg, borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>PROVIDER ID</span>
+            <code style={{ fontSize: 11, flex: 1, wordBreak: "break-all" }}>{provider._id}</code>
+            <Btn size="sm" variant="ghost" type="button" onClick={() => copyId(provider)}>{copiedId === provider._id ? "Copied ✓" : "Copy"}</Btn>
+          </div>
+        )}
         <Field label="Name"><input style={inputStyle} value={form.name} onChange={set("name")} placeholder="Google" required /></Field>
         <Field label="Issuer URL" hint="e.g. https://accounts.google.com or https://company.okta.com/oauth2/default"><input style={inputStyle} value={form.issuer} onChange={set("issuer")} placeholder="https://..." required /></Field>
         <Field label="JWKS URI" hint="Leave blank to auto-discover from /.well-known/openid-configuration"><input style={inputStyle} value={form.jwks_uri} onChange={set("jwks_uri")} placeholder="https://.../.well-known/jwks.json" /></Field>

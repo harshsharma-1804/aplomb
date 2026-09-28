@@ -148,10 +148,15 @@ export type IdTokenClaims = {
 async function verifyIdToken(idToken: string, provider: IdentityProvider & { client_id: string | null }): Promise<IdTokenClaims> {
   if (!provider.client_id) throw new Error("provider has no client_id");
   const jwks = await getProviderJwks(provider as any);
+  // repo serialization already JSON-parses `algorithms` into an array —
+  // accept both shapes to be safe (raw column value vs serialized row).
+  const rawAlgorithms = Array.isArray(provider.algorithms)
+    ? provider.algorithms
+    : JSON.parse(provider.algorithms);
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer: provider.issuer,
     audience: provider.client_id,
-    algorithms: (JSON.parse(provider.algorithms) as string[]) as any,
+    algorithms: rawAlgorithms as any,
     clockTolerance: provider.clock_tolerance_sec,
   });
   const raw = payload as Record<string, unknown>;

@@ -12,7 +12,8 @@ import { useSession } from "../../../auth/SessionContext";
 export function UsersTab({ appId, app }: { appId: string; app: { base_path: string; session_method?: string; auth_mode?: string } }) {
   const { can } = useSession();
   const readonly = !can("manage:apps");
-  const gatewayOn = (app.auth_mode ?? "bearer") !== "bearer" && ["gateway", "both"].includes(app.session_method ?? "both");
+  const sessionOn = (app.auth_mode ?? "bearer") !== "bearer";
+  const gatewayOn = sessionOn && ["gateway", "both"].includes(app.session_method ?? "both");
 
   const [users, setUsers] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,14 +33,14 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
 
   useEffect(() => { load(); }, [load]);
 
-  if (!gatewayOn) {
+  if (!sessionOn) {
     return (
       <Card>
         <SectionHead title="App Users" />
         <div style={{ padding: 16 }}>
           <div style={{ padding: "10px 14px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af" }}>
-            Gateway auth is not enabled for this app. Turn it on in <strong>Settings → Runtime Authentication → Session Login</strong>,
-            then this app's users (who can only log in via <code>POST {app.base_path}/login</code>) will be managed here.
+            Session auth is not enabled for this app. Turn it on in <strong>Settings → Runtime Authentication</strong> —
+            this directory holds the app's gateway users (password login) as well as identity-provisioned users.
           </div>
         </div>
       </Card>
@@ -51,7 +52,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
       <Card>
         <SectionHead
           title={`App Users (${users.length})`}
-          action={!readonly ? <Btn size="sm" onClick={() => setShowAdd(true)}>+ Add User</Btn> : undefined}
+          action={!readonly && gatewayOn ? <Btn size="sm" onClick={() => setShowAdd(true)}>+ Add User</Btn> : undefined}
         />
           <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
             These users authenticate <strong>only</strong> against this app — via <code>POST {app.base_path}/login</code> (gateway) or their identity provider (brokered redirect).
@@ -61,7 +62,11 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
         <div style={{ padding: 16 }}>
           {error && <ErrorBanner message={error} />}
           {loading ? <span style={{ fontSize: 12, color: C.muted }}>Loading…</span> : users.length === 0 ? (
-            <p style={{ fontSize: 12, color: C.muted }}>No users yet — add the first one so the login endpoint can authenticate someone.</p>
+            <p style={{ fontSize: 12, color: C.muted }}>
+              No users yet — {gatewayOn
+                ? "add the first gateway user, or they'll appear here after their first identity-provider login."
+                : "users appear here automatically after their first identity-provider login."}
+            </p>
           ) : (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>

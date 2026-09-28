@@ -8,12 +8,14 @@ import { SecretsTab } from "./tabs/SecretsTab";
 import { UsersTab } from "./tabs/UsersTab";
 import { AllowedOriginsTab } from "./tabs/AllowedOriginsTab";
 import { AiTab } from "./tabs/AiTab";
+import { MailTab } from "./tabs/MailTab";
 
 const TABS = [
   { key: "organization",       label: "Organization",        icon: "🏢", adminOnly: false },
   { key: "host-allowlist",     label: "Host Allowlist",      icon: "🌐", adminOnly: true  },
   { key: "allowed-origins",    label: "Allowed Origins",     icon: "🔗", adminOnly: true  },
   { key: "identity-providers", label: "Identity Providers",  icon: "🔑", adminOnly: true  },
+  { key: "mail",               label: "Mail (SMTP)",         icon: "✉️", adminOnly: true  },
   { key: "secrets",            label: "Secrets",             icon: "🔒", adminOnly: true  },
   { key: "ai",                 label: "AI & MCP",            icon: "🤖", adminOnly: true  },
   { key: "users",              label: "Users",               icon: "👤", adminOnly: true  },
@@ -65,6 +67,7 @@ export function SettingsPage() {
           {activeTab === "host-allowlist"     && <HostAllowlistTab />}
           {activeTab === "allowed-origins"    && <AllowedOriginsTab />}
           {activeTab === "identity-providers" && <IdentityProvidersTab />}
+          {activeTab === "mail"               && <MailTab />}
           {activeTab === "secrets"            && <SecretsTab />}
           {activeTab === "ai"                 && <AiTab />}
           {activeTab === "users"              && <UsersTab />}

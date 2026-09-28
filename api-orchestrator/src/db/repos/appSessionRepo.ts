@@ -29,6 +29,10 @@ export function resolveSessionConfig(app: { session_config?: unknown }): Require
     max_age_min: raw.max_age_min ?? SESSION_DEFAULTS.max_age_min,
     max_sessions_per_user: raw.max_sessions_per_user ?? SESSION_DEFAULTS.max_sessions_per_user,
     ua_enforce: raw.ua_enforce ?? SESSION_DEFAULTS.ua_enforce,
+    login_redirect_allowlist: raw.login_redirect_allowlist ?? [],
+    post_login_redirect: raw.post_login_redirect ?? "",
+    link_identity_on_verified_email: raw.link_identity_on_verified_email ?? true,
+    require_email_verification: raw.require_email_verification ?? true,
   };
 }
 

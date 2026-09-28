@@ -47,6 +47,16 @@ export interface App {
     max_age_min?: number;
     max_sessions_per_user?: number;
     ua_enforce?: "off" | "flag" | "enforce";
+    // ── Identity-provider login (see IdentityProviderLoginSpecs-3.md) ────────
+    /** Allowlisted post-login redirect targets. Exact origin ("https://app.example.com")
+     *  or origin+prefix ("https://app.example.com/dashboard"). Empty = redirects rejected. */
+    login_redirect_allowlist?: string[];
+    /** Default landing page after email verification. */
+    post_login_redirect?: string;
+    /** Attach a proven IdP identity to an existing verified gateway user (default true). */
+    link_identity_on_verified_email?: boolean;
+    /** Require verified email before gateway login (self-signup users). Default true. */
+    require_email_verification?: boolean;
   };
   /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
   ai_expose: boolean;
@@ -207,6 +217,11 @@ export interface IdentityProvider {
   algorithms: string[];
   claim_mappings: { subject: string; email: string; roles: string };
   clock_tolerance_sec: number;
+  // Brokered login (OAuth code+PKCE) — see IdentityProviderLoginSpecs-3.md.
+  // The client secret lives in the Secrets vault; only the ref is ever returned.
+  client_id: string | null;
+  client_secret_ref: string | null;
+  scopes: string;
   is_active: boolean;
   created_at: string;
 }
@@ -230,6 +245,28 @@ export interface Secret {
   created_at: string;
   rotated_at: string | null;
   last_used_at: string | null;
+}
+
+// ── Mail (SMTP senders + purpose routing) ─────────────────────────────────────
+
+export interface MailSender {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password_set: boolean;
+  from_address: string;
+  from_name: string;
+  is_active: boolean;
+}
+
+export interface MailRoute {
+  id: string;
+  purpose: string;
+  app_id: string | null;   // null = org default
+  sender_id: string;
 }
 
 // ── Organization ─────────────────────────────────────────────────────────────
@@ -265,6 +302,13 @@ export interface AppUser {
   sub: string;
   display_name: string | null;
   is_active: boolean;
+  /** Sticky login method — fixed at creation (IdentityProviderLoginSpecs-3.md) */
+  auth_method: "gateway" | "identity";
+  identity_provider_id: string | null;
+  idp_sub: string | null;
+  /** Gateway self-signup users verify via email link; operator-created and identity users are trusted */
+  email_verified: boolean;
+  last_login_at: string | null;
   created_at: string;
   updated_at: string;
 }

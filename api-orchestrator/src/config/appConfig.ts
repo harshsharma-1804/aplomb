@@ -137,4 +137,15 @@ export const config = {
     /** Default org slug seeded on first boot */
     slug: optional("ORG_SLUG", "default"),
   },
+
+  orchestrator: {
+    /**
+     * Public base URL of this orchestrator, e.g. https://api.example.com.
+     * Used to build IdP callback redirect URIs:
+     *   {publicBaseUrl}{app.base_path}/auth/callback/{providerId}
+     * When empty, derived per-request from x-forwarded-proto + Host headers
+     * (fine behind a single proxy; set explicitly when multiple hostnames exist).
+     */
+    publicBaseUrl: optional("ORCH_PUBLIC_BASE_URL", ""),
+  },
 } as const;

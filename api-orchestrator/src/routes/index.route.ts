@@ -13,6 +13,7 @@ import hostAllowlistRouter from "./admin/hostAllowlist.routes.js";
 import organizationRouter from "./admin/organization.routes.js";
 import corsOriginsRouter from "./admin/corsOrigins.routes.js";
 import aiAdminRouter from "./admin/ai.routes.js";
+import mailConfigRouter from "./admin/mailConfig.routes.js";
 import { aiChatRouter, aiMcpRouter } from "./ai.routes.js";
 
 const root = Router();
@@ -33,6 +34,7 @@ configRouter.use("/admin/host-allowlist", hostAllowlistRouter);
 configRouter.use("/admin/organization", organizationRouter);
 configRouter.use("/admin/cors-origins", corsOriginsRouter);
 configRouter.use("/admin/ai", aiAdminRouter);
+configRouter.use("/admin/mail-config", mailConfigRouter);
 
 root.use("/__config", configRouter);
 

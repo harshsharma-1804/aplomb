@@ -59,6 +59,9 @@ export const secrets = sqliteTable("secrets", {
 });
 
 // ── identity_providers ────────────────────────────────────────────────────────
+// Fields for the brokered authorization-code flow (oauthBroker.ts): client_id
+// and a reference to the Secrets vault holding the client secret. The
+// authorize/token endpoints come from OIDC discovery on the issuer.
 export const identity_providers = sqliteTable("identity_providers", {
   id:                  text("id").primaryKey(),
   name:                text("name").notNull(),
@@ -69,6 +72,9 @@ export const identity_providers = sqliteTable("identity_providers", {
   algorithms:          text("algorithms").notNull().default('["RS256"]'),
   claim_mappings:      text("claim_mappings").notNull().default('{"subject":"sub","email":"email","roles":"groups"}'),
   clock_tolerance_sec: integer("clock_tolerance_sec").notNull().default(60),
+  client_id:           text("client_id"),
+  client_secret_ref:   text("client_secret_ref"),
+  scopes:              text("scopes").notNull().default("openid email profile"),
   is_active:           integer("is_active", { mode: "boolean" }).notNull().default(true),
   created_by:          text("created_by"),
   created_at:          text("created_at").notNull(),
@@ -268,11 +274,60 @@ export const app_users = sqliteTable("app_users", {
   sub:           text("sub").notNull(),        // principal sub (e.g. member ID MED2026...)
   display_name:  text("display_name"),
   is_active:     integer("is_active", { mode: "boolean" }).notNull().default(true),
+  // Sticky login method — fixed at creation, never crosses over:
+  //   'gateway'  → username/password only (see identity-provider-login spec)
+  //   'identity' → IdP redirect only (no password is ever stored)
+  auth_method:          text("auth_method").notNull().default("gateway"),
+  identity_provider_id: text("identity_provider_id"),  // set when auth_method = 'identity'
+  idp_sub:              text("idp_sub"),               // IdP sub claim (unique per provider+app)
+  // Email ownership proof. Gateway users verify via token email; identity users
+  // are trusted when the IdP asserts email_verified on the ID token.
+  email_verified_at:           text("email_verified_at"),
+  phone_verified_at:           text("phone_verified_at"),
+  email_verification_token_hash: text("email_verification_token_hash"),
+  verification_token_expires_at: text("verification_token_expires_at"),
+  last_login_at:  text("last_login_at"),
   created_at:    text("created_at").notNull(),
   updated_at:    text("updated_at").notNull(),
 }, (t) => [
   uniqueIndex("app_users_app_username_unique").on(t.app_id, t.username),
   uniqueIndex("app_users_app_email_unique").on(t.app_id, t.email),
+  uniqueIndex("app_users_app_idp_sub_unique").on(t.app_id, t.identity_provider_id, t.idp_sub),
+]);
+
+// ── mail_senders / mail_routes ────────────────────────────────────────────────
+// Multiple named SMTP senders (BYO credentials — Gmail app password, SES SMTP,
+// Postmark, …). Passwords live in the Secrets vault (password_ref) and are
+// resolved only at send time.
+//
+// mail_routes maps a mail purpose ("verification", future "otp",
+// "notification", …) to a sender. Rows with app_id NULL are org-level defaults;
+// app-specific rows override them per app. Lookup: app route first, then org.
+export const mail_senders = sqliteTable("mail_senders", {
+  id:            text("id").primaryKey(),
+  name:          text("name").notNull().unique(),
+  host:          text("host").notNull(),
+  port:          integer("port").notNull().default(587),
+  secure:        integer("secure", { mode: "boolean" }).notNull().default(false),
+  username:      text("username").notNull().default(""),
+  password_ref:  text("password_ref"),        // secrets vault id
+  from_address:  text("from_address").notNull(),
+  from_name:     text("from_name").notNull().default(""),
+  is_active:     integer("is_active", { mode: "boolean" }).notNull().default(true),
+  updated_by:    text("updated_by"),
+  created_at:    text("created_at").notNull(),
+  updated_at:    text("updated_at").notNull(),
+});
+
+export const mail_routes = sqliteTable("mail_routes", {
+  id:         text("id").primaryKey(),
+  purpose:    text("purpose").notNull(),      // "verification" | future purposes
+  app_id:     text("app_id"),                 // NULL = org-level default route
+  sender_id:  text("sender_id").notNull().references(() => mail_senders.id),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+}, (t) => [
+  uniqueIndex("mail_routes_purpose_app_unique").on(t.purpose, t.app_id),
 ]);
 
 // ── version_history ───────────────────────────────────────────────────────────
@@ -321,3 +376,7 @@ export type AppSession       = typeof app_sessions.$inferSelect;
 export type NewAppSession    = typeof app_sessions.$inferInsert;
 export type AppUser          = typeof app_users.$inferSelect;
 export type NewAppUser       = typeof app_users.$inferInsert;
+export type MailSender       = typeof mail_senders.$inferSelect;
+export type NewMailSender    = typeof mail_senders.$inferInsert;
+export type MailRoute        = typeof mail_routes.$inferSelect;
+export type NewMailRoute     = typeof mail_routes.$inferInsert;

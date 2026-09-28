@@ -9,6 +9,16 @@ export type SessionConfig = {
   max_age_min?: number;
   max_sessions_per_user?: number;
   ua_enforce?: "off" | "flag" | "enforce";
+  // ── Identity-provider login (see specs/IdentityProviderLoginSpecs-3.md) ────
+  /** Allowlisted post-login redirect targets. Exact origin ("https://app.example.com")
+   *  or origin+prefix ("https://app.example.com/dashboard"). Empty = redirects rejected. */
+  login_redirect_allowlist?: string[];
+  /** Default landing page after email verification when no explicit target given. */
+  post_login_redirect?: string;
+  /** Attach a proven IdP identity to an existing verified gateway user (default true). */
+  link_identity_on_verified_email?: boolean;
+  /** Require verified email before gateway login (self-signup users). Default true. */
+  require_email_verification?: boolean;
 };
 
 export type SerializedApp = {

@@ -204,10 +204,10 @@ aiChatRouter.post("/chat", async (req, res) => {
 // ── MCP router (mounted at /) ─────────────────────────────────────────────────
 
 export const aiMcpRouter = Router();
-aiMcpRouter.use(aiGate);
-
-// JSON-RPC 2.0 — single endpoint handles initialize / tools/list / tools/call
-aiMcpRouter.post("/mcp", requireBotKey, async (req, res) => {
+// NOTE: aiGate must be attached per-route, NOT router-wide — this router is
+// mounted at root ("/"), so a router-wide gate would 404 every runtime
+// request (login, signup, app endpoints…) when AI_ENABLED=false.
+aiMcpRouter.post("/mcp", aiGate, requireBotKey, async (req, res) => {
   const body = req.body as any;
   if (!body || body.jsonrpc !== "2.0" || typeof body.method !== "string") {
     res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request — expected JSON-RPC 2.0" } });

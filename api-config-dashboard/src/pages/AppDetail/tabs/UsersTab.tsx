@@ -53,34 +53,37 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           title={`App Users (${users.length})`}
           action={!readonly ? <Btn size="sm" onClick={() => setShowAdd(true)}>+ Add User</Btn> : undefined}
         />
-        <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
-          These users authenticate <strong>only</strong> against this app via <code>POST {app.base_path}/login</code>.
-          They cannot log in to the admin dashboard, and dashboard admins cannot use their credentials here.
-          <code>sub</code> is the identity bound into the session — it defaults to the username when not set (member-scoped apps set it to the member ID, e.g. MED2026...).
-        </div>
+          <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+            These users authenticate <strong>only</strong> against this app — via <code>POST {app.base_path}/login</code> (gateway) or their identity provider (brokered redirect).
+            They cannot log in to the admin dashboard, and dashboard admins cannot use their credentials here.
+            Each user's login method is sticky: gateway users sign in with credentials, identity users sign in via their provider — they never cross over.
+          </div>
         <div style={{ padding: 16 }}>
           {error && <ErrorBanner message={error} />}
           {loading ? <span style={{ fontSize: 12, color: C.muted }}>Loading…</span> : users.length === 0 ? (
             <p style={{ fontSize: 12, color: C.muted }}>No users yet — add the first one so the login endpoint can authenticate someone.</p>
           ) : (
             <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
-                {["USERNAME", "EMAIL", "SUB (IDENTITY)", "STATUS", ""].map(h => (
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
+                {["USERNAME", "EMAIL", "SUB (IDENTITY)", "METHOD", "VERIFIED", "LAST LOGIN", "STATUS", ""].map(h => (
                   <span key={h} style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</span>
                 ))}
               </div>
               {users.map(u => (
-                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg }}>
+                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: u.is_active ? C.text : C.muted }}>{u.display_name || u.username}</div>
                     <code style={{ fontSize: 11, color: C.muted }}>@{u.username}</code>
                   </div>
                   <span style={{ fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</span>
                   <code style={{ fontSize: 12, color: C.primary }}>{u.sub}</code>
+                  <Badge text={u.auth_method === "identity" ? "🌐 IdP" : "🔑 gw"} />
+                  <Badge text={u.email_verified ? "verified" : "unverified"} />
+                  <span style={{ fontSize: 11, color: C.muted }}>{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "—"}</span>
                   <Badge text={u.is_active ? "active" : "disabled"} />
                   {!readonly && (
                     <div style={{ display: "flex", gap: 6 }}>
-                      <Btn size="sm" variant="ghost" onClick={() => setResetUser(u)}>Reset PW</Btn>
+                      {u.auth_method !== "identity" && <Btn size="sm" variant="ghost" onClick={() => setResetUser(u)}>Reset PW</Btn>}
                       <Btn size="sm" variant="ghost" onClick={async () => {
                         try { await api.put(`/__config/apps/${appId}/users/${u.id}`, { is_active: !u.is_active }); load(); }
                         catch (e) { alert(String(e)); }

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { getDb } from "../db/client.js";
-import { appSessionRepo, resolveSessionConfig, hashUa, type SessionPrincipal } from "../db/repos/appSessionRepo.js";
+import { appSessionRepo, resolveSessionConfig, hashUa, deviceLabelFromUa, type SessionPrincipal } from "../db/repos/appSessionRepo.js";
 import { appUserRepo } from "../db/repos/appUserRepo.js";
 import { aiBotRepo } from "../db/repos/aiBotRepo.js";
 import { validateToken, readIssuerFromToken } from "./oidcValidate.js";
@@ -101,7 +101,7 @@ function recordFailure(appId: string, ip: string): void {
 
 export function stopLoginLimiterSweep(): void { failures.clear(); }
 
-function clientIp(req: Request): string {
+export function clientIp(req: Request): string {
   return (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
     || req.socket.remoteAddress
     || "unknown";
@@ -158,7 +158,8 @@ function botSnapshotForApp(appId: string): string[] {
   return aiBotRepo.listBotsForApp(getDb(), appId).map(b => b.id);
 }
 
-function mintAndSetCookie(req: Request, res: Response, app: CachedApp, params: {
+/** Mint an orc_sid session and set the cookie — no response body. */
+export function mintSessionCookie(req: Request, res: Response, app: CachedApp, params: {
   sub: string; email: string | null; issuer: string; idpToken?: string | null;
 }): void {
   const db = getDb();
@@ -174,10 +175,17 @@ function mintAndSetCookie(req: Request, res: Response, app: CachedApp, params: {
     bot_snapshot: botSnapshotForApp(app.id),
   }, cfg);
   res.cookie(sessionCookieName(app), principal.sessionId, cookieOptions(cfg.max_age_min));
+}
+
+function mintAndSetCookie(req: Request, res: Response, app: CachedApp, params: {
+  sub: string; email: string | null; issuer: string; idpToken?: string | null;
+}): void {
+  mintSessionCookie(req, res, app, params);
+  const cfg = resolveSessionConfig(app as any);
   res.status(200).json({
-    sub: principal.sub,
-    email: principal.email,
-    device_label: principal.deviceLabel,
+    sub: params.sub,
+    email: params.email,
+    device_label: deviceLabelFromUa(req.headers["user-agent"] ?? ""),
     expires_in_min: cfg.max_age_min,
   });
 }
@@ -221,6 +229,15 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
       res.status(401).json({ error: "Invalid credentials", code: "INVALID_CREDENTIALS" });
       return true;
     }
+    // Self-signup users stay locked out until their email is verified.
+    if (!user.email_verified && cfg.require_email_verification !== false) {
+      res.status(403).json({
+        error: "Email not verified — check your inbox for the verification link",
+        code: "EMAIL_NOT_VERIFIED",
+      });
+      return true;
+    }
+    appUserRepo.touchLogin(db, user.id);
     mintAndSetCookie(req, res, app, { sub: user.sub, email: user.email, issuer: `gateway:${app.id}` });
     return true;
   }

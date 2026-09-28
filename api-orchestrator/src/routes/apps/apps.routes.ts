@@ -192,8 +192,28 @@ router.get("/:id/users", requirePermission("manage:apps"), (req, res) => {
   res.json({ count: users.length, results: users });
 });
 
-router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => {
+// ── GET /apps/:id/users/:userId — single user (profile card) ──────────────────
+router.get("/:id/users/:userId", requirePermission("manage:apps"), (req, res) => {
   const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const user = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!user) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  res.json(user);
+});
+
+// ── GET /apps/:id/users/:userId/sessions — the user's active sessions ─────────
+router.get("/:id/users/:userId/sessions", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const user = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!user) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const sessions = appSessionRepo.listActiveForAppUser(db, appId, user.sub);
+  res.json({ count: sessions.length, results: sessions });
+});
+
+router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => {  const db = getDb();
   const appId = param(param(req.params["id"]));
   if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
   const { username, email, password, sub, display_name } = req.body ?? {};

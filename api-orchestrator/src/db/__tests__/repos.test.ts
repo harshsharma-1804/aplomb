@@ -40,6 +40,8 @@ const DDL = `
     audience TEXT NOT NULL DEFAULT '[]', algorithms TEXT NOT NULL DEFAULT '["RS256"]',
     claim_mappings TEXT NOT NULL DEFAULT '{}',
     clock_tolerance_sec INTEGER NOT NULL DEFAULT 60,
+    client_id TEXT, client_secret_ref TEXT,
+    scopes TEXT NOT NULL DEFAULT 'openid email profile',
     is_active INTEGER NOT NULL DEFAULT 1,
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
@@ -85,10 +87,16 @@ const DDL = `
     username TEXT NOT NULL, email TEXT NOT NULL,
     password_hash TEXT NOT NULL, sub TEXT NOT NULL,
     display_name TEXT, is_active INTEGER NOT NULL DEFAULT 1,
+    auth_method TEXT NOT NULL DEFAULT 'gateway',
+    identity_provider_id TEXT, idp_sub TEXT,
+    email_verified_at TEXT, phone_verified_at TEXT,
+    email_verification_token_hash TEXT, verification_token_expires_at TEXT,
+    last_login_at TEXT,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_username_unique ON app_users(app_id, username);
   CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_email_unique ON app_users(app_id, email);
+  CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_idp_sub_unique ON app_users(app_id, identity_provider_id, idp_sub);
   CREATE TABLE IF NOT EXISTS endpoints (
     id TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES apps(id),
     name TEXT NOT NULL, description TEXT DEFAULT '',

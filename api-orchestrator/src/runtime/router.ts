@@ -16,6 +16,8 @@ import { isHostAllowedForOrg } from "../cache/allowlistCache.js";
 import { buildContext } from "./ctxBuilder.js";
 import { runScript } from "./scriptRunner.js";
 import { handleAppAuthRoute, resolveSessionForRequest, RESERVED_APP_AUTH_PATHS } from "../auth/appSessionAuth.js";
+import { handleAppOAuthRoute } from "../auth/oauthBroker.js";
+import { handleAppSignupRoute } from "../auth/appSignup.js";
 
 export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
@@ -136,6 +138,19 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   // Handled BEFORE endpoint auth — /login and /session/verify are unauthenticated.
   if (RESERVED_APP_AUTH_PATHS.has(relativePath)) {
     const handled = await handleAppAuthRoute(req, res, app, relativePath);
+    if (handled) return;
+  }
+
+  // ── Brokered identity-provider login (OAuth code+PKCE) — unauthenticated ────
+  // GET {base_path}/auth/login/{providerId} and /auth/callback/{providerId}
+  if (relativePath.startsWith("/auth/login/") || relativePath.startsWith("/auth/callback/")) {
+    const handled = await handleAppOAuthRoute(req, res, app, relativePath);
+    if (handled) return;
+  }
+
+  // ── Self-signup + email verification — unauthenticated ───────────────────────
+  if (relativePath === "/signup" || relativePath === "/auth/verify" || relativePath === "/auth/resend-verification") {
+    const handled = await handleAppSignupRoute(req, res, app, relativePath);
     if (handled) return;
   }
 

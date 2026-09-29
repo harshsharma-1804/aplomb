@@ -78,6 +78,27 @@
       "when": 1788526531452,
       "tag": "0010_endpoint_identity_args",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790598548889,
+      "tag": "0011_identity_provider_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790598548890,
+      "tag": "0012_mail_senders_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790598548891,
+      "tag": "0013_backfill_gateway_email_verified",
+      "breakpoints": true
     }
   ]
 }

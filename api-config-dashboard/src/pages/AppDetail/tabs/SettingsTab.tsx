@@ -137,6 +137,12 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
   const [maxAge, setMaxAge]               = useState(app.session_config?.max_age_min ?? 480);
   const [maxSessions, setMaxSessions]     = useState(app.session_config?.max_sessions_per_user ?? 5);
   const [uaEnforce, setUaEnforce]         = useState<"off" | "flag" | "enforce">(app.session_config?.ua_enforce ?? "flag");
+  // ── Identity-provider login (brokered redirect) ──────────────────────────────
+  const [postLoginRedirect, setPostLoginRedirect] = useState(app.session_config?.post_login_redirect ?? "");
+  const [redirectAllowlist, setRedirectAllowlist] = useState<string[]>(app.session_config?.login_redirect_allowlist ?? []);
+  const [newRedirect, setNewRedirect]     = useState("");
+  const [linkIdentity, setLinkIdentity]   = useState(app.session_config?.link_identity_on_verified_email ?? true);
+  const [requireVerify, setRequireVerify] = useState(app.session_config?.require_email_verification ?? true);
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState("");
   const [saved, setSaved]                 = useState(false);
@@ -176,6 +182,10 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
               max_age_min: maxAge,
               max_sessions_per_user: maxSessions,
               ua_enforce: uaEnforce,
+              login_redirect_allowlist: redirectAllowlist,
+              post_login_redirect: postLoginRedirect.trim() || undefined,
+              link_identity_on_verified_email: linkIdentity,
+              require_email_verification: requireVerify,
             },
           },
         );
@@ -290,6 +300,14 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
                 {["identity", "both"].includes(sessionMethod) && (
                   <div style={{ marginBottom: 14 }}>
                     <ProviderChecklist />
+                    <IdentityLoginConfig
+                      app={app} readonly={readonly}
+                      providers={providers} allowedIds={allowedIds}
+                      postLoginRedirect={postLoginRedirect} setPostLoginRedirect={(v) => { setPostLoginRedirect(v); setSaved(false); }}
+                      redirectAllowlist={redirectAllowlist} setRedirectAllowlist={(v) => { setRedirectAllowlist(v); setSaved(false); }}
+                      newRedirect={newRedirect} setNewRedirect={setNewRedirect}
+                      linkIdentity={linkIdentity} setLinkIdentity={(v) => { setLinkIdentity(v); setSaved(false); }}
+                    />
                   </div>
                 )}
                 {["gateway", "both"].includes(sessionMethod) && (
@@ -329,6 +347,88 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
         )}
       </div>
     </Card>
+  );
+}
+
+// ── Brokered identity login config (OAuth redirect, IdentityProviderLoginSpecs-3.md)
+
+function IdentityLoginConfig({ app, readonly, providers, allowedIds, postLoginRedirect, setPostLoginRedirect, redirectAllowlist, setRedirectAllowlist, newRedirect, setNewRedirect, linkIdentity, setLinkIdentity }: {
+  app: App; readonly: boolean; providers: IdentityProvider[]; allowedIds: string[];
+  postLoginRedirect: string; setPostLoginRedirect: (v: string) => void;
+  redirectAllowlist: string[]; setRedirectAllowlist: (v: string[]) => void;
+  newRedirect: string; setNewRedirect: (v: string) => void;
+  linkIdentity: boolean; setLinkIdentity: (v: boolean) => void;
+}) {
+  const brokered = providers.filter(p => allowedIds.includes(p._id) && p.client_id);
+  const callbackUrl = (p: IdentityProvider) => `${window.location.origin}${app.base_path}/auth/callback/${p._id}`;
+  const [copied, setCopied] = useState("");
+
+  function addRedirect() {
+    const v = newRedirect.trim();
+    if (!v || redirectAllowlist.includes(v)) return;
+    setRedirectAllowlist([...redirectAllowlist, v]);
+    setNewRedirect("");
+  }
+  async function copy(text: string) {
+    try { await navigator.clipboard.writeText(text); setCopied(text); setTimeout(() => setCopied(""), 1500); } catch { /* clipboard unavailable */ }
+  }
+
+  return (
+    <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 4px", paddingTop: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+        Brokered Login (OAuth Redirect)
+      </div>
+      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+        Providers with a client ID + vault secret get a full redirect login:
+        the frontend sends the browser to <code>{`${app.base_path}/auth/login/{providerId}?redirect=/dashboard`}</code>
+        {" "}and the user lands back logged in with the session cookie. The frontend never sees provider credentials.
+      </p>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Callback URLs (register these at each provider)</div>
+        {brokered.length === 0 && (
+          <p style={{ fontSize: 12, color: C.muted }}>
+            No allowed provider is configured for brokered login yet — set a Client ID + vault secret in <strong>Admin → Identity Providers</strong>.
+          </p>
+        )}
+        {brokered.map(p => (
+          <div key={p._id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <Badge text={p.name} />
+            <code style={{ fontSize: 11, flex: 1, wordBreak: "break-all" }}>{callbackUrl(p)}</code>
+            <Btn size="sm" variant="ghost" onClick={() => copy(callbackUrl(p))}>{copied === callbackUrl(p) ? "Copied ✓" : "Copy"}</Btn>
+          </div>
+        ))}
+      </div>
+
+      <Field label="Default landing page (verification)" hint="Where the browser lands after email verification when no redirect was given. e.g. https://app.example.com/login-done">
+        <input style={inputStyle} value={postLoginRedirect} onChange={e => setPostLoginRedirect(e.target.value)} placeholder="https://app.example.com/login-done" disabled={readonly} />
+      </Field>
+
+      <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 6, marginTop: 10 }}>Post-login redirect allowlist</div>
+      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 8px" }}>
+        The <code>?redirect=</code> parameter is honoured only for exact origins or origin+path prefixes listed here. Empty = redirects rejected.
+      </p>
+      {redirectAllowlist.map(entry => (
+        <div key={entry} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <code style={{ fontSize: 11, flex: 1 }}>{entry}</code>
+          {!readonly && <Btn size="sm" variant="danger" onClick={() => setRedirectAllowlist(redirectAllowlist.filter(x => x !== entry))}>Remove</Btn>}
+        </div>
+      ))}
+      {!readonly && (
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <input style={{ ...inputStyle, flex: 1 }} value={newRedirect} onChange={e => setNewRedirect(e.target.value)} placeholder="https://app.example.com or https://app.example.com/dashboard" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addRedirect(); } }} />
+          <Btn size="sm" onClick={addRedirect} disabled={!newRedirect.trim()}>Add</Btn>
+        </div>
+      )}
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 12, cursor: readonly ? "default" : "pointer" }}>
+        <input type="checkbox" checked={linkIdentity} onChange={e => setLinkIdentity(e.target.checked)} disabled={readonly} />
+        Link a verified identity to an existing gateway user with the same email (one user, both login methods)
+      </label>
+      <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0 24px" }}>
+        Off = strict sticky method: an email owned by a gateway user can never be claimed by an identity login (409-style conflict on the redirect).
+      </p>
+    </div>
   );
 }
 

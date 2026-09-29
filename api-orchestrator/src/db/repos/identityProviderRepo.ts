@@ -30,6 +30,9 @@ export const identityProviderRepo = {
       algorithms:          JSON.stringify(input["algorithms"] ?? ["RS256"]),
       claim_mappings:      JSON.stringify(input["claim_mappings"] ?? { subject: "sub", email: "email", roles: "groups" }),
       clock_tolerance_sec: Number(input["clock_tolerance_sec"] ?? 60),
+      client_id:           input["client_id"] ? String(input["client_id"]) : null,
+      client_secret_ref:   input["client_secret_ref"] ? String(input["client_secret_ref"]) : null,
+      scopes:              String(input["scopes"] ?? "openid email profile"),
       is_active:           input["is_active"] !== false,
       created_by:          input["created_by"] ? String(input["created_by"]) : null,
       created_at: t,
@@ -66,6 +69,9 @@ export const identityProviderRepo = {
     if (input["algorithms"]          !== undefined) patch["algorithms"]          = JSON.stringify(input["algorithms"]);
     if (input["claim_mappings"]      !== undefined) patch["claim_mappings"]      = JSON.stringify(input["claim_mappings"]);
     if (input["clock_tolerance_sec"] !== undefined) patch["clock_tolerance_sec"] = Number(input["clock_tolerance_sec"]);
+    if (input["client_id"]           !== undefined) patch["client_id"]           = input["client_id"] ? String(input["client_id"]) : null;
+    if (input["client_secret_ref"]   !== undefined) patch["client_secret_ref"]   = input["client_secret_ref"] ? String(input["client_secret_ref"]) : null;
+    if (input["scopes"]              !== undefined) patch["scopes"]              = String(input["scopes"]);
     if (input["is_active"]           !== undefined) patch["is_active"]           = Boolean(input["is_active"]);
     db.update(identity_providers).set(patch).where(eq(identity_providers.id, id)).run();
     return identityProviderRepo.findById(db, id);

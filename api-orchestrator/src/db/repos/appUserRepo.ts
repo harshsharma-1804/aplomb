@@ -1,5 +1,5 @@
 import { and, eq, or } from "drizzle-orm";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
 import { app_users, type AppUser } from "../schema.js";
 import type { DrizzleDb } from "./types.js";
@@ -7,12 +7,25 @@ import type { DrizzleDb } from "./types.js";
 /**
  * Per-app gateway-auth users. Completely disjoint from `users` (dashboard admins):
  * every query here filters by app_id, and dashboard auth never reads this table.
- * See Execution Plan/Orchestrator/Features/AppScopedSessions-9.md
+ * See Execution Plan/Orchestrator/Features/AppScopedSessions-9.md and
+ * Execution Plan/Orchestrator/specs/IdentityProviderLoginSpecs-3.md
+ *
+ * Sticky auth method: a row's `auth_method` is fixed at creation —
+ *   'gateway'  → password login only (self-signup requires email verification)
+ *   'identity' → IdP redirect login only (no usable password is ever stored)
+ * A gateway user MAY additionally carry an identity (attached only when email
+ * ownership is proven on both sides — see the collision matrix in the spec),
+ * in which case both methods open the same row.
  */
 
 export type SerializedAppUser = {
   id: string; app_id: string; username: string; email: string;
   sub: string; display_name: string | null; is_active: boolean;
+  auth_method: "gateway" | "identity";
+  identity_provider_id: string | null;
+  idp_sub: string | null;
+  email_verified: boolean;
+  last_login_at: string | null;
   created_at: string; updated_at: string;
 };
 
@@ -28,6 +41,18 @@ export type CreateAppUserInput = {
    */
   sub?: string;
   display_name?: string;
+  /** Self-signup rows start unverified and cannot log in until verified. */
+  email_verified?: boolean;
+};
+
+export type CreateIdentityUserInput = {
+  app_id: string;
+  identity_provider_id: string;
+  idp_sub: string;
+  email: string;
+  display_name?: string | null;
+  /** True when the IdP asserts email_verified on the ID token. */
+  email_verified: boolean;
 };
 
 function serialize(row: AppUser): SerializedAppUser {
@@ -39,6 +64,11 @@ function serialize(row: AppUser): SerializedAppUser {
     sub: row.sub,
     display_name: row.display_name,
     is_active: Boolean(row.is_active),
+    auth_method: (row.auth_method as "gateway" | "identity") ?? "gateway",
+    identity_provider_id: row.identity_provider_id ?? null,
+    idp_sub: row.idp_sub ?? null,
+    email_verified: Boolean(row.email_verified_at),
+    last_login_at: row.last_login_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -58,13 +88,59 @@ export const appUserRepo = {
       sub: input.sub?.trim() || input.username.trim(),
       display_name: input.display_name ?? null,
       is_active: true,
+      auth_method: "gateway",
+      email_verified_at: input.email_verified ? t : null,
       created_at: t,
       updated_at: t,
     }).run();
     return serialize(db.select().from(app_users).where(eq(app_users.id, id)).get()!);
   },
 
+  /** Auto-provisioned / linked identity user. Session sub = idp_sub. */
+  async createIdentity(db: DrizzleDb, input: CreateIdentityUserInput): Promise<SerializedAppUser> {
+    const id = randomUUID();
+    const t = new Date().toISOString();
+    const password_hash = await argon2Hash(randomBytes(32).toString("base64url"));
+    // Derive a unique username from the email local-part; suffix on collision.
+    const base = (input.email.split("@")[0] || "user").replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 40) || "user";
+    let username = base;
+    for (let i = 0; i < 5; i++) {
+      const clash = db.select().from(app_users)
+        .where(and(eq(app_users.app_id, input.app_id), eq(app_users.username, username))).get();
+      if (!clash) break;
+      username = `${base}.${randomBytes(2).toString("hex")}`;
+    }
+    db.insert(app_users).values({
+      id,
+      app_id: input.app_id,
+      username,
+      email: input.email.trim().toLowerCase(),
+      password_hash,
+      sub: input.idp_sub,
+      display_name: input.display_name ?? null,
+      is_active: true,
+      auth_method: "identity",
+      identity_provider_id: input.identity_provider_id,
+      idp_sub: input.idp_sub,
+      email_verified_at: input.email_verified ? t : null,
+      created_at: t,
+      updated_at: t,
+    }).run();
+    return serialize(db.select().from(app_users).where(eq(app_users.id, id)).get()!);
+  },
+
+  /** Attach a proven identity to an existing (gateway) user row — link, never merge rows. */
+  attachIdentity(db: DrizzleDb, id: string, identity_provider_id: string, idp_sub: string): void {
+    db.update(app_users).set({
+      identity_provider_id, idp_sub, updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
+  },
+
   async setPassword(db: DrizzleDb, id: string, password: string): Promise<void> {
+    const row = db.select().from(app_users).where(eq(app_users.id, id)).get();
+    if (row && row.auth_method === "identity") {
+      throw new Error("IDENTITY_USER_NO_PASSWORD");
+    }
     const password_hash = await argon2Hash(password);
     db.update(app_users).set({ password_hash, updated_at: new Date().toISOString() })
       .where(eq(app_users.id, id)).run();
@@ -91,10 +167,76 @@ export const appUserRepo = {
     return db.select().from(app_users).where(eq(app_users.app_id, appId)).all().map(serialize);
   },
 
+  findById(db: DrizzleDb, id: string): SerializedAppUser | null {
+    const row = db.select().from(app_users).where(eq(app_users.id, id)).get();
+    return row ? serialize(row) : null;
+  },
+
+  findByIdentity(db: DrizzleDb, appId: string, identityProviderId: string, idpSub: string): SerializedAppUser | null {
+    const row = db.select().from(app_users).where(and(
+      eq(app_users.app_id, appId),
+      eq(app_users.identity_provider_id, identityProviderId),
+      eq(app_users.idp_sub, idpSub),
+    )).get();
+    return row ? serialize(row) : null;
+  },
+
+  findByEmail(db: DrizzleDb, appId: string, email: string): SerializedAppUser | null {
+    const row = db.select().from(app_users).where(and(
+      eq(app_users.app_id, appId),
+      eq(app_users.email, email.trim().toLowerCase()),
+    )).get();
+    return row ? serialize(row) : null;
+  },
+
+  findByUsername(db: DrizzleDb, appId: string, username: string): SerializedAppUser | null {
+    const row = db.select().from(app_users).where(and(
+      eq(app_users.app_id, appId),
+      eq(app_users.username, username.trim()),
+    )).get();
+    return row ? serialize(row) : null;
+  },
+
+  // ── Email verification (gateway self-signup) ────────────────────────────────
+
+  setVerificationToken(db: DrizzleDb, id: string, tokenHash: string, expiresAt: string): void {
+    db.update(app_users).set({
+      email_verification_token_hash: tokenHash,
+      verification_token_expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
+  },
+
+  /** Consume a verification token — single use, expiry enforced. Returns the user or null. */
+  consumeVerificationToken(db: DrizzleDb, appId: string, tokenHash: string): SerializedAppUser | null {
+    const row = db.select().from(app_users).where(and(
+      eq(app_users.app_id, appId),
+      eq(app_users.email_verification_token_hash, tokenHash),
+    )).get();
+    if (!row) return null;
+    if (row.verification_token_expires_at && row.verification_token_expires_at <= new Date().toISOString()) {
+      return null;
+    }
+    db.update(app_users).set({
+      email_verified_at: new Date().toISOString(),
+      email_verification_token_hash: null,
+      verification_token_expires_at: null,
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, row.id)).run();
+    return serialize(db.select().from(app_users).where(eq(app_users.id, row.id)).get()!);
+  },
+
+  touchLogin(db: DrizzleDb, id: string): void {
+    db.update(app_users).set({ last_login_at: new Date().toISOString() })
+      .where(eq(app_users.id, id)).run();
+  },
+
   /**
    * Gateway credential verification. Looks ONLY within this app's user set —
    * an admin's dashboard credentials can never authenticate here, and this
    * user can never authenticate to the dashboard (disjoint stores).
+   * Identity-method users are rejected even if a linked row exists — the
+   * sticky-method rule keeps the two worlds separate.
    */
   async verifyCredentials(db: DrizzleDb, appId: string, identifier: string, password: string): Promise<SerializedAppUser | null> {
     const ident = identifier.trim();
@@ -103,6 +245,7 @@ export const appUserRepo = {
       or(eq(app_users.username, ident), eq(app_users.email, ident.toLowerCase())),
     )).get();
     if (!row || !row.is_active) return null;
+    if (row.auth_method === "identity") return null;
     const ok = await argon2Verify(row.password_hash, password);
     return ok ? serialize(row) : null;
   },

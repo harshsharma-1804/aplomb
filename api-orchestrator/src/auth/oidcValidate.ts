@@ -20,6 +20,13 @@ function getJWKS(provider: IdentityProvider & { jwks_uri: string }): ReturnType<
   return jwks;
 }
 
+/** JWKS resolver shared with the OAuth broker (discovering jwks_uri when absent). */
+export async function getProviderJwks(provider: IdentityProvider): Promise<ReturnType<typeof createRemoteJWKSet>> {
+  let uri = provider.jwks_uri;
+  if (!uri) uri = await discoverJwksUri(provider.issuer);
+  return getJWKS({ ...provider, jwks_uri: uri } as IdentityProvider & { jwks_uri: string });
+}
+
 export function invalidateProviderCache(providerId: string): void {
   jwksCache.delete(providerId);
 }

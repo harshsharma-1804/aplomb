@@ -192,8 +192,28 @@ router.get("/:id/users", requirePermission("manage:apps"), (req, res) => {
   res.json({ count: users.length, results: users });
 });
 
-router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => {
+// ── GET /apps/:id/users/:userId — single user (profile card) ──────────────────
+router.get("/:id/users/:userId", requirePermission("manage:apps"), (req, res) => {
   const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const user = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!user) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  res.json(user);
+});
+
+// ── GET /apps/:id/users/:userId/sessions — the user's active sessions ─────────
+router.get("/:id/users/:userId/sessions", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const user = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!user) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const sessions = appSessionRepo.listActiveForAppUser(db, appId, user.sub);
+  res.json({ count: sessions.length, results: sessions });
+});
+
+router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => {  const db = getDb();
   const appId = param(param(req.params["id"]));
   if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
   const { username, email, password, sub, display_name } = req.body ?? {};
@@ -204,7 +224,9 @@ router.post("/:id/users", requirePermission("manage:apps"), async (req, res) => 
     res.status(400).json({ error: "Password must be at least 8 characters", code: "WEAK_PASSWORD" }); return;
   }
   try {
-    const user = await appUserRepo.create(db, { app_id: appId, username, email, password, sub, display_name });
+    // Operator-created users are trusted immediately — verification only
+    // applies to self-signup (POST {base_path}/signup).
+    const user = await appUserRepo.create(db, { app_id: appId, username, email, password, sub, display_name, email_verified: true });
     res.status(201).json(user);
   } catch (err: any) {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "A user with this username or email already exists for this app", code: "DUPLICATE_APP_USER" }); return; }
@@ -235,14 +257,18 @@ router.put("/:id/users/:userId/password", requirePermission("manage:apps"), asyn
   const db = getDb();
   const appId = param(param(req.params["id"]));
   const userId = param(param(req.params["userId"]));
-  if (!appUserRepo.listByApp(db, appId).find(u => u.id === userId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const target = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!target) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  if (target.auth_method === "identity") {
+    res.status(400).json({ error: "Identity users have no password — they sign in via their identity provider", code: "IDENTITY_USER_NO_PASSWORD" }); return;
+  }
   const { password } = req.body ?? {};
   if (!password || String(password).length < 8) {
     res.status(400).json({ error: "Password must be at least 8 characters", code: "WEAK_PASSWORD" }); return;
   }
   await appUserRepo.setPassword(db, userId, password);
   // Security: password reset kills every active session for this user on this app
-  appSessionRepo.revokeAllForAppUser(db, appId, appUserRepo.listByApp(db, appId).find(u => u.id === userId)!.sub);
+  appSessionRepo.revokeAllForAppUser(db, appId, target.sub);
   res.json({ success: true });
 });
 

@@ -92,6 +92,13 @@
       "when": 1790598548890,
       "tag": "0012_mail_senders_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790598548891,
+      "tag": "0013_backfill_gateway_email_verified",
+      "breakpoints": true
     }
   ]
 }

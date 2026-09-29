@@ -245,7 +245,7 @@ export async function handleAppTwoFactorRoute(req: Request, res: Response, app: 
     const resolved = verifyPending(pendingToken, app);
     if (!resolved) { bad(401, "Invalid or expired login attempt — start again", "INVALID_PENDING_TOKEN"); return true; }
     const { payload, challenge } = resolved;
-    if (challenge.kind !== "login" || challenge.method !== "email_otp") { bad(400, "Resend is only available for email-code login", "RESEND_NOT_AVAILABLE"); return true; }
+    if (challenge.method !== "email_otp") { bad(400, "Resend is only available for email-code verification", "RESEND_NOT_AVAILABLE"); return true; }
     if (!loginChallengeRepo.isUsable(challenge)) { bad(401, "Too many attempts or code expired — start again", "CHALLENGE_UNUSABLE"); return true; }
     if (challenge.last_sent_at && Date.now() - new Date(challenge.last_sent_at).getTime() < OTP_RESEND_WINDOW_MS) {
       bad(429, "Please wait a moment before requesting another code", "RATE_LIMITED");
@@ -300,6 +300,7 @@ export async function handleAppTwoFactorRoute(req: Request, res: Response, app: 
     if (!method) { bad(400, "method must be 'totp' or 'email_otp'", "VALIDATION_ERROR"); return true; }
 
     let totpSecret: string | null = null;
+    let emailCodeHash: string | null = null;
 
     if (method === "totp") {
       const secret = generateTotpSecret();
@@ -308,6 +309,7 @@ export async function handleAppTwoFactorRoute(req: Request, res: Response, app: 
     } else {
       appUserRepo.setTwofaMethod(db, targetUser.id, "email_otp");
       const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      emailCodeHash = createHash("sha256").update(code).digest("hex");
       try {
         await sendOtpEmail(app, targetUser, code);
       } catch (e) {
@@ -316,7 +318,7 @@ export async function handleAppTwoFactorRoute(req: Request, res: Response, app: 
       }
     }
 
-    const { token } = issuePending(app, targetUser.id, "enroll", method);
+    const { token } = issuePending(app, targetUser.id, "enroll", method, emailCodeHash);
 
     const body: Record<string, unknown> = { method, pending_token: token };
     if (method === "totp") {

@@ -33,11 +33,24 @@ const DDL = `
     email_verified_at TEXT, phone_verified_at TEXT,
     email_verification_token_hash TEXT, verification_token_expires_at TEXT,
     last_login_at TEXT,
+    twofa_status TEXT NOT NULL DEFAULT 'off', twofa_method TEXT,
+    totp_secret_ct TEXT, totp_secret_iv TEXT, totp_secret_tag TEXT,
+    totp_last_timestep INTEGER, twofa_enrolled_at TEXT,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_username_unique ON app_users(app_id, username);
   CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_email_unique ON app_users(app_id, email);
   CREATE UNIQUE INDEX IF NOT EXISTS app_users_app_idp_sub_unique ON app_users(app_id, identity_provider_id, idp_sub);
+  CREATE TABLE IF NOT EXISTS login_challenges (
+    id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL REFERENCES apps(id),
+    user_id TEXT NOT NULL REFERENCES app_users(id),
+    kind TEXT NOT NULL, method TEXT,
+    pending_hash TEXT NOT NULL, code_hash TEXT,
+    expires_at TEXT NOT NULL, last_sent_at TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0, consumed_at TEXT,
+    created_at TEXT NOT NULL
+  );
 `;
 
 const APP_ID = "app-1";

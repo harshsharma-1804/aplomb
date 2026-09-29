@@ -91,3 +91,20 @@ export function verificationEmailHtml(appName: string, verifyUrl: string, ttlHou
 export function verificationEmailText(appName: string, verifyUrl: string, ttlHours: number): string {
   return `Verify your email — ${appName}\n\nConfirm this email address to activate your account:\n${verifyUrl}\n\nThis link expires in ${ttlHours} hours. If you didn't sign up, you can ignore this email.`;
 }
+
+// ── 2FA OTP templates ─────────────────────────────────────────────────────────
+
+export function otpEmailHtml(appName: string, code: string, ttlMin: number): string {
+  return `<!doctype html>
+<html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a202c;max-width:480px;margin:0 auto;padding:24px;">
+  <h2 style="font-size:18px;">Your sign-in code — ${appName}</h2>
+  <p>Use this code to finish signing in:</p>
+  <p style="font-size:32px;font-weight:700;letter-spacing:8px;margin:20px 0;">${code}</p>
+  <p style="color:#4a5568;font-size:13px;">This code expires in ${ttlMin} minutes and can be used once.</p>
+  <p style="color:#a0aec0;font-size:12px;">If you didn't try to sign in, someone knows your password — change it and contact support.</p>
+</body></html>`;
+}
+
+export function otpEmailText(appName: string, code: string, ttlMin: number): string {
+  return `Your sign-in code — ${appName}\n\nCode: ${code}\n\nExpires in ${ttlMin} minutes, single use. If you didn't try to sign in, change your password immediately.`;
+}

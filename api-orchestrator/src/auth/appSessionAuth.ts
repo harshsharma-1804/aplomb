@@ -8,6 +8,7 @@ import { getProviderByIssuer } from "../cache/providerCache.js";
 import { config } from "../config/appConfig.js";
 import type { CachedApp } from "../cache/appCache.js";
 import { appRepo } from "../db/repos/appRepo.js";
+import { maybeStartTwoFactor } from "./appTwoFactor.js";
 
 /**
  * App-scoped session authentication (orc_sid cookies).
@@ -237,6 +238,10 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
       });
       return true;
     }
+    // Two-factor: when this user needs factor 2, maybeStartTwoFactor responds
+    // (challenge created, pending_token issued) and no session is minted yet.
+    const twofaStarted = await maybeStartTwoFactor(req, res, app, user);
+    if (twofaStarted) return true;
     appUserRepo.touchLogin(db, user.id);
     mintAndSetCookie(req, res, app, { sub: user.sub, email: user.email, issuer: `gateway:${app.id}` });
     return true;

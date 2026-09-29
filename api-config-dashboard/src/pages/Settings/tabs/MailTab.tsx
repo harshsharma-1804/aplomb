@@ -13,6 +13,7 @@ import { useSession } from "../../../auth/SessionContext";
 
 const PURPOSE_LABELS: Record<string, string> = {
   verification: "Account verification emails",
+  otp: "Two-factor login codes (email OTP)",
 };
 
 export function MailTab() {

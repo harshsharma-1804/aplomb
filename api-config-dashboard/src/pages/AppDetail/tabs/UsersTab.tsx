@@ -72,8 +72,8 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
             </p>
           ) : (
             <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
-                {["USERNAME", "EMAIL", "SUB (IDENTITY)", "METHOD", "VERIFIED", "LAST LOGIN", "STATUS", ""].map(h => (
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 70px 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
+                {["USERNAME", "EMAIL", "SUB (IDENTITY)", "METHOD", "VERIFIED", "LAST LOGIN", "2FA", "STATUS", ""].map(h => (
                   <span key={h} style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</span>
                 ))}
               </div>
@@ -81,7 +81,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                 <div key={u.id}
                   onClick={() => setProfileUser(u)}
                   title="View profile"
-                  style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg, cursor: "pointer" }}
+                  style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 70px 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg, cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget.style.borderColor = C.primary)}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
                 >
@@ -94,6 +94,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                   <Badge text={u.auth_method === "identity" ? "🌐 IdP" : "🔑 gw"} />
                   <Badge text={u.email_verified ? "verified" : "unverified"} />
                   <span style={{ fontSize: 11, color: C.muted }}>{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "—"}</span>
+                  <TwoFaBadge user={u} />
                   <Badge text={u.is_active ? "active" : "disabled"} />
                   {!readonly && (
                     <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
@@ -118,6 +119,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           appId={appId}
           user={profileUser}
           providers={providers}
+          readonly={readonly}
           onClose={() => setProfileUser(null)}
           onRevoked={load}
         />
@@ -138,8 +140,15 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
   );
 }
 
-function UserProfileModal({ appId, user, providers, onClose, onRevoked }: {
-  appId: string; user: AppUser; providers: IdentityProvider[];
+function TwoFaBadge({ user }: { user: AppUser }) {
+  if (user.auth_method === "identity") return <span style={{ fontSize: 11, color: C.muted }}>—</span>;
+  if (user.twofa_enrolled) return <Badge text={user.twofa_method === "email_otp" ? "🔐 OTP" : "🔐 TOTP"} />;
+  if (user.twofa_status === "enforced") return <Badge text="⚠ required" />;
+  return <span style={{ fontSize: 11, color: C.muted }}>off</span>;
+}
+
+function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked }: {
+  appId: string; user: AppUser; providers: IdentityProvider[]; readonly: boolean;
   onClose: () => void; onRevoked: () => void;
 }) {
   const [detail, setDetail] = useState<AppUser>(user);
@@ -224,6 +233,49 @@ function UserProfileModal({ appId, user, providers, onClose, onRevoked }: {
         </>
       )}
       <Row label="Email verified" value={detail.email_verified ? "✓ yes" : "✗ no"} />
+
+      {/* ── Two-factor (gateway users only) ─────────────────────────────────── */}
+      {detail.auth_method === "gateway" && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px", margin: "14px 0 4px" }}>Two-factor authentication</div>
+          <Row
+            label="Status"
+            value={
+              detail.twofa_enrolled
+                ? `🔐 Enabled — ${detail.twofa_method === "email_otp" ? "email OTP codes" : "authenticator app (TOTP)"}`
+                : detail.twofa_status === "enforced"
+                  ? "⚠ Required — user must enroll at next login"
+                  : "Off — password only"
+            }
+          />
+          {!readonly && (
+            <div style={{ display: "flex", gap: 8, margin: "10px 0 4px" }}>
+              {detail.twofa_status !== "enforced" && (
+                <Btn size="sm" onClick={async () => {
+                  try { setDetail(await api.put<AppUser>(`/__config/apps/${appId}/users/${detail.id}/2fa`, { action: "enforce" })); }
+                  catch (e) { setError(String(e)); }
+                }}>Require 2FA</Btn>
+              )}
+              {detail.twofa_enrolled && (
+                <Btn size="sm" variant="ghost" onClick={async () => {
+                  try { setDetail(await api.put<AppUser>(`/__config/apps/${appId}/users/${detail.id}/2fa`, { action: "reset" })); }
+                  catch (e) { setError(String(e)); }
+                }}>Reset (re-enroll)</Btn>
+              )}
+              {(detail.twofa_status !== "off" || detail.twofa_enrolled) && (
+                <Btn size="sm" variant="danger" onClick={async () => {
+                  try { setDetail(await api.put<AppUser>(`/__config/apps/${appId}/users/${detail.id}/2fa`, { action: "disable" })); }
+                  catch (e) { setError(String(e)); }
+                }}>Disable</Btn>
+              )}
+            </div>
+          )}
+          <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+            Require = the user must enroll at their next login (their active sessions are revoked).
+            Reset = wipes the enrollment but keeps the requirement. Disable = password-only again.
+          </p>
+        </>
+      )}
 
       {/* ── Timestamps ──────────────────────────────────────────────────────── */}
       <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px", margin: "14px 0 4px" }}>Activity</div>

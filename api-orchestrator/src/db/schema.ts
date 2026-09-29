@@ -287,12 +287,47 @@ export const app_users = sqliteTable("app_users", {
   email_verification_token_hash: text("email_verification_token_hash"),
   verification_token_expires_at: text("verification_token_expires_at"),
   last_login_at:  text("last_login_at"),
+  // ── Two-factor auth (user-based; see Features/TwoFactorAuth-11.md) ─────────
+  // 'off' (default) | 'enabled' (user opted in) | 'enforced' (admin required)
+  twofa_status:   text("twofa_status").notNull().default("off"),
+  // Set at enrollment: 'totp' | 'email_otp'
+  twofa_method:   text("twofa_method"),
+  // TOTP secret, AES-256-GCM encrypted at rest (same crypto as secrets vault)
+  totp_secret_ct: text("totp_secret_ct"),
+  totp_secret_iv: text("totp_secret_iv"),
+  totp_secret_tag: text("totp_secret_tag"),
+  // Replay protection: last used RFC-6238 timestep
+  totp_last_timestep: integer("totp_last_timestep"),
+  twofa_enrolled_at: text("twofa_enrolled_at"),
   created_at:    text("created_at").notNull(),
   updated_at:    text("updated_at").notNull(),
 }, (t) => [
   uniqueIndex("app_users_app_username_unique").on(t.app_id, t.username),
   uniqueIndex("app_users_app_email_unique").on(t.app_id, t.email),
   uniqueIndex("app_users_app_idp_sub_unique").on(t.app_id, t.identity_provider_id, t.idp_sub),
+]);
+
+// ── login_challenges ──────────────────────────────────────────────────────────
+// Step-up state between password (factor 1) and factor 2 during gateway login,
+// plus enrollment confirmations. One row per login attempt that needs 2FA.
+// pending_hash = SHA-256 of the HMAC-signed pending token given to the client;
+// code_hash = SHA-256 of the email-OTP code (null for TOTP challenges).
+export const login_challenges = sqliteTable("login_challenges", {
+  id:           text("id").primaryKey(),
+  app_id:       text("app_id").notNull().references(() => apps.id),
+  user_id:      text("user_id").notNull().references(() => app_users.id),
+  kind:         text("kind").notNull(),          // 'login' | 'enroll'
+  method:       text("method"),                  // 'totp' | 'email_otp'
+  pending_hash: text("pending_hash").notNull(),
+  code_hash:    text("code_hash"),
+  expires_at:   text("expires_at").notNull(),
+  last_sent_at: text("last_sent_at"),            // email-OTP resend throttle
+  attempts:     integer("attempts").notNull().default(0),
+  consumed_at:  text("consumed_at"),
+  created_at:   text("created_at").notNull(),
+}, (t) => [
+  index("idx_login_challenges_user").on(t.user_id),
+  index("idx_login_challenges_expires").on(t.expires_at),
 ]);
 
 // ── mail_senders / mail_routes ────────────────────────────────────────────────
@@ -376,6 +411,8 @@ export type AppSession       = typeof app_sessions.$inferSelect;
 export type NewAppSession    = typeof app_sessions.$inferInsert;
 export type AppUser          = typeof app_users.$inferSelect;
 export type NewAppUser       = typeof app_users.$inferInsert;
+export type LoginChallenge   = typeof login_challenges.$inferSelect;
+export type NewLoginChallenge = typeof login_challenges.$inferInsert;
 export type MailSender       = typeof mail_senders.$inferSelect;
 export type NewMailSender    = typeof mail_senders.$inferInsert;
 export type MailRoute        = typeof mail_routes.$inferSelect;

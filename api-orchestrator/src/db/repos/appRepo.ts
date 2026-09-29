@@ -19,6 +19,8 @@ export type SessionConfig = {
   link_identity_on_verified_email?: boolean;
   /** Require verified email before gateway login (self-signup users). Default true. */
   require_email_verification?: boolean;
+  /** Allow gateway users to self-enroll in two-factor auth (default true). */
+  twofa_available?: boolean;
 };
 
 export type SerializedApp = {

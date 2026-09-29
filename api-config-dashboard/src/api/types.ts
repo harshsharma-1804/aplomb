@@ -57,6 +57,8 @@ export interface App {
     link_identity_on_verified_email?: boolean;
     /** Require verified email before gateway login (self-signup users). Default true. */
     require_email_verification?: boolean;
+    /** Allow gateway users to self-enroll in two-factor auth (default true). */
+    twofa_available?: boolean;
   };
   /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
   ai_expose: boolean;
@@ -309,6 +311,10 @@ export interface AppUser {
   /** Gateway self-signup users verify via email link; operator-created and identity users are trusted */
   email_verified: boolean;
   last_login_at: string | null;
+  // Two-factor (Features/TwoFactorAuth-11.md)
+  twofa_status: "off" | "enabled" | "enforced";
+  twofa_method: "totp" | "email_otp" | null;
+  twofa_enrolled: boolean;
   created_at: string;
   updated_at: string;
 }

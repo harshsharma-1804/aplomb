@@ -99,6 +99,13 @@
       "when": 1790598548891,
       "tag": "0013_backfill_gateway_email_verified",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1790598548892,
+      "tag": "0014_two_factor_auth",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,7 @@ import { runScript } from "./scriptRunner.js";
 import { handleAppAuthRoute, resolveSessionForRequest, RESERVED_APP_AUTH_PATHS } from "../auth/appSessionAuth.js";
 import { handleAppOAuthRoute } from "../auth/oauthBroker.js";
 import { handleAppSignupRoute } from "../auth/appSignup.js";
+import { handleAppTwoFactorRoute } from "../auth/appTwoFactor.js";
 
 export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
@@ -145,6 +146,12 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   // GET {base_path}/auth/login/{providerId} and /auth/callback/{providerId}
   if (relativePath.startsWith("/auth/login/") || relativePath.startsWith("/auth/callback/")) {
     const handled = await handleAppOAuthRoute(req, res, app, relativePath);
+    if (handled) return;
+  }
+
+  // ── Two-factor auth (user-based TOTP / email OTP) ────────────────────────────
+  if (relativePath === "/login/2fa" || relativePath.startsWith("/__2fa/")) {
+    const handled = await handleAppTwoFactorRoute(req, res, app, relativePath);
     if (handled) return;
   }
 

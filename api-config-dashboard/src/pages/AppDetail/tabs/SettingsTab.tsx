@@ -143,6 +143,7 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
   const [newRedirect, setNewRedirect]     = useState("");
   const [linkIdentity, setLinkIdentity]   = useState(app.session_config?.link_identity_on_verified_email ?? true);
   const [requireVerify, setRequireVerify] = useState(app.session_config?.require_email_verification ?? true);
+  const [twofaAvailable, setTwofaAvailable] = useState(app.session_config?.twofa_available ?? true);
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState("");
   const [saved, setSaved]                 = useState(false);
@@ -186,6 +187,7 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
               post_login_redirect: postLoginRedirect.trim() || undefined,
               link_identity_on_verified_email: linkIdentity,
               require_email_verification: requireVerify,
+              twofa_available: twofaAvailable,
             },
           },
         );
@@ -313,7 +315,15 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
                 {["gateway", "both"].includes(sessionMethod) && (
                   <div style={{ padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af", marginBottom: 14 }}>
                     Gateway users are managed in the <strong>Users</strong> tab of this app.
+                    {twofaAvailable && " Users can enroll in two-factor auth (authenticator app or email codes) from their first login; you can require it per user in the Users tab."}
                   </div>
+                )}
+
+                {["gateway", "both"].includes(sessionMethod) && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 14, cursor: readonly ? "default" : "pointer" }}>
+                    <input type="checkbox" checked={twofaAvailable} onChange={e => { setTwofaAvailable(e.target.checked); setSaved(false); }} disabled={readonly} />
+                    Allow users to self-enroll in two-factor authentication (TOTP / email codes)
+                  </label>
                 )}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0 12px", marginBottom: 4 }}>

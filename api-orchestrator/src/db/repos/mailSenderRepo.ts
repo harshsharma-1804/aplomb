@@ -13,7 +13,7 @@ import { resolveSecret } from "../../secrets/resolver.js";
  * send time. BYO credentials — Gmail app password, SES SMTP, Postmark, etc.
  */
 
-export const MAIL_PURPOSES = ["verification"] as const;
+export const MAIL_PURPOSES = ["verification", "otp"] as const;
 export type MailPurpose = (typeof MAIL_PURPOSES)[number];
 
 export type SerializedMailSender = Omit<MailSender, "is_active"> & {

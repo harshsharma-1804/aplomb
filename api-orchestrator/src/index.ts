@@ -17,6 +17,7 @@ import { initLogger } from "./runtime/logger.js";
 import { bootstrapOrganization, bootstrapAdmin, bootstrapBuiltinAiProvider } from "./db/bootstrap.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { appSessionRepo } from "./db/repos/appSessionRepo.js";
+import { purgeLoginChallenges } from "./auth/appTwoFactor.js";
 import rootRouter from "./routes/index.route.js";
 
 const app = express();
@@ -148,9 +149,14 @@ async function start(): Promise<void> {
   warmJwksCache();
   initLogger();
 
-  // Expired app-session purge (both clocks) + 7-day-old revoked rows — hourly
+  // Expired app-session purge (both clocks) + 7-day-old revoked rows + stale 2FA
+  // login challenges — hourly
   const sessionPurge = setInterval(() => {
-    try { const n = appSessionRepo.purgeExpired(getDb()); if (n) console.log(`[sessions] Purged ${n} expired app sessions`); } catch {}
+    try {
+      const n = appSessionRepo.purgeExpired(getDb());
+      const c = purgeLoginChallenges();
+      if (n || c) console.log(`[sessions] Purged ${n} expired app sessions, ${c} login challenges`);
+    } catch {}
   }, 3600_000);
   sessionPurge.unref();
 

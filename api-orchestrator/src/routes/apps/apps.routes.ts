@@ -11,6 +11,7 @@ import { refreshApp } from "../../cache/appCache.js";
 import { compileTypeScript } from "../../runtime/scriptRunner.js";
 import { refreshToolRegistry } from "../../ai/toolRegistry.js";
 import { appUserRepo } from "../../db/repos/appUserRepo.js";
+import { loginChallengeRepo } from "../../db/repos/loginChallengeRepo.js";
 import { appSessionRepo, resolveSessionConfig } from "../../db/repos/appSessionRepo.js";
 import { aiBotRepo } from "../../db/repos/aiBotRepo.js";
 import { buildBotBundle, importProviders, importBotBundle } from "../../ai/botTransfer.js";
@@ -251,6 +252,34 @@ router.put("/:id/users/:userId", requirePermission("manage:apps"), (req, res) =>
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "Email already in use for this app", code: "DUPLICATE_APP_USER" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }
+});
+
+// ── PUT /apps/:id/users/:userId/2fa — admin 2FA control (per user) ────────────
+// action: 'enforce' (require at next login) | 'disable' (off, clears enrollment)
+//         | 'reset' (wipe enrollment, keep enforcement → re-enroll at next login)
+router.put("/:id/users/:userId/2fa", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const target = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!target) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const { action } = req.body ?? {};
+  if (!["enforce", "disable", "reset"].includes(action)) {
+    res.status(400).json({ error: "action must be 'enforce', 'disable' or 'reset'", code: "VALIDATION_ERROR" }); return;
+  }
+  if (target.auth_method === "identity") {
+    res.status(400).json({ error: "Two-factor applies to gateway users only — identity users authenticate via their provider", code: "NOT_GATEWAY_USER" }); return;
+  }
+  if (action === "enforce") appUserRepo.enforceTwofa(db, userId);
+  else if (action === "disable") appUserRepo.disableTwofa(db, userId);
+  else appUserRepo.resetTwofa(db, userId);
+  loginChallengeRepo.revokeForUser(db, userId);   // any pending step-up dies with the state change
+  const user = appUserRepo.listByApp(db, appId).find(u => u.id === userId)!;
+  // Enforcement immediately invalidates active sessions — factor 2 must apply from scratch.
+  if (action === "enforce" || action === "reset") {
+    appSessionRepo.revokeAllForAppUser(db, appId, user.sub);
+  }
+  res.json(user);
 });
 
 router.put("/:id/users/:userId/password", requirePermission("manage:apps"), async (req, res) => {

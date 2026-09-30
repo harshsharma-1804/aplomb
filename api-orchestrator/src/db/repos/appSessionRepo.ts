@@ -33,6 +33,7 @@ export function resolveSessionConfig(app: { session_config?: unknown }): Require
     post_login_redirect: raw.post_login_redirect ?? "",
     link_identity_on_verified_email: raw.link_identity_on_verified_email ?? true,
     require_email_verification: raw.require_email_verification ?? true,
+    twofa_available: raw.twofa_available ?? true,
   };
 }
 

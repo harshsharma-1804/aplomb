@@ -3,6 +3,7 @@ import { randomUUID, randomBytes } from "crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
 import { app_users, type AppUser } from "../schema.js";
 import type { DrizzleDb } from "./types.js";
+import { encryptSecret, decryptRaw } from "../../secrets/resolver.js";
 
 /**
  * Per-app gateway-auth users. Completely disjoint from `users` (dashboard admins):
@@ -26,6 +27,10 @@ export type SerializedAppUser = {
   idp_sub: string | null;
   email_verified: boolean;
   last_login_at: string | null;
+  // Two-factor (see Features/TwoFactorAuth-11.md)
+  twofa_status: "off" | "enabled" | "enforced";
+  twofa_method: "totp" | "email_otp" | null;
+  twofa_enrolled: boolean;
   created_at: string; updated_at: string;
 };
 
@@ -69,6 +74,9 @@ function serialize(row: AppUser): SerializedAppUser {
     idp_sub: row.idp_sub ?? null,
     email_verified: Boolean(row.email_verified_at),
     last_login_at: row.last_login_at ?? null,
+    twofa_status: (row.twofa_status as "off" | "enabled" | "enforced") ?? "off",
+    twofa_method: (row.twofa_method as "totp" | "email_otp" | null) ?? null,
+    twofa_enrolled: Boolean(row.twofa_enrolled_at),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -229,6 +237,74 @@ export const appUserRepo = {
   touchLogin(db: DrizzleDb, id: string): void {
     db.update(app_users).set({ last_login_at: new Date().toISOString() })
       .where(eq(app_users.id, id)).run();
+  },
+
+  // ── Two-factor state (Features/TwoFactorAuth-11.md) ─────────────────────────
+
+  /** Decrypted TOTP secret + last-used timestep, or null when not stored. */
+  getTotpState(db: DrizzleDb, id: string): { secret: string; lastTimestep: number | null } | null {
+    const row = db.select().from(app_users).where(eq(app_users.id, id)).get();
+    if (!row?.totp_secret_ct || !row.totp_secret_iv || !row.totp_secret_tag) return null;
+    return {
+      secret: decryptRaw(row.totp_secret_ct, row.totp_secret_iv, row.totp_secret_tag),
+      lastTimestep: row.totp_last_timestep ?? null,
+    };
+  },
+
+  /** Store the (base32) TOTP secret — AES-256-GCM encrypted at rest. */
+  setTotpSecret(db: DrizzleDb, id: string, secret: string): void {
+    const enc = encryptSecret(secret);
+    db.update(app_users).set({
+      twofa_method: "totp",
+      totp_secret_ct: enc.ciphertext, totp_secret_iv: enc.iv, totp_secret_tag: enc.auth_tag,
+      totp_last_timestep: null,
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
+  },
+
+  setTwofaMethod(db: DrizzleDb, id: string, method: "totp" | "email_otp"): void {
+    db.update(app_users).set({ twofa_method: method, updated_at: new Date().toISOString() })
+      .where(eq(app_users.id, id)).run();
+  },
+
+  /** Mark enrollment complete (keeps 'enforced' status if the admin set it). */
+  markTwofaEnrolled(db: DrizzleDb, id: string): void {
+    db.update(app_users).set({
+      twofa_status: "enabled",
+      twofa_enrolled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
+  },
+
+  markTotpUsed(db: DrizzleDb, id: string, timestep: number): void {
+    db.update(app_users).set({ totp_last_timestep: timestep, updated_at: new Date().toISOString() })
+      .where(eq(app_users.id, id)).run();
+  },
+
+  /** Admin: require 2FA at this user's next login. */
+  enforceTwofa(db: DrizzleDb, id: string): void {
+    db.update(app_users).set({ twofa_status: "enforced", updated_at: new Date().toISOString() })
+      .where(eq(app_users.id, id)).run();
+  },
+
+  /** Admin: turn 2FA off — clears method, secret and enrollment. */
+  disableTwofa(db: DrizzleDb, id: string): void {
+    db.update(app_users).set({
+      twofa_status: "off", twofa_method: null,
+      totp_secret_ct: null, totp_secret_iv: null, totp_secret_tag: null,
+      totp_last_timestep: null, twofa_enrolled_at: null,
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
+  },
+
+  /** Admin: wipe enrollment but keep enforcement — the user re-enrolls at next login. */
+  resetTwofa(db: DrizzleDb, id: string): void {
+    db.update(app_users).set({
+      twofa_status: "enforced", twofa_method: null,
+      totp_secret_ct: null, totp_secret_iv: null, totp_secret_tag: null,
+      totp_last_timestep: null, twofa_enrolled_at: null,
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
   },
 
   /**

@@ -15,18 +15,15 @@ export function resolveSecret(secretRef: string): string {
   const db = getDb();
   const secret = secretRepo.findById(db, secretRef);
   if (!secret) throw new Error(`Secret not found: ${secretRef}`);
+  return decryptRaw(secret.ciphertext, secret.iv, secret.auth_tag);
+}
 
+/** AES-256-GCM decrypt of raw stored parts (used for TOTP secrets on user rows). */
+export function decryptRaw(ciphertext: string, iv: string, authTag: string): string {
   const key = getKey();
-  const iv = Buffer.from(secret.iv, "base64");
-  const authTag = Buffer.from(secret.auth_tag, "base64");
-  const ciphertext = Buffer.from(secret.ciphertext, "base64");
-
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(authTag);
-  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-
-  secretRepo.touchLastUsed(db, secret.id);
-
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
+  decipher.setAuthTag(Buffer.from(authTag, "base64"));
+  const plaintext = Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64")), decipher.final()]);
   return plaintext.toString("utf8");
 }
 

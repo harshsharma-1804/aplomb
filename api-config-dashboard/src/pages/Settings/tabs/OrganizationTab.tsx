@@ -42,7 +42,7 @@ export function OrganizationTab() {
       />
       <div style={{ padding: 16 }}>
         {error && <ErrorBanner message={error} />}
-        {saved && <div style={{ padding: "8px 12px", background: "#f0fdf4", borderRadius: C.radius, color: "#166534", fontSize: 12, marginBottom: 12 }}>✓ Saved successfully</div>}
+        {saved && <div style={{ padding: "8px 12px", background: "var(--success-background)", borderRadius: C.radius, color: "var(--success)", fontSize: 12, marginBottom: 12 }}>✓ Saved successfully</div>}
 
         <Field label="Organization Name" hint="Displayed in the dashboard header and response headers">
           <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} disabled={!can("manage:users")} />

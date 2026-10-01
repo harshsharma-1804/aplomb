@@ -1,10 +1,18 @@
 import React, { useState } from "react";
 
 export const C = {
-  bg: "#f8f9fa", surface: "#ffffff", border: "#dee2e6", borderStrong: "#adb5bd",
-  primary: "#0d6efd", primaryHover: "#0b5ed7", danger: "#dc3545", success: "#198754",
-  warning: "#ffc107", text: "#212529", muted: "#6c757d",
-  radius: "6px", shadow: "0 1px 3px rgba(0,0,0,0.08)",
+  bg: "var(--surface-muted)", canvas: "var(--canvas)", surface: "var(--surface)", surfaceMuted: "var(--surface-muted)",
+  border: "var(--border)", borderStrong: "var(--input-border)",
+  primary: "var(--primary)", primaryHover: "var(--primary-hover)", primaryText: "var(--primary-text)",
+  danger: "var(--danger)", success: "var(--success)", warning: "var(--warning)",
+  text: "var(--text)", muted: "var(--muted)",
+  sidebar: "var(--sidebar)", sidebarHover: "var(--sidebar-hover)",
+  sidebarText: "var(--sidebar-text)", sidebarTextMuted: "var(--sidebar-text-muted)",
+  selection: "var(--selection)",
+  dangerBg: "var(--danger-background)", successBg: "var(--success-background)", warningBg: "var(--warning-background)",
+  codeBg: "var(--code-bg)", codeText: "var(--code-text)",
+  overlay: "var(--overlay)", shadow: "var(--shadow)", shadowModal: "var(--shadow-modal)",
+  radiusSm: "var(--radius-sm)", radius: "var(--radius)", radiusPanel: "var(--radius-panel)", radiusFeature: "var(--radius-feature)",
 };
 
 // ── Button ────────────────────────────────────────────────────────────────────
@@ -19,9 +27,9 @@ export function Btn({ variant = "primary", size = "md", style, children, ...rest
     padding: size === "sm" ? "5px 10px" : "8px 14px", fontSize: size === "sm" ? 12 : 13,
   };
   const vars: Record<string, React.CSSProperties> = {
-    primary: { background: C.primary, color: "#fff" },
-    danger:  { background: C.danger, color: "#fff" },
-    success: { background: C.success, color: "#fff" },
+    primary: { background: C.primary, color: C.primaryText },
+    danger:  { background: C.danger, color: C.primaryText },
+    success: { background: C.success, color: C.primaryText },
     outline: { background: "transparent", color: C.primary, borderColor: C.primary },
     ghost:   { background: "transparent", color: C.muted, borderColor: C.border },
   };
@@ -29,15 +37,17 @@ export function Btn({ variant = "primary", size = "md", style, children, ...rest
 }
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
-const statusColor: Record<string, string> = {
-  active: C.success, approved: C.success, admin: C.primary,
-  denied: C.danger, deprecated: C.danger, inactive: C.muted,
-  pending: "#fd7e14", draft: C.muted, sub_admin: "#6610f2", viewer: C.muted,
+const statusColor: Record<string, [string, string]> = {
+  active: [C.success, C.successBg], approved: [C.success, C.successBg],
+  admin: [C.primary, C.selection], sub_admin: [C.primary, C.selection],
+  denied: [C.danger, C.dangerBg], deprecated: [C.danger, C.dangerBg],
+  pending: [C.warning, C.warningBg], draft: [C.warning, C.warningBg],
+  inactive: [C.muted, C.surfaceMuted], viewer: [C.muted, C.surfaceMuted],
 };
 export function Badge({ text }: { text: string }) {
-  const color = statusColor[text.toLowerCase()] ?? C.muted;
+  const [color, bg] = statusColor[text.toLowerCase()] ?? [C.muted, C.surfaceMuted];
   return (
-    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 600, color, background: color + "22", textTransform: "uppercase", letterSpacing: ".4px" }}>
+    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 600, color, background: bg, textTransform: "uppercase", letterSpacing: ".4px" }}>
       {text}
     </span>
   );
@@ -45,7 +55,7 @@ export function Badge({ text }: { text: string }) {
 
 // ── Card ──────────────────────────────────────────────────────────────────────
 export function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, boxShadow: C.shadow, ...style }}>{children}</div>;
+  return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radiusPanel, boxShadow: C.shadow, ...style }}>{children}</div>;
 }
 
 // ── SectionHead ───────────────────────────────────────────────────────────────
@@ -68,7 +78,7 @@ export function Table({ cols, rows, onRowClick }: {
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
-          <tr style={{ background: C.bg }}>
+          <tr style={{ background: C.surfaceMuted }}>
             {cols.map(c => <th key={c.key} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.muted, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{c.label}</th>)}
           </tr>
         </thead>
@@ -78,7 +88,7 @@ export function Table({ cols, rows, onRowClick }: {
             : rows.map((row, i) => (
               <tr key={i} onClick={() => onRowClick?.(row)}
                 style={{ borderBottom: `1px solid ${C.border}`, cursor: onRowClick ? "pointer" : undefined }}
-                onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = C.bg; }}
+                onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = C.selection; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ""; }}>
                 {cols.map(c => (
                   <td key={c.key} style={{ padding: "8px 12px", color: C.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -96,9 +106,9 @@ export function Table({ cols, rows, onRowClick }: {
 // ── Modal ─────────────────────────────────────────────────────────────────────
 export function Modal({ title, onClose, children, width = 520 }: { title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, background: C.overlay, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: C.surface, borderRadius: C.radius, boxShadow: "0 8px 32px rgba(0,0,0,0.2)", width, maxWidth: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ background: C.surface, borderRadius: C.radiusPanel, boxShadow: C.shadowModal, width, maxWidth: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
           <span style={{ fontWeight: 600, fontSize: 14 }}>{title}</span>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.muted }}>×</button>
@@ -123,10 +133,10 @@ export function Confirm({ message, onConfirm, onCancel, danger = false }: { mess
 }
 
 // ── Field ─────────────────────────────────────────────────────────────────────
-export function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+export function Field({ label, children, hint }: { label: React.ReactNode; children: React.ReactNode; hint?: string }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".4px" }}>{label}</label>
+      <label style={{ display: "flex", alignItems: "center", fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".4px" }}>{label}</label>
       {children}
       {hint && <p style={{ margin: "3px 0 0", fontSize: 11, color: C.muted }}>{hint}</p>}
     </div>
@@ -134,9 +144,69 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 }
 
 export const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "7px 10px", border: `1px solid ${C.border}`, borderRadius: C.radius,
+  width: "100%", padding: "7px 10px", border: `1px solid ${C.borderStrong}`, borderRadius: C.radius,
   fontSize: 13, color: C.text, background: C.surface, boxSizing: "border-box",
 };
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+export function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      style={{
+        width: 36, height: 20, borderRadius: 999, border: "none", cursor: disabled ? "default" : "pointer",
+        background: checked ? C.primary : C.border, position: "relative", flexShrink: 0,
+        transition: "background .15s", padding: 0, opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span style={{
+        position: "absolute", top: 2, left: checked ? 18 : 2, width: 16, height: 16, borderRadius: "50%",
+        background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.25)", transition: "left .15s",
+      }} />
+    </button>
+  );
+}
+
+// ── InfoTip ───────────────────────────────────────────────────────────────────
+export function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", marginLeft: 6 }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span
+        role="note"
+        aria-label={text}
+        tabIndex={0}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        style={{
+          cursor: "help", width: 16, height: 16, borderRadius: 999, flexShrink: 0,
+          border: `1px solid ${C.borderStrong}`, color: C.muted, background: "transparent",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          fontSize: 10, fontWeight: 700, fontStyle: "italic", fontFamily: "Georgia, serif",
+          textTransform: "none", letterSpacing: 0,
+        }}
+      >i</span>
+      {open && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: 0, width: 280, zIndex: 1100,
+          padding: "9px 11px", background: C.surface, border: `1px solid ${C.border}`,
+          borderRadius: C.radius, boxShadow: C.shadowModal, fontSize: 12, fontWeight: 400,
+          color: C.text, lineHeight: 1.5, textTransform: "none", letterSpacing: 0,
+          whiteSpace: "normal",
+        }}>{text}</span>
+      )}
+    </span>
+  );
+}
 
 // ── Spinner / Error ───────────────────────────────────────────────────────────
 export function Spinner() {
@@ -144,7 +214,7 @@ export function Spinner() {
 }
 
 export function ErrorBanner({ message }: { message: string }) {
-  return <div style={{ background: "#fff5f5", border: `1px solid ${C.danger}30`, borderRadius: C.radius, padding: "10px 14px", color: C.danger, fontSize: 13, marginBottom: 12 }}>{message}</div>;
+  return <div style={{ background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: C.radius, padding: "10px 14px", color: C.danger, fontSize: 13, marginBottom: 12 }}>{message}</div>;
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
@@ -172,14 +242,17 @@ export function JsonViewer({ data }: { data: unknown }) {
       <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: C.radius, cursor: "pointer", fontSize: 11, color: C.muted, padding: "3px 8px" }}>
         {open ? "Hide" : "Show"} raw JSON
       </button>
-      {open && <pre style={{ marginTop: 8, padding: 12, background: "#1e1e1e", color: "#d4d4d4", borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 320 }}>{JSON.stringify(data, null, 2)}</pre>}
+      {open && <pre style={{ marginTop: 8, padding: 12, background: C.codeBg, color: C.codeText, borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 320 }}>{JSON.stringify(data, null, 2)}</pre>}
     </div>
   );
 }
 
 // ── MethodBadge ───────────────────────────────────────────────────────────────
-const methodColor: Record<string, string> = { GET: "#198754", POST: "#0d6efd", PUT: "#fd7e14", DELETE: "#dc3545", PATCH: "#6610f2" };
+const methodColor: Record<string, [string, string]> = {
+  GET: [C.success, C.successBg], POST: [C.primary, C.selection], PUT: [C.warning, C.warningBg],
+  DELETE: [C.danger, C.dangerBg], PATCH: [C.primary, C.selection],
+};
 export function MethodBadge({ method }: { method: string }) {
-  const color = methodColor[method] ?? C.muted;
-  return <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: 4, fontSize: 11, fontWeight: 700, color, background: color + "18", fontFamily: "monospace" }}>{method}</span>;
+  const [color, bg] = methodColor[method] ?? [C.muted, C.surfaceMuted];
+  return <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: C.radiusSm, fontSize: 11, fontWeight: 700, color, background: bg, fontFamily: "monospace" }}>{method}</span>;
 }

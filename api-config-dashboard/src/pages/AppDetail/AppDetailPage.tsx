@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { api } from "../../api/client";
 import type { App, Endpoint, ListResult } from "../../api/types";
 import { Btn, Badge, Spinner, ErrorBanner, Confirm, MethodBadge, C, Modal, Field, inputStyle } from "../../components";
+import { useBreadcrumb } from "../../components/BreadcrumbContext";
 import { useSession } from "../../auth/SessionContext";
 import { RequestSchemaTab } from "./tabs/RequestSchemaTab";
 import { ResponseSchemaTab } from "./tabs/ResponseSchemaTab";
@@ -28,6 +29,7 @@ const TABS = [
 export function AppDetailPage() {
   const { appId } = useParams<{ appId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { can } = useSession();
 
   const [app, setApp] = useState<App | null>(null);
@@ -109,6 +111,10 @@ export function AppDetailPage() {
 
   useEffect(() => { load(); }, [appId]);
   useEffect(() => { setEndpointSettingsOpen(false); }, [selectedEndpoint?._id]);
+  useBreadcrumb(location.pathname, app ? [
+    { label: "App Registry", to: "/apps" },
+    { label: app.name },
+  ] : null);
 
   async function handleDeleteEndpoint(ep: Endpoint) {
     try {
@@ -137,13 +143,11 @@ export function AppDetailPage() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 12, flexShrink: 0 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <button onClick={() => navigate("/apps")} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 13, padding: 0 }}>← Apps</button>
-            <span style={{ color: C.border }}>|</span>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{app.name}</h1>
             <Badge text={app.status} />
             {app.mode && <ModeBadge mode={app.mode} />}
             {app.auth_required === false && (
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "#fff8e1", color: "#92400e", border: "1px solid #fcd34d" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "var(--warning-background)", color: "var(--warning)", border: "1px solid var(--warning)" }}>
                 🔓 AUTH OFF
               </span>
             )}
@@ -259,7 +263,7 @@ export function AppDetailPage() {
                       setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                       setShowAddFolder(false); setNewFolderName("");
                     }}
-                    style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: "#fff", cursor: "pointer" }}>
+                    style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: C.primaryText, cursor: "pointer" }}>
                     Add
                   </button>
                 </div>
@@ -314,7 +318,7 @@ export function AppDetailPage() {
                             display: "flex", alignItems: "center", gap: 6,
                             padding: "7px 8px 7px 10px", cursor: "pointer",
                             borderBottom: `1px solid ${C.border}`,
-                            background: isOver ? C.primary + "18" : C.bg,
+                            background: isOver ? C.selection : C.bg,
                             outline: isOver ? `1px dashed ${C.primary}` : undefined,
                             position: "relative",
                           }}>
@@ -364,7 +368,7 @@ export function AppDetailPage() {
                         </div>
                         {/* Folder context menu */}
                         {isMenuOpen && (
-                          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, margin: "0 8px 4px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+                          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, margin: "0 8px 4px", boxShadow: C.shadow, overflow: "hidden" }}>
                             <button
                               onClick={e => { e.stopPropagation(); setRenamingFolder(folder); setRenameFolderValue(folder); setFolderMenuOpen(null); }}
                               style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, borderBottom: `1px solid ${C.border}` }}
@@ -375,7 +379,7 @@ export function AppDetailPage() {
                             <button
                               onClick={e => { e.stopPropagation(); deleteEndpointFolder(folder); }}
                               style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.danger }}
-                              onMouseEnter={el => (el.currentTarget.style.background = "#fff5f5")}
+                              onMouseEnter={el => (el.currentTarget.style.background = "var(--danger-background)")}
                               onMouseLeave={el => (el.currentTarget.style.background = "none")}>
                               🗑 Delete folder{folderEps.length > 0 ? ` (moves ${folderEps.length} endpoint${folderEps.length > 1 ? "s" : ""} to root)` : ""}
                             </button>
@@ -393,7 +397,7 @@ export function AppDetailPage() {
                             style={{
                               padding: "8px 10px 8px 28px", cursor: "pointer",
                               borderBottom: `1px solid ${C.border}`,
-                              background: selectedEndpoint?._id === ep._id ? C.primary + "10" : dragEndpointId === ep._id ? "#f0f0f0" : "",
+                              background: selectedEndpoint?._id === ep._id ? C.selection : dragEndpointId === ep._id ? "var(--surface-muted)" : "",
                               display: "flex", alignItems: "center", gap: 6,
                             }}>
                             <MethodBadge method={ep.method} />
@@ -423,7 +427,7 @@ export function AppDetailPage() {
                       style={{
                         padding: "9px 10px", cursor: "pointer",
                         borderBottom: `1px solid ${C.border}`,
-                        background: selectedEndpoint?._id === ep._id ? C.primary + "10" : dragEndpointId === ep._id ? "#f0f0f0" : "",
+                        background: selectedEndpoint?._id === ep._id ? C.selection : dragEndpointId === ep._id ? "var(--surface-muted)" : "",
                         display: "flex", alignItems: "center", gap: 6,
                       }}>
                       <MethodBadge method={ep.method} />
@@ -452,7 +456,7 @@ export function AppDetailPage() {
                 <span style={{ fontWeight: 600 }}>{selectedEndpoint.path}</span>
                 <span style={{ fontSize: 12, color: C.muted }}>{selectedEndpoint.name}</span>
                 {!selectedEndpoint.is_active && (
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "#f3f4f6", color: C.muted, border: `1px solid ${C.border}` }}>INACTIVE</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: C.surfaceMuted, color: C.muted, border: `1px solid ${C.border}` }}>INACTIVE</span>
                 )}
                 <div style={{ flex: 1 }} />
                 {can("edit:endpoints") && (
@@ -460,7 +464,7 @@ export function AppDetailPage() {
                     onClick={() => setEndpointSettingsOpen(o => !o)}
                     title="Endpoint settings"
                     style={{
-                      background: endpointSettingsOpen ? C.primary + "15" : "none",
+                      background: endpointSettingsOpen ? C.selection : "none",
                       border: `1px solid ${endpointSettingsOpen ? C.primary : C.border}`,
                       borderRadius: C.radius,
                       cursor: "pointer",
@@ -621,7 +625,7 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
         {error && <ErrorBanner message={error} />}
 
         {breakingChange && (
-          <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 14 }}>
+          <div style={{ padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 14 }}>
             <strong>⚠ Breaking change:</strong> Changing the{" "}
             {[methodChanged && "method", pathChanged && "path"].filter(Boolean).join(" and ")}{" "}
             will break any frontend client currently calling{" "}
@@ -665,7 +669,7 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
           <button type="button" onClick={onToggleActive} style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "4px 12px", borderRadius: 99, cursor: "pointer", fontSize: 12, fontWeight: 600,
-            background: endpoint.is_active ? "#e8f5e9" : "#f3f4f6",
+            background: endpoint.is_active ? "var(--success-background)" : C.surfaceMuted,
             color: endpoint.is_active ? C.success : C.muted,
             border: `1px solid ${endpoint.is_active ? C.success : C.border}`,
           }}>
@@ -750,7 +754,7 @@ function EditAppModal({ app, onClose, onSaved }: { app: App; onClose: () => void
         </Field>
 
         {pathChanged && (
-          <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+          <div style={{ padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 12 }}>
             <strong>Note:</strong> Changing the base path takes effect immediately. Any frontend clients calling{" "}
             <code>{app.base_path}</code> will get 404 until they update to <code>{form.base_path}</code>.
           </div>
@@ -858,7 +862,7 @@ function EditEndpointModal({ appId, endpoint, onClose, onSaved }: {
         {error && <ErrorBanner message={error} />}
 
         {breakingChange && (
-          <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+          <div style={{ padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 12 }}>
             <strong>⚠ Breaking change:</strong> Changing the{" "}
             {[methodChanged && "method", pathChanged && "path"].filter(Boolean).join(" and ")}{" "}
             will break any frontend client currently calling{" "}
@@ -925,7 +929,7 @@ function CloneAppModal({ source, onClose, onCloned }: { source: App; onClose: ()
     <Modal title={`Clone "${source.name}"`} onClose={onClose}>
       <form onSubmit={submit}>
         {error && <ErrorBanner message={error} />}
-        <div style={{ padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af", marginBottom: 12 }}>
+        <div style={{ padding: "8px 12px", background: "var(--selection)", borderRadius: C.radius, border: "1px solid var(--border)", fontSize: 12, color: "var(--primary)", marginBottom: 12 }}>
           All endpoints, schemas, upstreams, and mappings from <strong>{source.name}</strong> will be copied into the new app.
         </div>
         <Field label="New App Name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} required autoFocus /></Field>
@@ -946,10 +950,10 @@ function CloneAppModal({ source, onClose, onCloned }: { source: App; onClose: ()
 // ── ModeBadge ─────────────────────────────────────────────────────────────────
 
 const MODE_STYLES: Record<string, { bg: string; color: string }> = {
-  dev:     { bg: "#e8f5e9", color: "#2e7d32" },
-  qa:      { bg: "#e3f2fd", color: "#1565c0" },
-  staging: { bg: "#fff8e1", color: "#f57f17" },
-  prod:    { bg: "#fce4ec", color: "#c62828" },
+  dev:     { bg: "var(--success-background)", color: "var(--success)" },
+  qa:      { bg: "var(--selection)", color: "var(--primary)" },
+  staging: { bg: "var(--warning-background)", color: "var(--warning)" },
+  prod:    { bg: "var(--danger-background)", color: "var(--danger)" },
 };
 
 function ModeBadge({ mode }: { mode: string }) {

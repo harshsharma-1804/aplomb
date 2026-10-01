@@ -74,7 +74,7 @@ export function BehaviourTab({ bot, onUpdated, readonly }: Props) {
           title={`Guardrail Rules (${rules.length}/20)`}
           action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined}
         />
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "#fff8e1", fontSize: 12, color: "#92400e" }}>
+        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--warning-background)", fontSize: 12, color: "var(--warning)" }}>
           <strong>These are soft instructions</strong> — injected as the highest-priority section of the system prompt. The model is guided but not code-blocked by these. For hard enforcement (topic blocking, scope filtering, tool-only mode) use the <strong>Limits</strong> tab.
         </div>
 

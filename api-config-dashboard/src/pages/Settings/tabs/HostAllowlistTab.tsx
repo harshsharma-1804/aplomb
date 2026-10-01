@@ -59,7 +59,7 @@ export function HostAllowlistTab() {
         />
 
         {showAdd && (
-          <form onSubmit={addHost} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "#f8f9fa" }}>
+          <form onSubmit={addHost} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "var(--surface-muted)" }}>
             {addError && <ErrorBanner message={addError} />}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field
@@ -67,7 +67,7 @@ export function HostAllowlistTab() {
                 hint={isWildcard ? "✓ Wildcard — matches all subdomains of " + hostname.slice(2) : hostname ? "Exact match only" : "e.g. jsonplaceholder.typicode.com or *.typicode.com"}
               >
                 <input
-                  style={{ ...inputStyle, borderColor: isWildcard ? "#fd7e14" : C.border }}
+                  style={{ ...inputStyle, borderColor: isWildcard ? "var(--warning)" : C.border }}
                   value={hostname}
                   onChange={e => setHostname(e.target.value.trim())}
                   placeholder="jsonplaceholder.typicode.com"
@@ -107,7 +107,7 @@ export function HostAllowlistTab() {
                       <code style={{ fontSize: 13, color: C.primary, fontWeight: 600 }}>{entry.hostname}</code>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
-                      <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 99, fontWeight: 600, background: entry.is_wildcard ? "#fff8e1" : "#f0f7ff", color: entry.is_wildcard ? "#92400e" : "#1e40af" }}>
+                      <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 99, fontWeight: 600, background: entry.is_wildcard ? "var(--warning-background)" : "var(--selection)", color: entry.is_wildcard ? "var(--warning)" : "var(--primary)" }}>
                         {entry.is_wildcard ? "wildcard" : "exact"}
                       </span>
                     </td>

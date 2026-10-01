@@ -6,8 +6,8 @@ let nextId = 1;
 function genId() { return `f${Date.now()}${nextId++}`; }
 
 const TYPE_COLORS: Record<string, string> = {
-  string:  "#0d6efd", number: "#6610f2", boolean: "#fd7e14",
-  object:  "#198754", array:  "#e83e8c", null:    "#6c757d",
+  string:  "var(--primary)", number: "var(--primary)", boolean: "var(--warning)",
+  object:  "var(--success)", array:  "var(--primary)", null:    "var(--muted)",
 };
 
 interface Props {
@@ -78,7 +78,7 @@ export function SchemaFieldTree({ fields, onChange, readOnly = false, depth = 0,
               + Add Field{parentPath ? ` to ${parentPath}` : ""}
             </Btn>
           ) : (
-            <div style={{ padding: 12, background: "#f8f9fa", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
+            <div style={{ padding: 12, background: "var(--surface-muted)", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 110px auto", gap: "0 8px", alignItems: "end" }}>
                 <Field label="Field Name">
                   <input
@@ -199,8 +199,8 @@ function FieldRow({ field, depth, parentPath, readOnly, onRemove, onUpdate, onCh
     const editType = editValues.type ?? field.type;
     const showItemType = editType === "array";
     return (
-      <div style={{ marginBottom: 5, padding: 10, background: "#fffbea", borderRadius: C.radius, border: `1px solid #fcd34d` }}>
-        <div style={{ fontSize: 11, color: "#92400e", fontWeight: 600, marginBottom: 8 }}>Editing: <code>{fullPath}</code></div>
+      <div style={{ marginBottom: 5, padding: 10, background: "var(--warning-background)", borderRadius: C.radius, border: `1px solid var(--warning)` }}>
+        <div style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600, marginBottom: 8 }}>Editing: <code>{fullPath}</code></div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: "0 8px" }}>
           <Field label="Field Name">
             <input style={inputStyle} autoFocus value={editValues.field_path ?? field.field_path}

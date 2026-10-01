@@ -6,10 +6,10 @@ import { Card, SectionHead, Btn, Spinner, ErrorBanner, C } from "../../../compon
 interface Props { bot: AiBot; }
 
 const OUTCOME_COLOR: Record<string, string> = {
-  ok:              "#166534",
-  tool_error:      "#92400e",
-  scope_violation: "#b91c1c",
-  denied:          "#b91c1c",
+  ok:              "var(--success)",
+  tool_error:      "var(--warning)",
+  scope_violation: "var(--danger)",
+  denied:          "var(--danger)",
 };
 
 export function AuditTab({ bot }: Props) {

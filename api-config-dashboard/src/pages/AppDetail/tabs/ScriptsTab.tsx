@@ -259,7 +259,7 @@ export function ScriptsTab({ appId }: Props) {
                       setCollapsedFolders(f => { const n = new Set(f); n.delete(name); return n; });
                       setShowAddFolder(false); setNewFolderName("");
                     }}
-                    style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: "#fff", cursor: "pointer" }}>
+                    style={{ fontSize: 11, padding: "4px 8px", border: `1px solid ${C.primary}`, borderRadius: C.radius, background: C.primary, color: C.primaryText, cursor: "pointer" }}>
                     Add
                   </button>
                 </div>
@@ -319,7 +319,7 @@ export function ScriptsTab({ appId }: Props) {
               const rootScripts = scripts.filter(s => !s.folder);
 
               const langBadge = (s: AppScript) => (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: s.language === "typescript" ? "#3178c620" : "#f7df1e20", color: s.language === "typescript" ? "#3178c6" : "#b5a000", fontFamily: "monospace", flexShrink: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: s.language === "typescript" ? C.selection : C.warningBg, color: s.language === "typescript" ? C.primary : C.warning, fontFamily: "monospace", flexShrink: 0 }}>
                   {s.language === "typescript" ? "TS" : "JS"}
                 </span>
               );
@@ -349,7 +349,7 @@ export function ScriptsTab({ appId }: Props) {
                             display: "flex", alignItems: "center", gap: 6,
                             padding: "7px 8px 7px 10px", cursor: "pointer",
                             borderBottom: `1px solid ${C.border}`,
-                            background: isOver ? C.primary + "18" : C.bg,
+                            background: isOver ? C.selection : C.bg,
                             outline: isOver ? `1px dashed ${C.primary}` : undefined,
                           }}>
                           <span
@@ -398,7 +398,7 @@ export function ScriptsTab({ appId }: Props) {
                         </div>
                         {/* Folder context menu */}
                         {isMenuOpen && (
-                          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, margin: "0 8px 4px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+                          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, margin: "0 8px 4px", boxShadow: C.shadow, overflow: "hidden" }}>
                             <button
                               onClick={e => { e.stopPropagation(); setRenamingFolder(folder); setRenameFolderValue(folder); setFolderMenuOpen(null); }}
                               style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, borderBottom: `1px solid ${C.border}` }}
@@ -409,7 +409,7 @@ export function ScriptsTab({ appId }: Props) {
                             <button
                               onClick={e => { e.stopPropagation(); deleteScriptFolder(folder); }}
                               style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.danger }}
-                              onMouseEnter={el => (el.currentTarget.style.background = "#fff5f5")}
+                              onMouseEnter={el => (el.currentTarget.style.background = "var(--danger-background)")}
                               onMouseLeave={el => (el.currentTarget.style.background = "none")}>
                               🗑 Delete folder{folderScripts.length > 0 ? ` (moves ${folderScripts.length} script${folderScripts.length > 1 ? "s" : ""} to root)` : ""}
                             </button>
@@ -425,7 +425,7 @@ export function ScriptsTab({ appId }: Props) {
                             style={{
                               padding: "8px 10px 8px 26px", cursor: "pointer",
                               borderBottom: `1px solid ${C.border}`,
-                              background: selected?._id === s._id ? C.primary + "12" : dragScriptId === s._id ? "#f0f0f0" : "transparent",
+                              background: selected?._id === s._id ? C.selection : dragScriptId === s._id ? "var(--surface-muted)" : "transparent",
                               display: "flex", alignItems: "center", gap: 8,
                             }}>
                             {langBadge(s)}
@@ -451,7 +451,7 @@ export function ScriptsTab({ appId }: Props) {
                       onClick={() => selectScript(s)}
                       style={{
                         padding: "9px 12px", cursor: "pointer", borderBottom: `1px solid ${C.border}`,
-                        background: selected?._id === s._id ? C.primary + "12" : dragScriptId === s._id ? "#f0f0f0" : "transparent",
+                        background: selected?._id === s._id ? C.selection : dragScriptId === s._id ? "var(--surface-muted)" : "transparent",
                         display: "flex", alignItems: "center", gap: 8,
                       }}>
                       {langBadge(s)}
@@ -524,7 +524,7 @@ export function ScriptsTab({ appId }: Props) {
                   automaticLayout: true,
                   padding: { top: 12 },
                 }}
-                theme="vs-dark"
+                theme="orchestrator-navy"
               />
             </div>
           </div>
@@ -546,12 +546,12 @@ export function ScriptsTab({ appId }: Props) {
 function ContextRef() {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ borderBottom: `1px solid ${C.border}`, background: "#1e1e1e", flexShrink: 0 }}>
-      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9cdcfe", fontSize: 11, padding: "5px 14px", width: "100%", textAlign: "left" }}>
+    <div style={{ borderBottom: `1px solid ${C.border}`, background: "var(--code-bg)", flexShrink: 0 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--code-text)", fontSize: 11, padding: "5px 14px", width: "100%", textAlign: "left" }}>
         {open ? "▾" : "▸"} ctx reference
       </button>
       {open && (
-        <pre style={{ margin: 0, padding: "0 14px 10px", fontSize: 11, color: "#9cdcfe", lineHeight: 1.6, overflowX: "auto" }}>{`ctx.request       — validated request body (typed by input schema)
+        <pre style={{ margin: 0, padding: "0 14px 10px", fontSize: 11, color: "var(--code-text)", lineHeight: 1.6, overflowX: "auto" }}>{`ctx.request       — validated request body (typed by input schema)
 ctx.params        — path params  { claimId: "CLM-001" }
 ctx.query         — query params { status: "active" }
 ctx.principal     — OIDC claims: sub, email, roles, issuer

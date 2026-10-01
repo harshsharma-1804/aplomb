@@ -62,8 +62,8 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
   const isMapped = !!(current.upstream_path || current.static_value);
 
   const TYPE_COLORS: Record<string, string> = {
-    string: "#0d6efd", number: "#6610f2", boolean: "#fd7e14",
-    object: "#198754", array: "#e83e8c", null: "#6c757d",
+    string: "var(--primary)", number: "var(--primary)", boolean: "var(--warning)",
+    object: "var(--success)", array: "var(--primary)", null: "var(--muted)",
   };
   const typeColor = TYPE_COLORS[field.type] ?? C.muted;
 
@@ -83,7 +83,7 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
       paddingLeft: 8 + field.depth * 16,
       borderRadius: C.radius,
       border: `1px solid ${!isContainer && !isMapped ? C.danger + "44" : C.border}`,
-      background: isContainer ? "#f0f7ff" : isArrayContainer ? "#f5f0ff" : (isMapped ? C.bg : "#fff9f9"),
+      background: isContainer ? "var(--selection)" : isArrayContainer ? C.selection : (isMapped ? C.bg : "var(--danger-background)"),
       opacity: isContainer ? 0.85 : 1,
     }}>
       {/* Field path */}
@@ -107,7 +107,7 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
       {isContainer ? (
         <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic", textAlign: "center" }}>object</div>
       ) : isArrayContainer ? (
-        <div style={{ fontSize: 10, color: "#6f42c1", fontStyle: "italic", textAlign: "center" }}>array</div>
+        <div style={{ fontSize: 10, color: "var(--primary)", fontStyle: "italic", textAlign: "center" }}>array</div>
       ) : (
         <select
           value={current.mapping_type}
@@ -134,7 +134,7 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
             disabled={readOnly}
             placeholder="$.member.addresses  (optional — leave empty to infer from child mappings)"
             list={`paths-${field.id}`}
-            style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${current.upstream_path ? "#6f42c1" : C.border}`, borderRadius: C.radius, width: "100%" }}
+            style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${current.upstream_path ? "var(--primary)" : C.border}`, borderRadius: C.radius, width: "100%" }}
           />
           <datalist id={`paths-${field.id}`}>
             {samplePaths.map(p => <option key={p} value={p} />)}
@@ -248,7 +248,7 @@ export function MappingTab({ appId, endpoint, onSaved }: Props) {
         <Card>
           <SectionHead title="Request Body Mapping — Upstream ← Your Input" />
           <div style={{ padding: 12 }}>
-            <div style={{ padding: 10, background: "#e8f4fd", borderRadius: C.radius, fontSize: 12, color: "#0c4a6e", marginBottom: 8 }}>
+            <div style={{ padding: 10, background: "var(--selection)", borderRadius: C.radius, fontSize: 12, color: "var(--primary)", marginBottom: 8 }}>
               <strong>Direction is reversed here.</strong> Each row maps an <em>upstream field</em> to a source from <em>your input</em>.
               Configure these in the <strong>Upstream tab → body_mappings</strong>.
             </div>

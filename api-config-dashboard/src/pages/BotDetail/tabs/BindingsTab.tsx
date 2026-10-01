@@ -90,7 +90,7 @@ export function BindingsTab({ bot, onUpdated, readonly }: Props) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {error && <ErrorBanner message={error} />}
 
-      <div style={{ padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
+      <div style={{ padding: "8px 12px", background: "var(--warning-background)", border: "1px solid var(--warning)", borderRadius: C.radius, fontSize: 12, color: "var(--warning)" }}>
         Deny-by-default: a bot can only access apps explicitly assigned here. Each app can only be assigned to one bot. Read = GET endpoints; Write = POST/PUT/PATCH/DELETE endpoints.
       </div>
 
@@ -223,7 +223,7 @@ export function BindingsTab({ bot, onUpdated, readonly }: Props) {
                   <div>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{p?.name ?? pid}</span>
                     {p && <code style={{ fontSize: 11, color: C.muted, marginLeft: 8 }}>{p.model}</code>}
-                    {p?.no_auth && <span style={{ fontSize: 10, background: "#f0fdf4", color: "#166534", border: "1px solid #86efac", borderRadius: 4, padding: "1px 5px", marginLeft: 6 }}>local</span>}
+                    {p?.no_auth && <span style={{ fontSize: 10, background: "var(--success-background)", color: "var(--success)", border: "1px solid var(--success)", borderRadius: 4, padding: "1px 5px", marginLeft: 6 }}>local</span>}
                   </div>
                   {!readonly && (
                     <button onClick={() => { setProviderIds(providerIds.filter(x => x !== pid)); setProviderSaved(false); }} style={{ width: 22, height: 22, borderRadius: 4, border: `1px solid ${C.border}`, background: C.surface, color: C.muted, cursor: "pointer", fontSize: 13 }}

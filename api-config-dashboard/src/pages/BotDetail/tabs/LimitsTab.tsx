@@ -53,7 +53,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       {/* ── Performance limits ───────────────────────────────────────────── */}
       <Card>
         <SectionHead title="Performance Limits" action={<SaveBtn />} />
-        <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+        <div style={{ padding: "10px 16px", background: "var(--selection)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--primary)" }}>
           Hard limits enforced by code. Leave blank to use the global default.
         </div>
         <div style={{ padding: 16 }}>
@@ -68,7 +68,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       {/* ── Fallback message ─────────────────────────────────────────────── */}
       <Card>
         <SectionHead title="Fallback Message" action={<SaveBtn />} />
-        <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+        <div style={{ padding: "10px 16px", background: "var(--selection)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--primary)" }}>
           Returned when the tool-call budget is exhausted or the agent fails to complete. Leave blank for the default summary behaviour.
         </div>
         <div style={{ padding: 16 }}>
@@ -85,7 +85,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       {/* ── Tool-only mode ───────────────────────────────────────────────── */}
       <Card>
         <SectionHead title="Tool-Only Mode" action={<SaveBtn />} />
-        <div style={{ padding: "10px 16px", background: "#fff8e1", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#92400e" }}>
+        <div style={{ padding: "10px 16px", background: "var(--warning-background)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--warning)" }}>
           <strong>Hard enforcement:</strong> if the agent produces a response without calling any tool, the response is discarded and the refusal message is returned instead. Prevents the bot from answering from general knowledge.
           <br /><strong>Note:</strong> also blocks helpful clarifications like "what does deductible mean?" — pair with Domain Scope for a better experience.
         </div>
@@ -102,7 +102,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       {/* ── Domain scope enforcement ─────────────────────────────────────── */}
       <Card>
         <SectionHead title="Domain Scope Enforcement" action={<SaveBtn />} />
-        <div style={{ padding: "10px 16px", background: "#fff8e1", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#92400e" }}>
+        <div style={{ padding: "10px 16px", background: "var(--warning-background)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--warning)" }}>
           <strong>Hard enforcement:</strong> before the agent runs, the LLM classifies the user's question against your domain description. Out-of-scope questions return the refusal message without calling the agent. Allows domain clarifications ("what does deductible mean?") while blocking general knowledge questions.
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -137,7 +137,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       {/* ── Topic blocklist ──────────────────────────────────────────────── */}
       <Card>
         <SectionHead title="Topic Blocklist" action={<SaveBtn />} />
-        <div style={{ padding: "10px 16px", background: "#fff8e1", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#92400e" }}>
+        <div style={{ padding: "10px 16px", background: "var(--warning-background)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--warning)" }}>
           <strong>Hard enforcement (pre-LLM):</strong> if the user's message contains any of these phrases, the refusal message is returned immediately without calling the LLM at all. Fastest and most reliable block.
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -161,7 +161,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
             </div>
           ))}
           {(limits.topic_blocklist ?? []).length > 0 && limits.out_of_scope_message === undefined && (
-            <div style={{ fontSize: 12, color: "#92400e", background: "#fff8e1", padding: "6px 10px", borderRadius: C.radius, border: "1px solid #fcd34d" }}>
+            <div style={{ fontSize: 12, color: "var(--warning)", background: "var(--warning-background)", padding: "6px 10px", borderRadius: C.radius, border: "1px solid var(--warning)" }}>
               ⚠ Set an "out-of-scope message" in Domain Scope Enforcement to customise what the bot says when a blocked topic is detected.
             </div>
           )}
@@ -171,7 +171,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       {/* ── User Scope Guard ─────────────────────────────────────────────── */}
       <Card>
         <SectionHead title="User Scope Guard" action={<SaveBtn />} />
-        <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+        <div style={{ padding: "10px 16px", background: "var(--selection)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--primary)" }}>
           <strong>Disabled by default</strong> — the upstream API is the real authority on data access (it will reject unauthorised requests regardless). Enable this if you want the orchestrator to also pre-block cross-user tool calls and log them as <code>scope_violation</code> in the audit trail.
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -200,7 +200,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
                     <span style={{ fontSize: 12, color: C.muted }}>No names configured — guard will not match any argument by name.</span>
                   )}
                   {(limits.scope_guard.id_arg_names ?? []).map((name, i) => (
-                    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.primary + "12", border: `1px solid ${C.primary}40`, borderRadius: 99, padding: "2px 10px", fontSize: 12, fontWeight: 600, color: C.primary }}>
+                    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.selection, border: `1px solid ${C.border}`, borderRadius: 99, padding: "2px 10px", fontSize: 12, fontWeight: 600, color: C.primary }}>
                       {name}
                       {!readonly && (
                         <button onClick={() => setL("scope_guard", { ...limits.scope_guard!, id_arg_names: (limits.scope_guard!.id_arg_names ?? []).filter((_, j) => j !== i) })}

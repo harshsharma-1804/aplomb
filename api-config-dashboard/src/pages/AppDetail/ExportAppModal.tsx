@@ -86,7 +86,7 @@ export function ExportAppModal({ app, onClose }: Props) {
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
         {error && (
-          <div style={{ padding: "8px 12px", background: "#fef2f2", border: `1px solid #fca5a5`, borderRadius: C.radius, color: "#b91c1c", fontSize: 13 }}>
+          <div style={{ padding: "8px 12px", background: "var(--danger-background)", border: `1px solid var(--danger)`, borderRadius: C.radius, color: "var(--danger)", fontSize: 13 }}>
             {error}
           </div>
         )}
@@ -152,7 +152,7 @@ export function ExportAppModal({ app, onClose }: Props) {
         )}
 
         {/* ── Secret note ─────────────────────────────────────────────── */}
-        <div style={{ padding: "8px 12px", background: "#f0fdf4", border: `1px solid #86efac`, borderRadius: C.radius, fontSize: 12, color: "#166534" }}>
+        <div style={{ padding: "8px 12px", background: "var(--success-background)", border: `1px solid var(--success)`, borderRadius: C.radius, fontSize: 12, color: "var(--success)" }}>
           Secret values are never exported regardless of your selection. Secret references export as key names only — ensure the same secrets exist on the target instance. AI provider API keys follow the same rule: providers export by name, the import links them to a same-named secret.
         </div>
 

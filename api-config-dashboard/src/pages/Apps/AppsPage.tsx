@@ -264,7 +264,7 @@ function CloneAppModal({
       <form onSubmit={submit}>
         {error && <ErrorBanner message={error} />}
 
-        <div style={{ padding: "10px 12px", background: "#f0f7ff", borderRadius: C.radius, border: `1px solid #bee3f8`, fontSize: 12, color: "#1e40af", marginBottom: 14 }}>
+        <div style={{ padding: "10px 12px", background: "var(--selection)", borderRadius: C.radius, border: `1px solid var(--border)`, fontSize: 12, color: "var(--primary)", marginBottom: 14 }}>
           All endpoints, schemas, upstreams, and field mappings from <strong>{source.name}</strong> will be copied.
           You choose the new name and base path — the upstream URLs and mappings remain editable after cloning.
         </div>

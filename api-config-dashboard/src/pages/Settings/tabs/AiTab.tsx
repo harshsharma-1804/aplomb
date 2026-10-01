@@ -8,7 +8,7 @@ import { useSession } from "../../../auth/SessionContext";
 interface VaultSecret { _id: string; name: string; }
 
 const OUTCOME_COLOR: Record<string, string> = {
-  ok: "#166534", tool_error: "#92400e", scope_violation: "#b91c1c", denied: "#b91c1c",
+  ok: "var(--success)", tool_error: "var(--warning)", scope_violation: "var(--danger)", denied: "var(--danger)",
 };
 
 export function AiTab() {
@@ -80,13 +80,13 @@ export function AiTab() {
           title={`LLM Providers (${providers.length})`}
           action={editable ? <Btn size="sm" onClick={() => setShowProviderForm(s => !s)}>{showProviderForm ? "Cancel" : "+ Add Provider"}</Btn> : undefined}
         />
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "#f0f7ff", fontSize: 12, color: "#1e40af" }}>
+        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--selection)", fontSize: 12, color: "var(--primary)" }}>
           OpenAI-compatible endpoints (OpenAI, Azure, OpenRouter, Ollama, vLLM…). API keys are stored as vault references — never as plain text.
           Assign providers to bots in the Bot Registry → Bindings tab.
         </div>
 
         {showProviderForm && (
-          <form onSubmit={addProvider} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "#f8f9fa" }}>
+          <form onSubmit={addProvider} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "var(--surface-muted)" }}>
             {pError && <ErrorBanner message={pError} />}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field label="Name"><input style={inputStyle} value={pName} onChange={e => setPName(e.target.value)} placeholder="openai-prod" required /></Field>
@@ -100,7 +100,7 @@ export function AiTab() {
                 <button key={val} type="button" onClick={() => setPNoAuth(val === "local")} style={{
                   flex: 1, padding: "8px 12px", borderRadius: C.radius, cursor: "pointer",
                   border: `2px solid ${(val === "local") === pNoAuth ? C.primary : C.border}`,
-                  background: (val === "local") === pNoAuth ? C.primary + "10" : C.surface,
+                  background: (val === "local") === pNoAuth ? C.selection : C.surface,
                   fontWeight: 600, fontSize: 12, color: (val === "local") === pNoAuth ? C.primary : C.text,
                 }}>{label}</button>
               ))}
@@ -114,7 +114,7 @@ export function AiTab() {
               </Field>
             )}
             {pNoAuth && (
-              <div style={{ padding: "8px 12px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: C.radius, fontSize: 12, color: "#166534" }}>
+              <div style={{ padding: "8px 12px", background: "var(--success-background)", border: "1px solid var(--success)", borderRadius: C.radius, fontSize: 12, color: "var(--success)" }}>
                 ✓ No API key required — the orchestrator will call this endpoint without an Authorization header. Suitable for Ollama, llama.cpp, and other local model servers.
               </div>
             )}
@@ -134,7 +134,7 @@ export function AiTab() {
                     {p.name} {p.is_active && <Badge text="active" />}
                   </div>
                   <div style={{ fontSize: 12, color: C.muted }}>
-                    {p.base_url} · <code>{p.model}</code> · {p.secret_id ? `🔒 vault (${p.secret_name ?? 'secret'})` : <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #86efac', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>local · no auth</span>}
+                    {p.base_url} · <code>{p.model}</code> · {p.secret_id ? `🔒 vault (${p.secret_name ?? 'secret'})` : <span style={{ background: 'var(--success-background)', color: 'var(--success)', border: '1px solid var(--success)', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>local · no auth</span>}
                   </div>
                 </div>
                 {editable && <Btn size="sm" variant="danger" onClick={() => setProviderDelete(p)}>Delete</Btn>}

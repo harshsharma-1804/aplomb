@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useSession } from "../../auth/SessionContext";
 import { C } from "../../components";
+import { useBreadcrumb } from "../../components/BreadcrumbContext";
 import { OrganizationTab } from "./tabs/OrganizationTab";
 import { HostAllowlistTab } from "./tabs/HostAllowlistTab";
 import { IdentityProvidersTab } from "./tabs/IdentityProvidersTab";
@@ -23,7 +25,18 @@ const TABS = [
 
 export function SettingsPage() {
   const { can } = useSession();
-  const [activeTab, setActiveTab] = useState("organization");
+  const { tab } = useParams<{ tab?: string }>();
+  const navigate = useNavigate();
+  const activeTab = TABS.some(t => t.key === tab) ? tab! : "organization";
+
+  useEffect(() => {
+    if (tab !== activeTab) navigate(`/settings/${activeTab}`, { replace: true });
+  }, [tab, activeTab, navigate]);
+
+  useBreadcrumb(`/settings/${activeTab}`, [
+    { label: "Tenant Settings", to: `/settings/${activeTab}` },
+    ...(activeTab === "organization" ? [] : [{ label: TABS.find(t => t.key === activeTab)?.label ?? "" }]),
+  ]);
 
   const visibleTabs = TABS.filter(t => !t.adminOnly || can("manage:users"));
 
@@ -39,24 +52,24 @@ export function SettingsPage() {
       <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gridTemplateRows: "minmax(0, 1fr)", gap: 20, flex: 1, minHeight: 0 }}>
         {/* Left panel — tabs */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflowY: "auto", minHeight: 0 }}>
-          {visibleTabs.map(tab => (
+          {visibleTabs.map(t => (
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              key={t.key}
+              onClick={() => navigate(`/settings/${t.key}`)}
               style={{
                 display: "flex", alignItems: "center", gap: 10,
                 width: "100%", padding: "11px 16px",
-                background: activeTab === tab.key ? C.primary + "10" : "none",
-                border: "none", borderLeft: `3px solid ${activeTab === tab.key ? C.primary : "transparent"}`,
+                background: activeTab === t.key ? C.selection : "none",
+                border: "none", borderLeft: `3px solid ${activeTab === t.key ? C.primary : "transparent"}`,
                 borderBottom: `1px solid ${C.border}`,
                 cursor: "pointer", textAlign: "left",
-                color: activeTab === tab.key ? C.primary : C.text,
-                fontWeight: activeTab === tab.key ? 600 : 400,
+                color: activeTab === t.key ? C.primary : C.text,
+                fontWeight: activeTab === t.key ? 600 : 400,
                 fontSize: 13,
               }}
             >
-              <span style={{ fontSize: 16 }}>{tab.icon}</span>
-              {tab.label}
+              <span style={{ fontSize: 16 }}>{t.icon}</span>
+              {t.label}
             </button>
           ))}
         </div>

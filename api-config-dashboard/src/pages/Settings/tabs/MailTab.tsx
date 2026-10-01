@@ -264,7 +264,7 @@ function TestSendModal({ sender, onClose }: { sender: MailSender; onClose: () =>
     <Modal title={`Send test — ${sender.name}`} onClose={onClose}>
       <form onSubmit={send}>
         {error && <ErrorBanner message={error} />}
-        {notice && <div style={{ padding: "8px 12px", background: "#f0fff4", borderRadius: C.radius, border: "1px solid #9ae6b4", fontSize: 12, color: "#276749", marginBottom: 12 }}>{notice}</div>}
+        {notice && <div style={{ padding: "8px 12px", background: "var(--success-background)", borderRadius: C.radius, border: "1px solid var(--success)", fontSize: 12, color: "var(--success)", marginBottom: 12 }}>{notice}</div>}
         <Field label="To"><input type="email" style={inputStyle} value={to} onChange={e => setTo(e.target.value)} placeholder="you@example.com" required autoFocus /></Field>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
           <Btn variant="ghost" type="button" onClick={onClose}>Close</Btn>

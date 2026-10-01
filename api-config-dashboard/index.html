@@ -4,9 +4,105 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>API Orchestrator — Config Dashboard</title>
+    <script>
+      // Apply persisted theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var stored = localStorage.getItem("orchestrator-theme");
+          var theme = stored === "light" || stored === "dark"
+            ? stored
+            : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: system-ui, -apple-system, sans-serif; background: #f8f9fa; color: #212529; }
+
+      /* ── Orchestrator Blue, Grey & White — Coastal light (default) ───────── */
+      :root, [data-theme="light"] {
+        --canvas: #f0f3f7;
+        --canvas-raised: #ffffff;
+        --surface: #ffffff;
+        --surface-muted: #f3f6fa;
+        --sidebar: #0d1f33;
+        --sidebar-hover: #14304a;
+        --sidebar-text: #f5f8fc;
+        --sidebar-text-muted: #b7c9da;
+        --text: #17324d;
+        --muted: #56677a;
+        --border: #dce3eb;
+        --input-border: #8293a8;
+        --selection: #eaf1ff;
+        --primary: #1c46b4;
+        --primary-hover: #16389a;
+        --primary-text: #ffffff;
+        --danger: #a52d43;
+        --danger-background: #fff0f2;
+        --success: #286851;
+        --success-background: #edf6f0;
+        --warning: #5c6f84;
+        --warning-background: #eef2f7;
+        --code-bg: #10263b;
+        --code-text: #eaf1ff;
+        --paste-editor-bg: #10263b;
+        --overlay: rgba(23, 50, 77, 0.45);
+        --shadow: 0 6px 24px rgba(23, 50, 77, 0.06);
+        --shadow-modal: 0 12px 40px rgba(23, 50, 77, 0.18);
+        --radius-sm: 8px;
+        --radius: 10px;
+        --radius-panel: 14px;
+        --radius-feature: 16px;
+      }
+
+      /* ── Navy dark ────────────────────────────────────────────────────────── */
+      [data-theme="dark"] {
+        --canvas: #081827;
+        --canvas-raised: #17324d;
+        --surface: #17324d;
+        --surface-muted: #1e3a54;
+        --sidebar: #10263b;
+        --sidebar-hover: #14304a;
+        --sidebar-text: #8db8ff;
+        --sidebar-text-muted: #6f93bd;
+        --text: #f5f8fc;
+        --muted: #b7c9da;
+        --border: #35516c;
+        --input-border: #718da8;
+        --selection: #254b70;
+        --primary: #8db8ff;
+        --primary-hover: #afceff;
+        --primary-text: #10263b;
+        --danger: #ffb1bc;
+        --danger-background: #472c3b;
+        --success: #a7dec0;
+        --success-background: #173e36;
+        --warning: #c3d0de;
+        --warning-background: #2c3a4a;
+        --code-bg: #0c2033;
+        --code-text: #eaf1ff;
+        --overlay: rgba(5, 15, 25, 0.6);
+        --shadow: 0 6px 24px rgba(12, 32, 51, 0.18);
+        --shadow-modal: 0 12px 40px rgba(5, 15, 25, 0.45);
+        --radius-sm: 8px;
+        --radius: 10px;
+        --radius-panel: 14px;
+        --radius-feature: 16px;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: var(--canvas);
+        color: var(--text);
+      }
+
+      /* Visible focus everywhere, per the design contract. */
+      :focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 3px;
+      }
     </style>
   </head>
   <body>

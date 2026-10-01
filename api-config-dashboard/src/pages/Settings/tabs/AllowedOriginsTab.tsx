@@ -66,7 +66,7 @@ export function AllowedOriginsTab() {
         />
 
         {/* Explainer */}
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "#f0f7ff", fontSize: 12, color: "#1e40af" }}>
+        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--selection)", fontSize: 12, color: "var(--primary)" }}>
           <strong>What this controls:</strong> which browser origins (websites) are allowed to call your runtime API endpoints via CORS.
           Your dashboard (<code>localhost:5000</code>) is always allowed for config routes regardless of this list.
           Add <code>https://myapp.com</code> here so your frontend can call your orchestrator endpoints.
@@ -74,7 +74,7 @@ export function AllowedOriginsTab() {
         </div>
 
         {showAdd && (
-          <form onSubmit={addOrigin} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "#f8f9fa" }}>
+          <form onSubmit={addOrigin} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "var(--surface-muted)" }}>
             {addError && <ErrorBanner message={addError} />}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field
@@ -86,7 +86,7 @@ export function AllowedOriginsTab() {
                 }
               >
                 <input
-                  style={{ ...inputStyle, borderColor: isWildcard ? "#fd7e14" : isValid && origin ? C.success : C.border }}
+                  style={{ ...inputStyle, borderColor: isWildcard ? "var(--warning)" : isValid && origin ? C.success : C.border }}
                   value={origin}
                   onChange={e => setOrigin(e.target.value.trim())}
                   placeholder="https://myapp.com"
@@ -127,7 +127,7 @@ export function AllowedOriginsTab() {
                       <code style={{ fontSize: 13, color: entry.origin === "*" ? C.danger : C.primary, fontWeight: 600 }}>{entry.origin}</code>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
-                      <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 99, fontWeight: 600, background: entry.origin === "*" ? "#fff8e1" : "#f0fff4", color: entry.origin === "*" ? "#92400e" : "#276749" }}>
+                      <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 99, fontWeight: 600, background: entry.origin === "*" ? "var(--warning-background)" : "var(--success-background)", color: entry.origin === "*" ? "var(--warning)" : "var(--success)" }}>
                         {entry.origin === "*" ? "wildcard (all)" : "exact"}
                       </span>
                     </td>

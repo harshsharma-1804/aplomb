@@ -77,7 +77,7 @@ export function OverviewTab({ bot, onUpdated, readonly }: Props) {
           <div style={{ marginBottom: 8, color: C.muted }}>
             The bot's API key is shown once at registration and is not retrievable. Send it as the <code>X-Bot-Key</code> header on every request.
           </div>
-          <div style={{ padding: "8px 12px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
+          <div style={{ padding: "8px 12px", background: "var(--warning-background)", border: "1px solid var(--warning)", borderRadius: C.radius, fontSize: 12, color: "var(--warning)" }}>
             ⚠ If the key is lost, delete this bot and register a new one — the key cannot be recovered or reset.
           </div>
         </div>
@@ -91,7 +91,7 @@ export function OverviewTab({ bot, onUpdated, readonly }: Props) {
             Add this bot to any MCP-compatible client (Claude Desktop, Cursor, VS Code Copilot, LangChain agents…):
           </div>
           <pre style={{
-            background: "#1e1e2e", color: "#cdd6f4", borderRadius: C.radius,
+            background: "var(--code-bg)", color: "var(--code-text)", borderRadius: C.radius,
             padding: "12px 16px", fontSize: 12, overflowX: "auto", margin: 0,
           }}>{mcpConfig}</pre>
           <div style={{ marginTop: 8, fontSize: 12, color: C.muted }}>

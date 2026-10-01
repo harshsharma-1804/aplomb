@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { api } from "../../api/client";
 import type { AiBot } from "../../api/types";
 import { Badge, Btn, Spinner, ErrorBanner, C } from "../../components";
+import { useBreadcrumb } from "../../components/BreadcrumbContext";
 import { useSession } from "../../auth/SessionContext";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { BehaviourTab } from "./tabs/BehaviourTab";
@@ -22,7 +23,7 @@ type TabKey = typeof TABS[number]["key"];
 
 export function BotDetailPage() {
   const { botId } = useParams<{ botId: string }>();
-  const navigate = useNavigate();
+  const location = useLocation();
   const { can } = useSession();
 
   const [bot, setBot] = useState<AiBot | null>(null);
@@ -70,6 +71,10 @@ export function BotDetailPage() {
   }
 
   useEffect(() => { load(); }, [botId]);
+  useBreadcrumb(location.pathname, bot ? [
+    { label: "Bot Registry", to: "/bots" },
+    { label: bot.name },
+  ] : null);
 
   if (loading) return <div style={{ padding: 40 }}><Spinner /></div>;
   if (error || !bot) return <div style={{ padding: 40 }}><ErrorBanner message={error || "Bot not found"} /></div>;
@@ -82,8 +87,6 @@ export function BotDetailPage() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexShrink: 0, flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <button onClick={() => navigate("/bots")} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 13, padding: 0 }}>← Bots</button>
-            <span style={{ color: C.border }}>|</span>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{bot.name}</h1>
             <Badge text={bot.is_active ? "active" : "disabled"} />
           </div>

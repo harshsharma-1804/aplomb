@@ -13,3 +13,17 @@ self.MonacoEnvironment = {
 };
 
 loader.config({ monaco });
+
+// Navy code surface used in both themes (design-tokens.json: dark.codeBackground).
+monaco.editor.defineTheme("orchestrator-navy", {
+  base: "vs-dark",
+  inherit: true,
+  rules: [
+    { token: "comment", foreground: "7f95ab", fontStyle: "italic" },
+  ],
+  colors: {
+    "editor.background": "#0c2033",
+    "editorGutter.background": "#0c2033",
+    "editorLineNumber.foreground": "#5d7a96",
+  },
+});

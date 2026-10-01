@@ -74,7 +74,7 @@ export function RulesTab({ bot, onUpdated, readonly }: Props) {
           title={`Guardrail Rules (${rules.length}/20)`}
           action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined}
         />
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "#f0f7ff", fontSize: 12, color: "#1e40af" }}>
+        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--selection)", fontSize: 12, color: "var(--primary)" }}>
           Rules are injected as the <strong>highest-priority</strong> instructions in the system prompt. The model must follow them above all else.
           Hard guardrails (user scoping, deny-by-default app bindings, scope-violation blocking) are always system-enforced regardless of rules.
         </div>

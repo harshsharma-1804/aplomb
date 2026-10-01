@@ -92,11 +92,11 @@ export function BotsPage() {
       {error && <ErrorBanner message={error} />}
 
       {newKey && (
-        <div style={{ marginBottom: 16, padding: 14, border: "1px solid #86efac", background: "#f0fdf4", borderRadius: C.radius }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: "#166534", marginBottom: 6 }}>
+        <div style={{ marginBottom: 16, padding: 14, border: "1px solid var(--success)", background: "var(--success-background)", borderRadius: C.radius }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--success)", marginBottom: 6 }}>
             ✓ Bot "{newKey.name}" registered — copy the key now, it will not be shown again
           </div>
-          <code style={{ display: "block", padding: "8px 10px", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 12, wordBreak: "break-all" }}>
+          <code style={{ display: "block", padding: "8px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 12, wordBreak: "break-all" }}>
             {newKey.key}
           </code>
           <div style={{ marginTop: 8, textAlign: "right" }}>
@@ -154,8 +154,8 @@ function RegisterBotModal({ onClose, onCreated }: { onClose: () => void; onCreat
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-      <div style={{ background: "#fff", borderRadius: C.radius, width: 420, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
+    <div style={{ position: "fixed", inset: 0, background: C.overlay, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: C.surface, borderRadius: C.radius, width: 420, padding: 24, boxShadow: C.shadowModal, border: `1px solid ${C.border}` }}>
         <h2 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700 }}>Register Bot</h2>
         {error && <ErrorBanner message={error} />}
         <form onSubmit={submit}>

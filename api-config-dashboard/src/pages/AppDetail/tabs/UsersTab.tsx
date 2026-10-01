@@ -41,7 +41,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
       <Card>
         <SectionHead title="App Users" />
         <div style={{ padding: 16 }}>
-          <div style={{ padding: "10px 14px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af" }}>
+          <div style={{ padding: "10px 14px", background: "var(--selection)", borderRadius: C.radius, border: "1px solid var(--border)", fontSize: 12, color: "var(--primary)" }}>
             Session auth is not enabled for this app. Turn it on in <strong>Settings → Runtime Authentication</strong> —
             this directory holds the app's gateway users (password login) as well as identity-provisioned users.
           </div>
@@ -57,7 +57,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           title={`App Users (${users.length})`}
           action={!readonly && gatewayOn ? <Btn size="sm" onClick={() => setShowAdd(true)}>+ Add User</Btn> : undefined}
         />
-          <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+          <div style={{ padding: "10px 16px", background: "var(--selection)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--primary)" }}>
             These users authenticate <strong>only</strong> against this app — via <code>POST {app.base_path}/login</code> (gateway) or their identity provider (brokered redirect).
             They cannot log in to the admin dashboard, and dashboard admins cannot use their credentials here.
             Each user's login method is sticky: gateway users sign in with credentials, identity users sign in via their provider — they never cross over.
@@ -199,7 +199,7 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
 
       {/* ── Header card ─────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: C.radius, background: C.bg, border: `1px solid ${C.border}`, marginBottom: 14 }}>
-        <div style={{ width: 56, height: 56, borderRadius: "50%", background: detail.is_active ? "#4285F4" : C.muted, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", background: detail.is_active ? C.primary : C.muted, color: C.primaryText, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
           {initial}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -369,7 +369,7 @@ function ResetPasswordModal({ appId, user, onClose, onDone }: { appId: string; u
     <Modal_ title={`Reset password — ${user.username}`} onClose={onClose}>
       <form onSubmit={submit}>
         {error && <ErrorBanner message={error} />}
-        <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+        <div style={{ padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 12 }}>
           All of this user's active sessions on this app will be revoked.
         </div>
         <Field label="New password" hint="At least 8 characters">
@@ -388,7 +388,7 @@ function Modal_(props: { title: string; onClose: () => void; children: React.Rea
   // Local minimal modal to avoid importing Modal with width constraints — matches app styling
   const { title, onClose, children } = props;
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: C.overlay, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.surface, borderRadius: C.radius, border: `1px solid ${C.border}`, width: 480, maxHeight: "85vh", overflowY: "auto", padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{title}</h3>

@@ -48,7 +48,7 @@ export function SessionsTab({ appId }: { appId: string }) {
         title={`Active Sessions (${sessions.length})`}
         action={<Btn size="sm" variant="ghost" onClick={load}>↻ Refresh</Btn>}
       />
-      <div style={{ padding: "10px 16px", background: "#f0f7ff", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "#1e40af" }}>
+      <div style={{ padding: "10px 16px", background: "var(--selection)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--primary)" }}>
         One row per device — a user can be signed in from their laptop, phone and tablet simultaneously.
         Revoking a device kills only that session; the others keep working.
       </div>

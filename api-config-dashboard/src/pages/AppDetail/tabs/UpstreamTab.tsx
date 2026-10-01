@@ -121,7 +121,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                   style={{
                     padding: "5px 12px", fontSize: 12, borderRadius: C.radius, cursor: readonly ? "default" : "pointer", fontWeight: 500, border: "1px solid",
                     borderColor: scriptMode === m ? C.primary : C.border,
-                    background: scriptMode === m ? C.primary + "12" : C.surface,
+                    background: scriptMode === m ? C.selection : C.surface,
                     color: scriptMode === m ? C.primary : C.muted,
                   }}>
                   {SCRIPT_MODE_LABELS[m]}
@@ -150,17 +150,17 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
           )}
 
           {scriptMode === "script_full" && (
-            <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #ffe082", fontSize: 12, color: "#5d4037" }}>
+            <div style={{ padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)" }}>
               Full Handler mode is active. The upstream configuration below is <strong>not used</strong> — your script is solely responsible for fetching data and returning a response.
             </div>
           )}
           {(scriptMode === "script_pre" || scriptMode === "script_pre_post") && (
-            <div style={{ padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af" }}>
+            <div style={{ padding: "8px 12px", background: "var(--selection)", borderRadius: C.radius, border: "1px solid var(--border)", fontSize: 12, color: "var(--primary)" }}>
               Pre-hook is active. Your script's <code>preHook</code> runs before the upstream call below. Return a response to short-circuit, or return nothing to proceed.
             </div>
           )}
           {(scriptMode === "script_post" || scriptMode === "script_pre_post") && (
-            <div style={{ padding: "8px 12px", background: "#f0fff4", borderRadius: C.radius, border: "1px solid #9ae6b4", fontSize: 12, color: "#276749" }}>
+            <div style={{ padding: "8px 12px", background: "var(--success-background)", borderRadius: C.radius, border: "1px solid var(--success)", fontSize: 12, color: "var(--success)" }}>
               Post-hook is active. Your script's <code>postHook(ctx, upstreamBody)</code> runs after the upstream call and can reshape the response before the output transform.
             </div>
           )}
@@ -200,7 +200,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
             </Field>
           </div>
           {authType !== "none" && authType !== "forward_cookie" && (
-            <div style={{ padding: 12, background: "#fff8e1", borderRadius: C.radius, border: "1px solid #ffe082", fontSize: 12, color: "#5d4037", marginBottom: 12 }}>
+            <div style={{ padding: 12, background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 12 }}>
               API key and Bearer token values are stored as Secrets and referenced by ID. Go to <strong>Admin → Secrets</strong> to create or rotate values.
             </div>
           )}
@@ -346,7 +346,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
         />
         <div style={{ padding: 16 }}>
           {/* Forward-all toggle */}
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: C.radius, border: `1px solid ${forwardAllHeaders ? C.primary : C.border}`, background: forwardAllHeaders ? C.primary + "08" : C.surface, marginBottom: 12, cursor: readonly ? "default" : "pointer" }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: C.radius, border: `1px solid ${forwardAllHeaders ? C.primary : C.border}`, background: forwardAllHeaders ? C.selection : C.surface, marginBottom: 12, cursor: readonly ? "default" : "pointer" }}>
             <input type="checkbox" checked={forwardAllHeaders} onChange={e => !readonly && setForwardAllHeaders(e.target.checked)} disabled={readonly} style={{ marginTop: 2 }} />
             <div>
               <div style={{ fontWeight: 600, fontSize: 13 }}>Forward all headers as-is</div>
@@ -380,7 +380,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                 disabled={readonly}
               />
               <input
-                style={{ ...inputStyle, borderColor: fh.to_name && fh.to_name !== fh.from_name ? "#fd7e14" : C.border }}
+                style={{ ...inputStyle, borderColor: fh.to_name && fh.to_name !== fh.from_name ? "var(--warning)" : C.border }}
                 value={fh.to_name}
                 onChange={e => setForwardedHeaders(h => h.map((x, j) => j === i ? { ...x, to_name: e.target.value } : x))}
                 placeholder={fh.from_name || "same name if blank"}
@@ -404,7 +404,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
             <p style={{ fontSize: 12, color: C.muted }}>No forwarding rules. Auth headers are handled by the auth type setting above.</p>
           )}
           {forwardedHeaders.some(fh => fh.required) && (
-            <div style={{ marginTop: 8, padding: "6px 10px", background: "#fff5f5", borderRadius: C.radius, fontSize: 12, color: C.danger }}>
+            <div style={{ marginTop: 8, padding: "6px 10px", background: "var(--danger-background)", borderRadius: C.radius, fontSize: 12, color: C.danger }}>
               Required headers: if the frontend does not send them, the orchestrator returns <code>400 REQUIRED_HEADER_MISSING</code>.
             </div>
           )}
@@ -429,7 +429,7 @@ function EnvPicker({ envVars, onSelect }: { envVars: Array<{ key: string; value_
         {"{{}}"}
       </button>
       {open && (
-        <div style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, boxShadow: "0 4px 12px rgba(0,0,0,0.12)", zIndex: 100, minWidth: 200, maxHeight: 200, overflowY: "auto" }}>
+        <div style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, boxShadow: C.shadow, zIndex: 100, minWidth: 200, maxHeight: 200, overflowY: "auto" }}>
           {envVars.map(v => (
             <button key={v.key} onClick={() => { onSelect(v.key); setOpen(false); }}
               style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, borderBottom: `1px solid ${C.border}` }}

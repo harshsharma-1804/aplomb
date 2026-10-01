@@ -58,7 +58,7 @@ export function SchemaBodyPreview({ schema, label }: Props) {
         border: `1px solid ${mode === key ? C.primary : C.border}`,
         borderRadius: 99,
         cursor: "pointer",
-        background: mode === key ? C.primary + "12" : C.surface,
+        background: mode === key ? C.selection : C.surface,
         color: mode === key ? C.primary : C.muted,
         lineHeight: 1.6,
       }}
@@ -110,8 +110,8 @@ export function SchemaBodyPreview({ schema, label }: Props) {
             <pre style={{
               margin: 0,
               padding: "10px 14px",
-              background: "#1e1e1e",
-              color: "#d4d4d4",
+              background: "var(--code-bg)",
+              color: "var(--code-text)",
               borderRadius: C.radius,
               fontSize: 12,
               fontFamily: "monospace",

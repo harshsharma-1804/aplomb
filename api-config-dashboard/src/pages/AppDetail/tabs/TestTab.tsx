@@ -119,19 +119,19 @@ export function TestTab({ appId, endpoint, app }: Props) {
         <div style={{ padding: 16 }}>
 
           {/* URL Preview */}
-          <div style={{ marginBottom: 16, padding: 12, background: "#f0f7ff", borderRadius: C.radius, border: `1px solid #bee3f8` }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#1e40af", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Request Preview</div>
+          <div style={{ marginBottom: 16, padding: 12, background: "var(--selection)", borderRadius: C.radius, border: `1px solid var(--border)` }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Request Preview</div>
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What your client calls (via port 5000):</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
-                <span style={{ background: C.primary + "18", color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.method}</span>
+                <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.method}</span>
                 <span style={{ color: C.text }}>localhost:5000{frontendUrlPreview}</span>
               </div>
             </div>
             <div>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What orchestrator calls upstream:</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
-                <span style={{ background: C.primary + "18", color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.upstream?.method ?? endpoint.method}</span>
+                <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.upstream?.method ?? endpoint.method}</span>
                 <span style={{ color: C.muted, wordBreak: "break-all" }}>{upstreamUrlPreview || <em>Set upstream URL in the Upstream tab first</em>}</span>
               </div>
             </div>
@@ -211,7 +211,7 @@ export function TestTab({ appId, endpoint, app }: Props) {
 
           {/* Info: which static headers will be sent */}
           {(endpoint.upstream?.static_headers?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 8, padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, fontSize: 12, color: "#1e40af" }}>
+            <div style={{ marginTop: 8, padding: "8px 12px", background: "var(--selection)", borderRadius: C.radius, fontSize: 12, color: "var(--primary)" }}>
               <strong>Static headers from config (always included):</strong>{" "}
               {endpoint.upstream.static_headers.map(sh => (
                 <code key={sh.name} style={{ marginRight: 8 }}>{sh.name}: {sh.value}</code>
@@ -219,7 +219,7 @@ export function TestTab({ appId, endpoint, app }: Props) {
             </div>
           )}
           {(endpoint.upstream?.forwarded_headers?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 6, padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
+            <div style={{ marginTop: 6, padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, fontSize: 12, color: "var(--warning)" }}>
               <strong>Header forwarding rules (from real frontend — not applied in test):</strong>{" "}
               {endpoint.upstream.forwarded_headers.map(fh => (
                 <code key={fh.from_name} style={{ marginRight: 8 }}>
@@ -250,14 +250,14 @@ export function TestTab({ appId, endpoint, app }: Props) {
           </div>
           <div style={{ padding: 16 }}>
             {result.transformError && (
-              <div style={{ padding: "8px 12px", background: "#fff5f5", borderRadius: C.radius, fontSize: 12, color: C.danger, marginBottom: 12 }}>
+              <div style={{ padding: "8px 12px", background: "var(--danger-background)", borderRadius: C.radius, fontSize: 12, color: C.danger, marginBottom: 12 }}>
                 Transform error: {result.transformError}
               </div>
             )}
             {panels.map(panel => panel.key === activePanel && (
               panel.key === "validation"
                 ? <ValidationPanel key={panel.key} validation={result.validation} />
-                : <pre key={panel.key} style={{ margin: 0, padding: 12, background: "#1e1e1e", color: "#d4d4d4", borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 400 }}>
+                : <pre key={panel.key} style={{ margin: 0, padding: 12, background: "var(--code-bg)", color: "var(--code-text)", borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 400 }}>
                     {JSON.stringify(panel.data, null, 2) ?? "No data"}
                   </pre>
             ))}
@@ -272,31 +272,31 @@ function ValidationPanel({ validation }: { validation?: TestResult["validation"]
   if (!validation || validation.length === 0) return <p style={{ fontSize: 12, color: C.muted }}>No validation data</p>;
 
   const statusColor: Record<string, string> = {
-    matched: C.success ?? "#198754",
-    missing: "#dc3545",
-    nullable_absent: "#fd7e14",
-    type_mismatch: "#fd7e14",
+    matched: C.success ?? "var(--success)",
+    missing: "var(--danger)",
+    nullable_absent: "var(--warning)",
+    type_mismatch: "var(--warning)",
   };
 
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
       <thead>
-        <tr style={{ background: "#f8f9fa" }}>
+        <tr style={{ background: "var(--surface-muted)" }}>
           {["Field Path", "Status", "Value"].map(h => (
-            <th key={h} style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: "#6c757d", borderBottom: "1px solid #dee2e6" }}>{h}</th>
+            <th key={h} style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>{h}</th>
           ))}
         </tr>
       </thead>
       <tbody>
         {validation.map((v, i) => (
-          <tr key={i} style={{ borderBottom: "1px solid #dee2e6" }}>
+          <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
             <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11 }}>{v.field_path}</td>
             <td style={{ padding: "6px 10px" }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: statusColor[v.status] ?? "#6c757d" }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: statusColor[v.status] ?? "var(--muted)" }}>
                 {v.status.replace(/_/g, " ").toUpperCase()}
               </span>
             </td>
-            <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11, color: "#6c757d" }}>
+            <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11, color: "var(--muted)" }}>
               {v.value !== undefined ? JSON.stringify(v.value) : "—"}
             </td>
           </tr>

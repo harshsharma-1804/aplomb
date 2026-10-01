@@ -125,7 +125,7 @@ export function ImportAppModal({ onClose, onImported }: Props) {
               padding: "32px 20px",
               textAlign: "center",
               cursor: "pointer",
-              background: dragOver ? "#f0f7ff" : C.bg,
+              background: dragOver ? "var(--selection)" : C.bg,
               transition: "all 0.15s",
             }}
           >
@@ -140,7 +140,7 @@ export function ImportAppModal({ onClose, onImported }: Props) {
           {/* Preview card */}
           {parsed && (
             <div style={{ border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden" }}>
-              <div style={{ background: "#f0f7ff", padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 13, color: C.primary }}>
+              <div style={{ background: "var(--selection)", padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 13, color: C.primary }}>
                 Export Preview
               </div>
               <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
@@ -214,7 +214,7 @@ export function ImportAppModal({ onClose, onImported }: Props) {
           {/* Conflict resolution */}
           {conflict && (
             <div style={{ border: `1px solid ${C.danger}`, borderRadius: C.radius, overflow: "hidden" }}>
-              <div style={{ background: "#fef2f2", padding: "10px 14px", borderBottom: `1px solid #fca5a5`, fontSize: 13, fontWeight: 600, color: "#b91c1c" }}>
+              <div style={{ background: "var(--danger-background)", padding: "10px 14px", borderBottom: `1px solid var(--danger)`, fontSize: 13, fontWeight: 600, color: "var(--danger)" }}>
                 ⚠ Base path conflict
               </div>
               <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -255,7 +255,7 @@ export function ImportAppModal({ onClose, onImported }: Props) {
             <Btn
               onClick={handleImport}
               disabled={importing || !name || !basePath || (conflict && !overwrite)}
-              style={overwrite ? { background: C.danger, color: "#fff" } : undefined}
+              style={overwrite ? { background: C.danger, color: C.primaryText } : undefined}
             >
               {importing ? "Importing…" : overwrite ? "Overwrite & Import" : "Import"}
             </Btn>
@@ -271,8 +271,8 @@ export function ImportAppModal({ onClose, onImported }: Props) {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {result && (
           <>
-            <div style={{ border: `1px solid #86efac`, borderRadius: C.radius, overflow: "hidden" }}>
-              <div style={{ background: "#f0fdf4", padding: "10px 14px", borderBottom: `1px solid #86efac`, fontWeight: 700, fontSize: 13, color: "#166534" }}>
+            <div style={{ border: `1px solid var(--success)`, borderRadius: C.radius, overflow: "hidden" }}>
+              <div style={{ background: "var(--success-background)", padding: "10px 14px", borderBottom: `1px solid var(--success)`, fontWeight: 700, fontSize: 13, color: "var(--success)" }}>
                 ✓ Import successful
               </div>
               <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
@@ -287,7 +287,7 @@ export function ImportAppModal({ onClose, onImported }: Props) {
 
             {(result.bot_keys?.length ?? 0) > 0 && (
               <div style={{ border: `2px solid ${C.danger}`, borderRadius: C.radius, overflow: "hidden" }}>
-                <div style={{ background: "#fef2f2", padding: "10px 14px", borderBottom: `1px solid #fca5a5`, fontWeight: 700, fontSize: 13, color: "#b91c1c" }}>
+                <div style={{ background: "var(--danger-background)", padding: "10px 14px", borderBottom: `1px solid var(--danger)`, fontWeight: 700, fontSize: 13, color: "var(--danger)" }}>
                   🔑 New bot key{result.bot_keys.length !== 1 ? "s" : ""} — copy now, shown only once
                 </div>
                 <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -308,13 +308,13 @@ export function ImportAppModal({ onClose, onImported }: Props) {
             )}
 
             {result.warnings.length > 0 && (
-              <div style={{ border: `1px solid #fcd34d`, borderRadius: C.radius, overflow: "hidden" }}>
-                <div style={{ background: "#fffbeb", padding: "8px 14px", borderBottom: `1px solid #fcd34d`, fontWeight: 700, fontSize: 13, color: "#92400e" }}>
+              <div style={{ border: `1px solid var(--warning)`, borderRadius: C.radius, overflow: "hidden" }}>
+                <div style={{ background: "var(--warning-background)", padding: "8px 14px", borderBottom: `1px solid var(--warning)`, fontWeight: 700, fontSize: 13, color: "var(--warning)" }}>
                   ⚠ {result.warnings.length} warning{result.warnings.length !== 1 ? "s" : ""}
                 </div>
                 <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                   {result.warnings.map((w, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "#78350f" }}>• {w}</div>
+                    <div key={i} style={{ fontSize: 12, color: "var(--warning)" }}>• {w}</div>
                   ))}
                 </div>
               </div>

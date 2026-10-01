@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
 import type { App, AppEnvVar, ListResult, IdentityProvider, Secret } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, Badge, Confirm, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, Badge, Confirm, C, Toggle, InfoTip } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 interface Props {
@@ -34,8 +34,6 @@ function GeneralSection({ app, appId, onSaved, readonly }: { app: App; appId: st
   const [name, setName]           = useState(app.name);
   const [basePath, setBasePath]   = useState(app.base_path);
   const [description, setDescription] = useState(app.description);
-  const [status, setStatus]       = useState(app.status);
-  const [deprecatedAt, setDeprecatedAt] = useState(app.deprecated_at ?? "");
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState("");
   const [pathTaken, setPathTaken] = useState(false);
@@ -57,9 +55,11 @@ function GeneralSection({ app, appId, onSaved, readonly }: { app: App; appId: st
     if (pathTaken || checking) return;
     setSaving(true); setError("");
     try {
-      const body: Record<string, unknown> = { name, base_path: basePath, description, status };
-      if (status === "deprecated" && deprecatedAt) body["deprecated_at"] = deprecatedAt;
-      if (status !== "deprecated") body["deprecated_at"] = null;
+      // Status is managed in Quick Actions — only pass it through untouched.
+      const body: Record<string, unknown> = {
+        name, base_path: basePath, description, status: app.status,
+        deprecated_at: app.status === "deprecated" ? (app.deprecated_at ?? null) : null,
+      };
       const updated = await api.put<App>(`/__config/apps/${appId}`, body);
       onSaved(updated);
     } catch (e) { setError(String(e)); }
@@ -92,7 +92,7 @@ function GeneralSection({ app, appId, onSaved, readonly }: { app: App; appId: st
         </div>
 
         {pathChanged && (
-          <div style={{ padding: "8px 12px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+          <div style={{ padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 12 }}>
             <strong>Note:</strong> Changing the base path takes effect immediately. Clients calling <code>{app.base_path}</code> will receive 404 until they update to <code>{basePath}</code>.
           </div>
         )}
@@ -100,25 +100,6 @@ function GeneralSection({ app, appId, onSaved, readonly }: { app: App; appId: st
         <Field label="Description">
           <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 56 }} value={description} onChange={e => setDescription(e.target.value)} disabled={readonly} />
         </Field>
-
-        <Field label="Status">
-          <div style={{ display: "flex", gap: 8 }}>
-            {(["draft", "active", "deprecated"] as const).map(s => (
-              <button key={s} onClick={() => !readonly && setStatus(s)} style={{
-                padding: "6px 14px", borderRadius: C.radius, border: `1px solid ${status === s ? C.primary : C.border}`,
-                background: status === s ? C.primary + "15" : C.surface,
-                color: status === s ? C.primary : C.muted,
-                fontWeight: 600, fontSize: 12, cursor: readonly ? "default" : "pointer", textTransform: "capitalize",
-              }}>{s}</button>
-            ))}
-          </div>
-        </Field>
-
-        {status === "deprecated" && (
-          <Field label="Deprecation Date" hint="Date after which this app will be sunset">
-            <input type="date" style={inputStyle} value={deprecatedAt} onChange={e => setDeprecatedAt(e.target.value)} disabled={readonly} />
-          </Field>
-        )}
       </div>
     </Card>
   );
@@ -199,27 +180,30 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
     finally { setSaving(false); }
   }
 
-  const pickStyle = (active: boolean, danger = false) => ({
-    flex: 1, padding: "10px 14px", borderRadius: C.radius, cursor: readonly ? "default" : "pointer",
-    border: `2px solid ${active ? (danger ? C.warning : C.primary) : C.border}`,
-    background: active ? (danger ? "#fff8e1" : C.primary + "10") : C.surface,
-    textAlign: "left" as const,
-  });
+  const authMethodTip = authMode === "bearer"
+    ? "End clients send a verified identity-provider (OIDC) token on every request. Choose which providers are accepted below."
+    : authMode === "session"
+    ? "Users log in once through this app's login path and present the orc_sid session cookie on later requests."
+    : "Bearer token wins when a valid token is present; otherwise the session cookie is used.";
+
+  const sessionMethodTip = sessionMethod === "gateway"
+    ? `POST ${app.base_path}/login with username/email + password against this app's users (managed in the Users tab).`
+    : sessionMethod === "identity"
+    ? `POST ${app.base_path}/session/verify verifies an identity-provider token (SSO).`
+    : "Both login paths are live: gateway password login and identity-provider (SSO) verification.";
 
   function ProviderChecklist() {
     return (
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
           Allowed Identity Providers
+          <InfoTip text="Leave all unchecked to accept tokens from any active provider. Providers without a client ID still work for token verification." />
         </div>
-        <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-          Leave all unchecked to accept tokens from any active provider.
-        </p>
         {providers.length === 0 && (
           <p style={{ fontSize: 12, color: C.muted }}>No identity providers configured. Go to <strong>Admin → Identity Providers</strong> to add one.</p>
         )}
         {providers.map(p => (
-          <label key={p._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: C.radius, border: `1px solid ${allowedIds.includes(p._id) ? C.primary : C.border}`, background: allowedIds.includes(p._id) ? C.primary + "08" : C.surface, marginBottom: 6, cursor: readonly ? "default" : "pointer" }}>
+          <label key={p._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: C.radius, border: `1px solid ${allowedIds.includes(p._id) ? C.primary : C.border}`, background: allowedIds.includes(p._id) ? C.selection : C.surface, marginBottom: 6, cursor: readonly ? "default" : "pointer" }}>
             <input type="checkbox" checked={allowedIds.includes(p._id)} onChange={() => !readonly && toggleProvider(p._id)} disabled={readonly} />
             <div>
               <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
@@ -238,43 +222,50 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
       <div style={{ padding: 16 }}>
         {error && <ErrorBanner message={error} />}
 
-        {/* ── Master switch: No Auth / Required Auth ─────────────────────── */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-          {[
-            { val: true, label: "🔒 Required Auth", hint: "Every caller must authenticate — pick how below" },
-            { val: false, label: "🔓 No Auth", hint: "Anyone can call this app — dev / demo only" },
-          ].map(opt => (
-            <button key={String(opt.val)} onClick={() => !readonly && (setAuthRequired(opt.val), setSaved(false))} style={pickStyle(authRequired === opt.val, !opt.val)}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{opt.label}</div>
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{opt.hint}</div>
-            </button>
-          ))}
+        {/* ── Master toggle ──────────────────────────────────────────────── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <Toggle checked={authRequired} onChange={v => { setAuthRequired(v); setSaved(false); }} disabled={readonly} label="Require authentication" />
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Require authentication</span>
+          <InfoTip text="Every caller must authenticate using the method below. Turning this off makes the app accept unauthenticated traffic — dev/demo only, never for production." />
         </div>
 
         {!authRequired && (
-          <div style={{ padding: "10px 14px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e" }}>
-            ⚠ <strong>Auth bypass is ON.</strong> This app accepts requests without any token or session.
-            Use for local development and demos only. Never leave this enabled in production.
+          <div style={{ padding: "10px 14px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 16 }}>
+            ⚠ <strong>Auth bypass is ON.</strong> Requests without a token or session are accepted.
           </div>
         )}
 
-        {/* ── Required Auth → how to authenticate ────────────────────────── */}
+        {/* ── Required Auth → method selectors ───────────────────────────── */}
         {authRequired && (
           <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
-              Authentication Method
-            </div>
-            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-              {[
-                { val: "bearer", label: "🔑 Bearer (OIDC)", hint: "End clients send a verified IdP token on every request" },
-                { val: "session", label: "🍪 Session", hint: "Users log in once via this app's login path; orc_sid cookie afterwards" },
-                { val: "both", label: "🔀 Both", hint: "Bearer wins when a token is present, else the session cookie" },
-              ].map(opt => (
-                <button key={opt.val} onClick={() => !readonly && (setAuthMode(opt.val as App["auth_mode"]), setSaved(false))} style={pickStyle(authMode === opt.val)}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{opt.label}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{opt.hint}</div>
-                </button>
-              ))}
+            <div style={{ display: "grid", gridTemplateColumns: sessionAuthOn ? "1fr 1fr" : "1fr", gap: "0 16px", marginBottom: 4 }}>
+              <Field label={<span>Authentication Method<InfoTip text={authMethodTip} /></span>}>
+                <select
+                  style={inputStyle}
+                  value={authMode}
+                  disabled={readonly}
+                  onChange={e => { setAuthMode(e.target.value as App["auth_mode"]); setSaved(false); }}
+                >
+                  <option value="bearer">Bearer (OIDC token)</option>
+                  <option value="session">Session cookie</option>
+                  <option value="both">Both</option>
+                </select>
+              </Field>
+
+              {sessionAuthOn && (
+                <Field label={<span>Session Login<InfoTip text={sessionMethodTip} /></span>}>
+                  <select
+                    style={inputStyle}
+                    value={sessionMethod}
+                    disabled={readonly}
+                    onChange={e => { setSessionMethod(e.target.value as App["session_method"]); setSaved(false); }}
+                  >
+                    <option value="gateway">Gateway auth (app users)</option>
+                    <option value="identity">Identity Provider (SSO)</option>
+                    <option value="both">Both</option>
+                  </select>
+                </Field>
+              )}
             </div>
 
             {/* Bearer → providers */}
@@ -283,51 +274,16 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
             {/* Session / Both → session login config */}
             {sessionAuthOn && (
               <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 4 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
-                  Session Login
-                </div>
-                <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-                  {[
-                    { val: "gateway", label: "🗄 Gateway auth", hint: `POST {base_path}/login — username/email + password against this app's users` },
-                    { val: "identity", label: "🌐 Identity Provider", hint: `POST {base_path}/session/verify — verifies an IdP token (SSO)` },
-                    { val: "both", label: "🔀 Both", hint: "Both login paths are live" },
-                  ].map(opt => (
-                    <button key={opt.val} onClick={() => !readonly && (setSessionMethod(opt.val as App["session_method"]), setSaved(false))} style={pickStyle(sessionMethod === opt.val)}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{opt.label}</div>
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{opt.hint}</div>
-                    </button>
-                  ))}
-                </div>
-
-                {["identity", "both"].includes(sessionMethod) && (
-                  <div style={{ marginBottom: 14 }}>
-                    <ProviderChecklist />
-                    <IdentityLoginConfig
-                      app={app} readonly={readonly}
-                      providers={providers} allowedIds={allowedIds}
-                      postLoginRedirect={postLoginRedirect} setPostLoginRedirect={(v) => { setPostLoginRedirect(v); setSaved(false); }}
-                      redirectAllowlist={redirectAllowlist} setRedirectAllowlist={(v) => { setRedirectAllowlist(v); setSaved(false); }}
-                      newRedirect={newRedirect} setNewRedirect={setNewRedirect}
-                      linkIdentity={linkIdentity} setLinkIdentity={(v) => { setLinkIdentity(v); setSaved(false); }}
-                    />
-                  </div>
-                )}
-                {["gateway", "both"].includes(sessionMethod) && (
-                  <div style={{ padding: "8px 12px", background: "#f0f7ff", borderRadius: C.radius, border: "1px solid #bee3f8", fontSize: 12, color: "#1e40af", marginBottom: 14 }}>
-                    Gateway users are managed in the <strong>Users</strong> tab of this app.
-                    {twofaAvailable && " Users can enroll in two-factor auth (authenticator app or email codes) from their first login; you can require it per user in the Users tab."}
-                  </div>
-                )}
-
                 {["gateway", "both"].includes(sessionMethod) && (
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 14, cursor: readonly ? "default" : "pointer" }}>
                     <input type="checkbox" checked={twofaAvailable} onChange={e => { setTwofaAvailable(e.target.checked); setSaved(false); }} disabled={readonly} />
-                    Allow users to self-enroll in two-factor authentication (TOTP / email codes)
+                    Allow users to self-enroll in two-factor authentication
+                    <InfoTip text="Users can enroll in two-factor auth (authenticator app or email codes) from their first login; you can require it per user in the Users tab." />
                   </label>
                 )}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0 12px", marginBottom: 4 }}>
-                  <Field label="Idle timeout (min)">
+                  <Field label={<span>Idle timeout (min)<InfoTip text="Sessions die after this many minutes of inactivity — no later than the absolute cap. IP changes are never punished; IP is metadata only." /></span>}>
                     <input type="number" min={5} max={1440} style={inputStyle} value={ttlIdle} onChange={e => { setTtlIdle(parseInt(e.target.value) || 30); setSaved(false); }} disabled={readonly} />
                   </Field>
                   <Field label="Absolute cap (h)">
@@ -344,13 +300,24 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
                     </select>
                   </Field>
                 </div>
-                <p style={{ fontSize: 11, color: C.muted, margin: "0 0 12px" }}>
-                  Sessions die after the idle timeout, no later than the absolute cap. IP changes are never punished — IP is metadata only.
-                </p>
 
-                <Field label="Session cookie name" hint="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie.">
+                <Field label={<span>Session cookie name<InfoTip text="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie." /></span>}>
                   <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
                 </Field>
+
+                {["identity", "both"].includes(sessionMethod) && (
+                  <>
+                    <ProviderChecklist />
+                    <IdentityLoginConfig
+                      app={app} readonly={readonly}
+                      providers={providers} allowedIds={allowedIds}
+                      postLoginRedirect={postLoginRedirect} setPostLoginRedirect={(v) => { setPostLoginRedirect(v); setSaved(false); }}
+                      redirectAllowlist={redirectAllowlist} setRedirectAllowlist={(v) => { setRedirectAllowlist(v); setSaved(false); }}
+                      newRedirect={newRedirect} setNewRedirect={setNewRedirect}
+                      linkIdentity={linkIdentity} setLinkIdentity={(v) => { setLinkIdentity(v); setSaved(false); }}
+                    />
+                  </>
+                )}
               </div>
             )}
           </>
@@ -385,20 +352,19 @@ function IdentityLoginConfig({ app, readonly, providers, allowedIds, postLoginRe
 
   return (
     <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 4px", paddingTop: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+      <div style={{ display: "flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
         Brokered Login (OAuth Redirect)
+        <InfoTip text="Providers with a client ID + vault secret get a full redirect login: the browser visits {base_path}/auth/login/{providerId}?redirect=/dashboard and lands back logged in with the session cookie. The frontend never sees provider credentials." />
       </div>
-      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
-        Providers with a client ID + vault secret get a full redirect login:
-        the frontend sends the browser to <code>{`${app.base_path}/auth/login/{providerId}?redirect=/dashboard`}</code>
-        {" "}and the user lands back logged in with the session cookie. The frontend never sees provider credentials.
-      </p>
 
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Callback URLs (register these at each provider)</div>
+        <div style={{ display: "flex", alignItems: "center", fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+          Callback URLs
+          <InfoTip text="Register each URL below at its identity provider as an OAuth redirect/callback URL. Shown only for allowed providers that have a client ID." />
+        </div>
         {brokered.length === 0 && (
           <p style={{ fontSize: 12, color: C.muted }}>
-            No allowed provider is configured for brokered login yet — set a Client ID + vault secret in <strong>Admin → Identity Providers</strong>.
+            No brokered-login providers yet — set a Client ID + vault secret in <strong>Admin → Identity Providers</strong>.
           </p>
         )}
         {brokered.map(p => (
@@ -410,14 +376,14 @@ function IdentityLoginConfig({ app, readonly, providers, allowedIds, postLoginRe
         ))}
       </div>
 
-      <Field label="Default landing page (verification)" hint="Where the browser lands after email verification when no redirect was given. e.g. https://app.example.com/login-done">
+      <Field label={<span>Default landing page<InfoTip text="Where the browser lands after email verification when no ?redirect= was given, e.g. https://app.example.com/login-done." /></span>}>
         <input style={inputStyle} value={postLoginRedirect} onChange={e => setPostLoginRedirect(e.target.value)} placeholder="https://app.example.com/login-done" disabled={readonly} />
       </Field>
 
-      <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 6, marginTop: 10 }}>Post-login redirect allowlist</div>
-      <p style={{ fontSize: 12, color: C.muted, margin: "0 0 8px" }}>
-        The <code>?redirect=</code> parameter is honoured only for exact origins or origin+path prefixes listed here. Empty = redirects rejected.
-      </p>
+      <div style={{ display: "flex", alignItems: "center", fontSize: 12, fontWeight: 600, marginBottom: 6, marginTop: 10 }}>
+        Post-login redirect allowlist
+        <InfoTip text="The ?redirect= parameter is honoured only for exact origins or origin+path prefixes listed here. Empty = redirects rejected." />
+      </div>
       {redirectAllowlist.map(entry => (
         <div key={entry} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <code style={{ fontSize: 11, flex: 1 }}>{entry}</code>
@@ -433,11 +399,9 @@ function IdentityLoginConfig({ app, readonly, providers, allowedIds, postLoginRe
 
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 12, cursor: readonly ? "default" : "pointer" }}>
         <input type="checkbox" checked={linkIdentity} onChange={e => setLinkIdentity(e.target.checked)} disabled={readonly} />
-        Link a verified identity to an existing gateway user with the same email (one user, both login methods)
+        Link a verified identity to an existing gateway user with the same email
+        <InfoTip text="One user, both login methods. Off = strict sticky method: an email owned by a gateway user can never be claimed by an identity login (409-style conflict on the redirect)." />
       </label>
-      <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0 24px" }}>
-        Off = strict sticky method: an email owned by a gateway user can never be claimed by an identity login (409-style conflict on the redirect).
-      </p>
     </div>
   );
 }
@@ -469,26 +433,20 @@ function AiExposeSection({ app, appId, onSaved, readonly }: { app: App; appId: s
       <SectionHead title="AI Agent / MCP Exposure" />
       <div style={{ padding: 16 }}>
         {error && <ErrorBanner message={error} />}
-        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: readonly ? "default" : "pointer" }}>
-          <input
-            type="checkbox"
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: readonly ? "default" : "pointer" }}>
+          <Toggle
             checked={aiExpose}
-            onChange={e => !readonly && save(e.target.checked)}
+            onChange={v => !readonly && save(v)}
             disabled={readonly || saving}
-            style={{ marginTop: 2, width: 15, height: 15, accentColor: C.primary }}
+            label="Expose to AI agent and MCP"
           />
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>
-              Expose this app's endpoints to the AI agent and MCP {saving && <span style={{ color: C.muted }}>— saving…</span>}
-            </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              When enabled, every active endpoint becomes a tool that the AI chat agent (and external MCP clients) can discover and call.
-              Calls run through the full runtime pipeline and are scoped to the end user bound to each chat.
-            </div>
-          </div>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>
+            Expose this app's endpoints to the AI agent and MCP {saving && <span style={{ color: C.muted, fontWeight: 400 }}>— saving…</span>}
+          </span>
+          <InfoTip text="Every active endpoint becomes a tool that the AI chat agent (and external MCP clients) can discover and call. Calls run through the full runtime pipeline and are scoped to the end user bound to each chat." />
         </label>
         {aiExpose && (
-          <div style={{ marginTop: 10, padding: "8px 12px", background: "#fff8e1", border: "1px solid #fcd34d", borderRadius: C.radius, fontSize: 12, color: "#92400e" }}>
+          <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--warning-background)", border: "1px solid var(--warning)", borderRadius: C.radius, fontSize: 12, color: "var(--warning)" }}>
             🤖 This app is AI-exposed. Assign it to bots in the <strong>Bot Registry → Bindings tab</strong>.
             If this app uses session auth, AI calls must present a valid orc_sid session — a bare bot key is not accepted
             (a leaked key can never read member data). Normal bearer traffic is unaffected.
@@ -559,7 +517,7 @@ function EnvSection({ app, appId, onSaved, readonly }: { app: App; appId: string
             {vars.map(v => (
               <div key={v.key} style={{ display: "grid", gridTemplateColumns: "140px 70px 1fr auto", gap: "0 8px", alignItems: "center", padding: "6px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: C.bg }}>
                 <code style={{ fontSize: 12, color: C.primary, fontWeight: 600 }}>{v.key}</code>
-                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 99, background: v.value_type === "secret" ? "#dc354518" : "#19875418", color: v.value_type === "secret" ? C.danger : C.success, fontWeight: 600 }}>
+                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 99, background: v.value_type === "secret" ? "var(--danger)18" : "var(--success)18", color: v.value_type === "secret" ? C.danger : C.success, fontWeight: 600 }}>
                   {v.value_type}
                 </span>
                 <span style={{ fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -578,7 +536,7 @@ function EnvSection({ app, appId, onSaved, readonly }: { app: App; appId: string
         )}
 
         {showAdd && (
-          <div style={{ padding: 12, background: "#f8f9fa", borderRadius: C.radius, border: `1px solid ${C.border}`, marginTop: 8 }}>
+          <div style={{ padding: 12, background: "var(--surface-muted)", borderRadius: C.radius, border: `1px solid ${C.border}`, marginTop: 8 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: "0 12px" }}>
               <Field label="Key">
                 <input style={inputStyle} value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="BASE_API_URL" autoFocus onKeyDown={e => e.key === "Enter" && addVar()} />
@@ -615,94 +573,90 @@ function EnvSection({ app, appId, onSaved, readonly }: { app: App; appId: string
 
 // ── Section 4: Quick Actions ──────────────────────────────────────────────────
 
-const MODE_COLORS: Record<string, { bg: string; color: string }> = {
-  dev:     { bg: "#e8f5e9", color: "#2e7d32" },
-  qa:      { bg: "#e3f2fd", color: "#1565c0" },
-  staging: { bg: "#fff8e1", color: "#f57f17" },
-  prod:    { bg: "#fce4ec", color: "#c62828" },
-};
-
 function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly }: { app: App; appId: string; onSaved: (a: App) => void; onDelete: () => void; onClone: () => void; readonly: boolean }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deprecatedAt, setDeprecatedAt] = useState(app.deprecated_at ?? "");
   const currentMode = (app.mode ?? "prod") as "dev" | "qa" | "staging" | "prod";
 
-  async function setStatus(status: "draft" | "active" | "deprecated") {
+  async function patch(body: Record<string, unknown>) {
     setSaving(true);
     try {
-      const updated = await api.put<App>(`/__config/apps/${appId}`, { status });
+      const updated = await api.put<App>(`/__config/apps/${appId}`, body);
       onSaved(updated);
     } catch (e) { alert(String(e)); }
     finally { setSaving(false); }
   }
 
-  async function setMode(mode: "dev" | "qa" | "staging" | "prod") {
-    setSaving(true);
-    try {
-      const updated = await api.put<App>(`/__config/apps/${appId}`, { mode });
-      onSaved(updated);
-    } catch (e) { alert(String(e)); }
-    finally { setSaving(false); }
+  function setMode(mode: "dev" | "qa" | "staging" | "prod") { patch({ mode }); }
+
+  function setStatus(status: "draft" | "active" | "deprecated") {
+    const body: Record<string, unknown> = { status };
+    if (status === "deprecated" && deprecatedAt) body["deprecated_at"] = deprecatedAt;
+    if (status !== "deprecated") body["deprecated_at"] = null;
+    patch(body);
   }
+
+  const statusHint = app.status === "draft" ? "Not serving traffic (invisible to callers)"
+    : app.status === "active" ? "Serving live traffic"
+    : "Serving with Deprecation response header";
 
   return (
     <Card>
       <SectionHead title="Quick Actions" />
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
 
-        {/* Mode selector */}
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
-            Environment Mode
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            {(["dev", "qa", "staging", "prod"] as const).map(m => {
-              const active = currentMode === m;
-              const colors = MODE_COLORS[m]!;
-              return (
-                <button key={m} onClick={() => !readonly && !saving && setMode(m)}
-                  disabled={readonly || saving}
-                  style={{ padding: "5px 14px", borderRadius: C.radius, border: `2px solid ${active ? colors.color : C.border}`, background: active ? colors.bg : C.surface, color: active ? colors.color : C.muted, fontWeight: 600, fontSize: 12, cursor: readonly ? "default" : "pointer", textTransform: "uppercase" }}>
-                  {m}
-                </button>
-              );
-            })}
-          </div>
-          <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
-            Mode is an environment label — shown in the UI and sent as <code>X-Orchestrator-Mode</code> response header. It does not affect traffic routing or auth.
-          </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <Field label="Environment Mode" hint="Environment label — sent as X-Orchestrator-Mode response header; does not affect routing or auth">
+            <select
+              style={inputStyle}
+              value={currentMode}
+              disabled={readonly || saving}
+              onChange={e => setMode(e.target.value as "dev" | "qa" | "staging" | "prod")}
+            >
+              {(["dev", "qa", "staging", "prod"] as const).map(m => (
+                <option key={m} value={m}>{m.toUpperCase()}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Status" hint={statusHint}>
+            <select
+              style={inputStyle}
+              value={app.status}
+              disabled={readonly || saving}
+              onChange={e => setStatus(e.target.value as "draft" | "active" | "deprecated")}
+            >
+              {(["draft", "active", "deprecated"] as const).map(s => (
+                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+              ))}
+            </select>
+          </Field>
         </div>
 
-        {/* Status actions */}
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
-            Status
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            {app.status !== "active" && !readonly && (
-              <Btn variant="success" size="sm" onClick={() => setStatus("active")} disabled={saving}>↑ Publish App</Btn>
-            )}
-            {app.status === "active" && !readonly && (
-              <Btn variant="ghost" size="sm" onClick={() => setStatus("deprecated")} disabled={saving}>↓ Deprecate</Btn>
-            )}
-            {app.status !== "draft" && !readonly && (
-              <Btn variant="ghost" size="sm" onClick={() => setStatus("draft")} disabled={saving}>← Revert to Draft</Btn>
-            )}
-          </div>
-          <div style={{ fontSize: 12, color: C.muted }}>
-            Current: <Badge text={app.status} />
-            {app.status === "draft" && <span style={{ marginLeft: 8 }}>— not serving traffic (invisible to callers)</span>}
-            {app.status === "active" && <span style={{ marginLeft: 8 }}>— serving live traffic</span>}
-            {app.status === "deprecated" && <span style={{ marginLeft: 8 }}>— serving with Deprecation response header</span>}
-          </div>
-        </div>
+        {app.status === "deprecated" && (
+          <Field label="Deprecation Date" hint="Date after which this app will be sunset">
+            <input
+              type="date"
+              style={inputStyle}
+              value={deprecatedAt}
+              disabled={readonly || saving}
+              onChange={e => setDeprecatedAt(e.target.value)}
+              onBlur={() => { if (deprecatedAt !== (app.deprecated_at ?? "")) setStatus("deprecated"); }}
+            />
+          </Field>
+        )}
 
-        {/* Danger zone */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <Btn variant="outline" size="sm" onClick={onClone}>⎘ Clone App</Btn>
-          {!readonly && (
-            <Btn variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>✕ Delete App</Btn>
-          )}
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>
+            Actions
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="outline" size="sm" onClick={onClone}>⎘ Clone App</Btn>
+            {!readonly && (
+              <Btn variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>✕ Delete App</Btn>
+            )}
+          </div>
         </div>
       </div>
       {confirmDelete && (
@@ -718,6 +672,6 @@ function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly 
 }
 
 function ErrorBanner({ message }: { message: string }) {
-  return <div style={{ background: "#fff5f5", border: `1px solid #dc354530`, borderRadius: C.radius, padding: "10px 14px", color: "#dc3545", fontSize: 13, marginBottom: 12 }}>{message}</div>;
+  return <div style={{ background: "var(--danger-background)", border: `1px solid var(--danger)`, borderRadius: C.radius, padding: "10px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 12 }}>{message}</div>;
 }
 

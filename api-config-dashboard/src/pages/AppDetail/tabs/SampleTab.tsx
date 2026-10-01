@@ -82,7 +82,7 @@ export function SampleTab({ appId, endpoint, onSaved }: Props) {
         <div style={{ padding: 16 }}>
           {parseError && <div style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{parseError}</div>}
           <textarea value={raw} onChange={e => setRaw(e.target.value)} disabled={!can("edit:endpoints")}
-            style={{ width: "100%", height: 220, fontFamily: "monospace", fontSize: 12, padding: 10, border: `1px solid ${C.border}`, borderRadius: C.radius, resize: "vertical", boxSizing: "border-box" }}
+            style={{ width: "100%", height: 220, fontFamily: "monospace", fontSize: 12, padding: 10, border: `1px solid ${C.border}`, borderRadius: C.radius, resize: "vertical", boxSizing: "border-box", background: "var(--paste-editor-bg)", color: C.codeText }}
             placeholder='Paste JSON response from upstream here, then click "Parse Fields"' />
         </div>
       </Card>

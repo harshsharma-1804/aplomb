@@ -113,6 +113,11 @@ export const apps = sqliteTable("apps", {
   auth_mode:            text("auth_mode").notNull().default("bearer"),      // bearer | session | both
   session_method:       text("session_method").notNull().default("both"),   // gateway | identity | both
   session_config:       text("session_config").notNull().default("{}"),     // { cookie_name?, ttl_idle_min, max_age_min, max_sessions_per_user, ua_enforce }
+  // Frontend key — pre-shared secret for server-to-server relay authentication.
+  // When set, every login/auth/2FA/signup request must carry X-Frontend-Key
+  // matching this hash. Prevents unauthorised relays from acting on behalf of users.
+  // Stored as argon2 hash; the plaintext is shown once on generation and never stored.
+  frontend_key_hash:    text("frontend_key_hash"),
   created_by:           text("created_by"),
   created_at:           text("created_at").notNull(),
   updated_at:           text("updated_at").notNull(),

@@ -19,6 +19,7 @@ import { handleAppAuthRoute, resolveSessionForRequest, RESERVED_APP_AUTH_PATHS }
 import { handleAppOAuthRoute } from "../auth/oauthBroker.js";
 import { handleAppSignupRoute } from "../auth/appSignup.js";
 import { handleAppTwoFactorRoute } from "../auth/appTwoFactor.js";
+import { verify as argon2Verify } from "@node-rs/argon2";
 
 export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
@@ -134,6 +135,36 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
 
   const relativePath = requestPath.slice(app.base_path.length) || "/";
   const appId = String((app as any).id ?? (app as any)._id);
+
+  // ── Frontend key enforcement ──────────────────────────────────────────────────
+  // When the app has a frontend_key_hash set, every request to user-facing auth
+  // routes (/login, /signup, /auth/login/*, /__2fa/*, /session/verify) must carry
+  // X-Frontend-Key matching the hash. This blocks unauthorised relay servers from
+  // acting on behalf of users regardless of Origin/Referer headers.
+  // Callback, verify, and session-bound routes (/__me, /__logout, etc.) are exempt.
+  const isUserAuthRoute = (
+    relativePath === "/login" ||
+    relativePath === "/session/verify" ||
+    relativePath === "/signup" ||
+    relativePath === "/login/2fa" ||
+    relativePath.startsWith("/auth/login/") ||
+    relativePath.startsWith("/__2fa/enroll") ||
+    relativePath.startsWith("/__2fa/confirm") ||
+    relativePath.startsWith("/__2fa/resend") ||
+    relativePath === "/auth/resend-verification"
+  );
+  if (isUserAuthRoute && app.frontend_key_hash) {
+    const provided = req.headers["x-frontend-key"] as string | undefined;
+    if (!provided) {
+      res.status(401).json({ error: "X-Frontend-Key header is required for this app", code: "MISSING_FRONTEND_KEY" });
+      return;
+    }
+    const valid = await argon2Verify(app.frontend_key_hash, provided).catch(() => false);
+    if (!valid) {
+      res.status(401).json({ error: "Invalid frontend key", code: "INVALID_FRONTEND_KEY" });
+      return;
+    }
+  }
 
   // ── Reserved app-auth endpoints (login / session/verify / logout / me / devices)
   // Handled BEFORE endpoint auth — /login and /session/verify are unauthenticated.

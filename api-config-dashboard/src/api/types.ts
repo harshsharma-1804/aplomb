@@ -74,6 +74,8 @@ export interface App {
   mode: "dev" | "qa" | "staging" | "prod";
   /** App-scoped environment variables — use {{KEY}} in upstream URLs and header values */
   app_env: AppEnvVar[];
+  /** When set, every login/auth request must carry X-Frontend-Key matching this hash (true = key exists) */
+  frontend_key_set: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;

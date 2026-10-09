@@ -59,6 +59,7 @@ const DDL = `
     session_config TEXT NOT NULL DEFAULT '{}',
     app_env TEXT NOT NULL DEFAULT '[]',
     allowed_provider_ids TEXT NOT NULL DEFAULT '[]',
+    frontend_key_hash TEXT,
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS app_sessions (

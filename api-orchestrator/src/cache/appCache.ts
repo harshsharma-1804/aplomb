@@ -6,6 +6,7 @@ export type CachedApp = {
   status: string; deprecated_at: string | null; auth_required: boolean;
   mode: string; app_env: any[]; allowed_provider_ids: string[];
   auth_mode: string; session_method: string; session_config: SessionConfig;
+  frontend_key_hash: string | null;
   created_by: string | null; created_at: string; updated_at: string;
 };
 

@@ -36,6 +36,7 @@ export type SerializedApp = {
   status: string; deprecated_at: string | null; auth_required: boolean;
   mode: string; app_env: any[]; allowed_provider_ids: string[];
   auth_mode: string; session_method: string; session_config: SessionConfig;
+  frontend_key_hash: string | null;
   created_by: string | null; created_at: string; updated_at: string;
 };
 
@@ -70,6 +71,7 @@ function serialize(row: typeof apps.$inferSelect) {
     auth_mode:            row.auth_mode ?? "bearer",
     session_method:       row.session_method ?? "both",
     session_config:       JSON.parse(row.session_config ?? "{}"),
+    frontend_key_hash:    row.frontend_key_hash ?? null,
   };
 }
 
@@ -121,9 +123,10 @@ export const appRepo = {
     if (input.deprecated_at !== undefined) patch["deprecated_at"] = input.deprecated_at;
     if (input.app_env     !== undefined) patch["app_env"]     = JSON.stringify(input.app_env);
     if (input.allowed_provider_ids !== undefined) patch["allowed_provider_ids"] = JSON.stringify(input.allowed_provider_ids);
-    if ((input as any).auth_mode      !== undefined) patch["auth_mode"]      = (input as any).auth_mode;
-    if ((input as any).session_method !== undefined) patch["session_method"] = (input as any).session_method;
-    if ((input as any).session_config !== undefined) patch["session_config"] = JSON.stringify((input as any).session_config);
+    if ((input as any).auth_mode         !== undefined) patch["auth_mode"]         = (input as any).auth_mode;
+    if ((input as any).session_method    !== undefined) patch["session_method"]    = (input as any).session_method;
+    if ((input as any).session_config    !== undefined) patch["session_config"]    = JSON.stringify((input as any).session_config);
+    if ("frontend_key_hash" in (input as any)) patch["frontend_key_hash"] = (input as any).frontend_key_hash ?? null;
     db.update(apps).set(patch).where(eq(apps.id, id)).run();
     return appRepo.findById(db, id);
   },

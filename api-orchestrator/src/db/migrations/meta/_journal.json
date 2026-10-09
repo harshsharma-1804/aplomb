@@ -113,6 +113,13 @@
       "when": 1790598548893,
       "tag": "0015_multi_client_per_issuer",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1790598548894,
+      "tag": "0016_app_user_lockout",
+      "breakpoints": true
     }
   ]
 }

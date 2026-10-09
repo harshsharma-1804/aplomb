@@ -59,11 +59,15 @@ export interface App {
     require_email_verification?: boolean;
     /** Allow gateway users to self-enroll in two-factor auth (default true). */
     twofa_available?: boolean;
-    /** Max failed login attempts per IP before 429 (default 10, min 3, max 100). */
-    login_rate_limit_max?: number;
-    /** Rate-limit window in minutes (default 15, min 1, max 60). */
-    login_rate_limit_window_min?: number;
-  };
+  /** Max failed login attempts per IP before 429 (default 10, min 3, max 100). */
+  login_rate_limit_max?: number;
+  /** Rate-limit window in minutes (default 15, min 1, max 60). */
+  login_rate_limit_window_min?: number;
+  /** Max consecutive failures per username before account is locked (default 5, 0 = disabled). */
+  lockout_max_attempts?: number;
+  /** Duration in minutes the account stays locked (default 30). */
+  lockout_duration_min?: number;
+};
   /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
   ai_expose: boolean;
   /** Environment this app belongs to — shown in UI and X-Orchestrator-Mode header */
@@ -312,6 +316,10 @@ export interface AppUser {
   auth_method: "gateway" | "identity";
   identity_provider_id: string | null;
   idp_sub: string | null;
+  /** Username-level lockout */
+  failed_login_attempts: number;
+  locked_until: string | null;
+  is_locked: boolean;
   /** Gateway self-signup users verify via email link; operator-created and identity users are trusted */
   email_verified: boolean;
   last_login_at: string | null;

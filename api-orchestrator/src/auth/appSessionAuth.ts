@@ -225,9 +225,31 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
       res.status(400).json({ error: "username (or email) and password are required", code: "VALIDATION_ERROR" });
       return true;
     }
+    // Look up the user first to check lockout BEFORE verifying the password —
+    // this prevents a locked account from revealing whether the password is correct.
+    if (cfg.lockout_max_attempts > 0) {
+      const candidate = appUserRepo.findByEmail(db, app.id, ident) ?? appUserRepo.findByUsername(db, app.id, ident);
+      if (candidate && candidate.auth_method === "gateway" && candidate.is_locked) {
+        const unlockAt = candidate.locked_until
+          ? new Date(candidate.locked_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+        res.status(423).json({
+          error: `Account temporarily locked — too many failed attempts. Try again after ${unlockAt}.`,
+          code: "ACCOUNT_LOCKED",
+          locked_until: candidate.locked_until,
+        });
+        return true;
+      }
+    }
     const user = await appUserRepo.verifyCredentials(db, app.id, ident, password);
     if (!user) {
       recordFailure(app.id, ip, cfg.login_rate_limit_window_min * 60_000);
+      // Username-level lockout: track failures regardless of source IP.
+      if (cfg.lockout_max_attempts > 0) {
+        const byEmail = appUserRepo.findByEmail(db, app.id, ident) ?? appUserRepo.findByUsername(db, app.id, ident);
+        if (byEmail && byEmail.auth_method === "gateway") {
+          appUserRepo.recordLoginFailure(db, byEmail.id, cfg.lockout_max_attempts, cfg.lockout_duration_min * 60_000);
+        }
+      }
       res.status(401).json({ error: "Invalid credentials", code: "INVALID_CREDENTIALS" });
       return true;
     }

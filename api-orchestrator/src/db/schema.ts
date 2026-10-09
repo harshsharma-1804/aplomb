@@ -291,6 +291,11 @@ export const app_users = sqliteTable("app_users", {
   email_verification_token_hash: text("email_verification_token_hash"),
   verification_token_expires_at: text("verification_token_expires_at"),
   last_login_at:  text("last_login_at"),
+  // ── Username-level lockout (brute-force defence independent of IP) ──────────
+  // Counts consecutive failures against this account regardless of source IP.
+  // Lockout thresholds are configured per app in session_config.
+  failed_login_attempts: integer("failed_login_attempts").notNull().default(0),
+  locked_until:          text("locked_until"),   // ISO timestamp; null = not locked
   // ── Two-factor auth (user-based; see Features/TwoFactorAuth-11.md) ─────────
   // 'off' (default) | 'enabled' (user opted in) | 'enforced' (admin required)
   twofa_status:   text("twofa_status").notNull().default("off"),

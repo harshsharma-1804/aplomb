@@ -127,6 +127,8 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
   const [twofaAvailable, setTwofaAvailable] = useState(app.session_config?.twofa_available ?? true);
   const [rateLimitMax, setRateLimitMax]     = useState(app.session_config?.login_rate_limit_max ?? 10);
   const [rateLimitWin, setRateLimitWin]     = useState(app.session_config?.login_rate_limit_window_min ?? 15);
+  const [lockoutMax, setLockoutMax]         = useState(app.session_config?.lockout_max_attempts ?? 5);
+  const [lockoutDur, setLockoutDur]         = useState(app.session_config?.lockout_duration_min ?? 30);
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState("");
   const [saved, setSaved]                 = useState(false);
@@ -173,6 +175,8 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
               twofa_available: twofaAvailable,
               login_rate_limit_max: rateLimitMax,
               login_rate_limit_window_min: rateLimitWin,
+              lockout_max_attempts: lockoutMax,
+              lockout_duration_min: lockoutDur,
             },
           },
         );
@@ -320,6 +324,20 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
                    </Field>
                    <Field label="Window (minutes)" hint="Min 1 · Max 60">
                      <input type="number" min={1} max={60} style={inputStyle} value={rateLimitWin} onChange={e => { setRateLimitWin(parseInt(e.target.value) || 15); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                 </div>
+
+                 <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 8px" }} />
+                 <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Username lockout</div>
+                 <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+                   Blocks an account after too many consecutive failures, regardless of IP. Set to <strong>0</strong> to disable. Admins can unlock from the Users tab.
+                 </p>
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+                   <Field label="Max consecutive failures" hint="0 = disabled · account is locked after this many wrong passwords">
+                     <input type="number" min={0} max={100} style={inputStyle} value={lockoutMax} onChange={e => { setLockoutMax(parseInt(e.target.value) ?? 5); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                   <Field label="Lockout duration (minutes)" hint="Max 1440 (24 h)">
+                     <input type="number" min={1} max={1440} style={inputStyle} value={lockoutDur} onChange={e => { setLockoutDur(parseInt(e.target.value) || 30); setSaved(false); }} disabled={readonly} />
                    </Field>
                  </div>
 

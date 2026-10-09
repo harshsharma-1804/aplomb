@@ -257,6 +257,17 @@ router.put("/:id/users/:userId", requirePermission("manage:apps"), (req, res) =>
 // ── PUT /apps/:id/users/:userId/2fa — admin 2FA control (per user) ────────────
 // action: 'enforce' (require at next login) | 'disable' (off, clears enrollment)
 //         | 'reset' (wipe enrollment, keep enforcement → re-enroll at next login)
+// ── PUT /apps/:id/users/:userId/unlock — admin unlock a locked account ─────────
+router.put("/:id/users/:userId/unlock", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const target = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!target) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  appUserRepo.unlock(db, userId);
+  res.json(appUserRepo.findById(db, userId));
+});
+
 router.put("/:id/users/:userId/2fa", requirePermission("manage:apps"), (req, res) => {
   const db = getDb();
   const appId = param(param(req.params["id"]));

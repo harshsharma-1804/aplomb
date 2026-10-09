@@ -25,6 +25,10 @@ export type SessionConfig = {
   login_rate_limit_max?: number;
   /** Rate-limit window in minutes (default 15, min 1, max 60). */
   login_rate_limit_window_min?: number;
+  /** Max consecutive failures per username before account is locked (default 5, 0 = disabled). */
+  lockout_max_attempts?: number;
+  /** Duration in minutes the account stays locked after hitting the threshold (default 30). */
+  lockout_duration_min?: number;
 };
 
 export type SerializedApp = {

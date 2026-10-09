@@ -75,12 +75,30 @@ function runtimeCorsGuard(req: Request, res: Response, next: NextFunction) {
   if (p.startsWith("/__config") || p.startsWith("/auth") || p.startsWith("/__health")) {
     return next();
   }
-  // In unified mode, same-origin requests (dashboard SPA assets, page routes)
-  // have their Origin == Host — skip CORS entirely, they need no CORS headers.
-  if (config.dashboard.distPath) {
-    const origin = req.headers["origin"];
-    if (!origin || new URL(origin).host === req.headers["host"]) return next();
+
+  const origin = req.headers["origin"] as string | undefined;
+
+  // Same-origin check (unified mode): Origin host == request Host — always allow.
+  if (origin && config.dashboard.distPath) {
+    try {
+      if (new URL(origin).host === req.headers["host"]) return next();
+    } catch { /* malformed origin — fall through */ }
   }
+
+  // Cross-origin request (Origin header present and differs from host):
+  // Enforce the Allowed Origins list on ALL runtime paths — including app auth
+  // routes (/login, /__2fa, /auth/login/*, /signup, etc.). Browser navigations
+  // (OAuth redirects) do NOT send an Origin header, so they are unaffected.
+  // This ensures that removing an origin from the Allowed Origins list also
+  // blocks cross-origin credential POSTs from that origin.
+  if (origin && !isRuntimeOriginAllowed(origin)) {
+    res.status(403).json({
+      error: "Cross-origin requests from this origin are not allowed.",
+      code: "ORIGIN_NOT_ALLOWED",
+    });
+    return;
+  }
+
   return runtimeCors(req, res, next);
 }
 

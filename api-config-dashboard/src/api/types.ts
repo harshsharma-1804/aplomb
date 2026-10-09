@@ -59,6 +59,10 @@ export interface App {
     require_email_verification?: boolean;
     /** Allow gateway users to self-enroll in two-factor auth (default true). */
     twofa_available?: boolean;
+    /** Max failed login attempts per IP before 429 (default 10, min 3, max 100). */
+    login_rate_limit_max?: number;
+    /** Rate-limit window in minutes (default 15, min 1, max 60). */
+    login_rate_limit_window_min?: number;
   };
   /** When true the app's endpoints are exposed to the AI chat agent and MCP clients */
   ai_expose: boolean;

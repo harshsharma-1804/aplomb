@@ -34,6 +34,8 @@ export function resolveSessionConfig(app: { session_config?: unknown }): Require
     link_identity_on_verified_email: raw.link_identity_on_verified_email ?? true,
     require_email_verification: raw.require_email_verification ?? true,
     twofa_available: raw.twofa_available ?? true,
+    login_rate_limit_max: Math.min(100, Math.max(3, raw.login_rate_limit_max ?? 10)),
+    login_rate_limit_window_min: Math.min(60, Math.max(1, raw.login_rate_limit_window_min ?? 15)),
   };
 }
 

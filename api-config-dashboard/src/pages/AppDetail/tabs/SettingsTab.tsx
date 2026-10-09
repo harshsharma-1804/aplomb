@@ -125,6 +125,8 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
   const [linkIdentity, setLinkIdentity]   = useState(app.session_config?.link_identity_on_verified_email ?? true);
   const [requireVerify, setRequireVerify] = useState(app.session_config?.require_email_verification ?? true);
   const [twofaAvailable, setTwofaAvailable] = useState(app.session_config?.twofa_available ?? true);
+  const [rateLimitMax, setRateLimitMax]     = useState(app.session_config?.login_rate_limit_max ?? 10);
+  const [rateLimitWin, setRateLimitWin]     = useState(app.session_config?.login_rate_limit_window_min ?? 15);
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState("");
   const [saved, setSaved]                 = useState(false);
@@ -169,6 +171,8 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
               link_identity_on_verified_email: linkIdentity,
               require_email_verification: requireVerify,
               twofa_available: twofaAvailable,
+              login_rate_limit_max: rateLimitMax,
+              login_rate_limit_window_min: rateLimitWin,
             },
           },
         );
@@ -301,9 +305,23 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
                   </Field>
                 </div>
 
-                <Field label={<span>Session cookie name<InfoTip text="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie." /></span>}>
-                  <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
-                </Field>
+                 <Field label={<span>Session cookie name<InfoTip text="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie." /></span>}>
+                   <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
+                 </Field>
+
+                 <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 8px" }} />
+                 <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Login rate limiting (per IP)</div>
+                 <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+                   After this many failed attempts from one IP, further logins are blocked for the window duration and return <code>429</code>.
+                 </p>
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+                   <Field label="Max failed attempts" hint="Min 3 · Max 100">
+                     <input type="number" min={3} max={100} style={inputStyle} value={rateLimitMax} onChange={e => { setRateLimitMax(parseInt(e.target.value) || 10); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                   <Field label="Window (minutes)" hint="Min 1 · Max 60">
+                     <input type="number" min={1} max={60} style={inputStyle} value={rateLimitWin} onChange={e => { setRateLimitWin(parseInt(e.target.value) || 15); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                 </div>
 
                 {["identity", "both"].includes(sessionMethod) && (
                   <>

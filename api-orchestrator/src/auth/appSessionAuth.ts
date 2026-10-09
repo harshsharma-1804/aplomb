@@ -76,25 +76,26 @@ function cookieOptions(maxAgeMin: number) {
 }
 
 // ── Per-IP login failure limiter (in-memory fixed window) ─────────────────────
+// Limits are per-app, configured in App → Settings → Runtime Authentication.
+// Defaults: 10 failures / 15-min window. Cleared on container restart.
 
-const WINDOW_MS = 15 * 60_000;
-const MAX_FAILURES = 10;
 const failures = new Map<string, { count: number; resetAt: number }>();
 
 function limiterKey(appId: string, ip: string) { return `${appId}:${ip}`; }
 
-function checkLimiter(appId: string, ip: string): boolean {
-  const entry = failures.get(limiterKey(appId, ip));
+function checkLimiter(appId: string, ip: string, max: number, windowMs: number): boolean {
+  const key = limiterKey(appId, ip);
+  const entry = failures.get(key);
   if (!entry) return true;
-  if (Date.now() > entry.resetAt) { failures.delete(limiterKey(appId, ip)); return true; }
-  return entry.count < MAX_FAILURES;
+  if (Date.now() > entry.resetAt) { failures.delete(key); return true; }
+  return entry.count < max;
 }
 
-function recordFailure(appId: string, ip: string): void {
+function recordFailure(appId: string, ip: string, windowMs: number): void {
   const key = limiterKey(appId, ip);
   const entry = failures.get(key);
   if (!entry || Date.now() > entry.resetAt) {
-    failures.set(key, { count: 1, resetAt: Date.now() + WINDOW_MS });
+    failures.set(key, { count: 1, resetAt: Date.now() + windowMs });
   } else {
     entry.count++;
   }
@@ -214,8 +215,8 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
       return appNotFound(res), true;
     }
     const ip = clientIp(req);
-    if (!checkLimiter(app.id, ip)) {
-      res.status(429).json({ error: "Too many failed login attempts — try again later", code: "RATE_LIMITED" });
+    if (!checkLimiter(app.id, ip, cfg.login_rate_limit_max, cfg.login_rate_limit_window_min * 60_000)) {
+      res.status(429).json({ error: `Too many failed login attempts — try again in ${cfg.login_rate_limit_window_min} minutes`, code: "RATE_LIMITED" });
       return true;
     }
     const { username, email, identifier, password } = (req.body ?? {}) as Record<string, string>;
@@ -226,7 +227,7 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
     }
     const user = await appUserRepo.verifyCredentials(db, app.id, ident, password);
     if (!user) {
-      recordFailure(app.id, ip);
+      recordFailure(app.id, ip, cfg.login_rate_limit_window_min * 60_000);
       res.status(401).json({ error: "Invalid credentials", code: "INVALID_CREDENTIALS" });
       return true;
     }
@@ -254,8 +255,8 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
       return appNotFound(res), true;
     }
     const ip = clientIp(req);
-    if (!checkLimiter(app.id, ip)) {
-      res.status(429).json({ error: "Too many failed login attempts — try again later", code: "RATE_LIMITED" });
+    if (!checkLimiter(app.id, ip, cfg.login_rate_limit_max, cfg.login_rate_limit_window_min * 60_000)) {
+      res.status(429).json({ error: `Too many failed login attempts — try again in ${cfg.login_rate_limit_window_min} minutes`, code: "RATE_LIMITED" });
       return true;
     }
     const { provider_token: token } = (req.body ?? {}) as Record<string, string>;
@@ -267,13 +268,13 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
     const tokenAud = issuer ? readAudienceFromToken(token) : null;
     const provider = issuer ? getProviderByIssuer(issuer, tokenAud ?? undefined) : null;
     if (!issuer || !provider || !provider.is_active) {
-      recordFailure(app.id, ip);
+      recordFailure(app.id, ip, cfg.login_rate_limit_window_min * 60_000);
       res.status(401).json({ error: "Unknown identity provider", code: "UNKNOWN_PROVIDER" });
       return true;
     }
     const allowed = (app.allowed_provider_ids ?? []).map(String);
     if (allowed.length > 0 && !allowed.includes(String(provider.id))) {
-      recordFailure(app.id, ip);
+      recordFailure(app.id, ip, cfg.login_rate_limit_window_min * 60_000);
       res.status(401).json({ error: "Provider not allowed for this app", code: "PROVIDER_NOT_ALLOWED_FOR_APP" });
       return true;
     }
@@ -286,7 +287,7 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
         idpToken: token,
       });
     } catch {
-      recordFailure(app.id, ip);
+      recordFailure(app.id, ip, cfg.login_rate_limit_window_min * 60_000);
       res.status(401).json({ error: "Token verification failed", code: "INVALID_TOKEN" });
     }
     return true;

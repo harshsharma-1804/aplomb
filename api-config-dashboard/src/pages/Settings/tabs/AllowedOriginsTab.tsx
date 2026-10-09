@@ -4,7 +4,7 @@ import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confir
 import { useSession } from "../../../auth/SessionContext";
 
 interface CorsOriginEntry {
-  _id: string;
+  id: string;
   origin: string;
   description: string;
   created_at: string;
@@ -46,7 +46,7 @@ export function AllowedOriginsTab() {
 
   async function deleteOrigin(entry: CorsOriginEntry) {
     try {
-      await api.del(`/__config/admin/cors-origins/${entry._id}`);
+      await api.del(`/__config/admin/cors-origins/${entry.id}`);
       setDeleteTarget(null);
       load();
     } catch (e) { alert(String(e)); }
@@ -122,7 +122,7 @@ export function AllowedOriginsTab() {
               </thead>
               <tbody>
                 {entries.map(entry => (
-                  <tr key={entry._id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <tr key={entry.id} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: "10px 12px" }}>
                       <code style={{ fontSize: 13, color: entry.origin === "*" ? C.danger : C.primary, fontWeight: 600 }}>{entry.origin}</code>
                     </td>

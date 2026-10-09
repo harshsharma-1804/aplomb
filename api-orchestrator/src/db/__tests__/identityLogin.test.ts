@@ -20,6 +20,7 @@ const DDL = `
     auth_mode TEXT NOT NULL DEFAULT 'bearer', session_method TEXT NOT NULL DEFAULT 'both',
     session_config TEXT NOT NULL DEFAULT '{}',
     app_env TEXT NOT NULL DEFAULT '[]', allowed_provider_ids TEXT NOT NULL DEFAULT '[]',
+    frontend_key_hash TEXT,
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS app_users (
@@ -33,6 +34,8 @@ const DDL = `
     email_verified_at TEXT, phone_verified_at TEXT,
     email_verification_token_hash TEXT, verification_token_expires_at TEXT,
     last_login_at TEXT,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until TEXT,
     twofa_status TEXT NOT NULL DEFAULT 'off', twofa_method TEXT,
     totp_secret_ct TEXT, totp_secret_iv TEXT, totp_secret_tag TEXT,
     totp_last_timestep INTEGER, twofa_enrolled_at TEXT,

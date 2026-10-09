@@ -1,5 +1,7 @@
 import { param } from "../../utils/params.js";
 import { Router } from "express";
+import { randomBytes } from "crypto";
+import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
 import { getDb } from "../../db/client.js";
 import { appRepo } from "../../db/repos/appRepo.js";
 import { endpointRepo } from "../../db/repos/endpointRepo.js";
@@ -31,11 +33,18 @@ function writeHistory(appId: string, changeType: string, description: string, re
   versionHistoryRepo.create(db, { app_id: appId, change_type: changeType, changed_by: changedBy(req), description, snapshot: { app, endpoints } });
 }
 
+/** Strip the frontend_key_hash before returning to the dashboard — expose only whether one is set. */
+function safeApp(app: ReturnType<typeof appRepo.findById>) {
+  if (!app) return null;
+  const { frontend_key_hash, ...rest } = app as any;
+  return { ...rest, frontend_key_set: Boolean(frontend_key_hash) };
+}
+
 router.get("/", (req, res) => {
   let apps = appRepo.list(getDb());
   if (req.query["status"])    apps = apps.filter(a => a.status    === req.query["status"]);
   if (req.query["base_path"]) apps = apps.filter(a => a.base_path === req.query["base_path"]);
-  res.json({ count: apps.length, results: apps });
+  res.json({ count: apps.length, results: apps.map(safeApp) });
 });
 
 router.post("/", requirePermission("manage:apps"), (req, res) => {
@@ -44,7 +53,7 @@ router.post("/", requirePermission("manage:apps"), (req, res) => {
     refreshApp(app.id);
     refreshToolRegistry();
     writeHistory(app.id, "created", `App created: ${app.name}`, req);
-    res.status(201).json(app);
+    res.status(201).json(safeApp(app));
   } catch (err: any) {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "base_path already exists", code: "DUPLICATE_BASE_PATH" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
@@ -54,7 +63,7 @@ router.post("/", requirePermission("manage:apps"), (req, res) => {
 router.get("/:id", (req, res) => {
   const app = appRepo.findById(getDb(), param(param(req.params["id"])));
   if (!app) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
-  res.json(app);
+  res.json(safeApp(app));
 });
 
 router.put("/:id", requirePermission("manage:apps"), (req, res) => {
@@ -70,7 +79,7 @@ router.put("/:id", requirePermission("manage:apps"), (req, res) => {
       ? `App base_path changed: ${before.base_path} → ${app.base_path}`
       : `App settings updated: ${app.name}`;
     writeHistory(app.id, "activated", desc, req);
-    res.json(app);
+    res.json(safeApp(app));
   } catch (err: any) {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "base_path already exists", code: "DUPLICATE_BASE_PATH" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
@@ -112,6 +121,33 @@ router.post("/:id/clone", requirePermission("manage:apps"), (req, res) => {
     if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "base_path already exists", code: "DUPLICATE_BASE_PATH" }); return; }
     res.status(500).json({ error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" });
   }
+});
+
+// ── POST /apps/:id/frontend-key — generate a new frontend key (shown once) ───
+// ── DELETE /apps/:id/frontend-key — revoke (auth enforcement removed) ─────────
+router.post("/:id/frontend-key", requirePermission("manage:apps"), async (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const key = randomBytes(32).toString("base64url");
+  const hash = await argon2Hash(key);
+  appRepo.update(db, appId, { frontend_key_hash: hash } as any);
+  refreshApp(appId);
+  writeHistory(appId, "modified", "Frontend key generated", req);
+  res.status(201).json({
+    key,
+    note: "Store this key securely — it will not be shown again. Pass it as X-Frontend-Key on every login/auth request from your relay server.",
+  });
+});
+
+router.delete("/:id/frontend-key", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  if (!appRepo.findById(db, appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  appRepo.update(db, appId, { frontend_key_hash: null } as any);
+  refreshApp(appId);
+  writeHistory(appId, "modified", "Frontend key revoked", req);
+  res.json({ success: true, note: "Frontend key revoked — all requests now accepted without a key (disable by generating a new key)." });
 });
 
 // ── PUT /apps/:id/session-auth — Runtime Authentication settings ───────────────
@@ -257,6 +293,17 @@ router.put("/:id/users/:userId", requirePermission("manage:apps"), (req, res) =>
 // ── PUT /apps/:id/users/:userId/2fa — admin 2FA control (per user) ────────────
 // action: 'enforce' (require at next login) | 'disable' (off, clears enrollment)
 //         | 'reset' (wipe enrollment, keep enforcement → re-enroll at next login)
+// ── PUT /apps/:id/users/:userId/unlock — admin unlock a locked account ─────────
+router.put("/:id/users/:userId/unlock", requirePermission("manage:apps"), (req, res) => {
+  const db = getDb();
+  const appId = param(param(req.params["id"]));
+  const userId = param(param(req.params["userId"]));
+  const target = appUserRepo.listByApp(db, appId).find(u => u.id === userId);
+  if (!target) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  appUserRepo.unlock(db, userId);
+  res.json(appUserRepo.findById(db, userId));
+});
+
 router.put("/:id/users/:userId/2fa", requirePermission("manage:apps"), (req, res) => {
   const db = getDb();
   const appId = param(param(req.params["id"]));

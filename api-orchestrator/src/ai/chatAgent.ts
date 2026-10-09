@@ -224,7 +224,7 @@ export async function runChatAgent(
   while (iterations < maxIter) {
     iterations++;
 
-    const response = await chatCompletion(provider, llmMessages, tools);
+    const response = await chatCompletion(provider, llmMessages, tools, limits.timeout_ms);
 
     if (response.tool_calls.length === 0) {
       finalContent = response.content;
@@ -260,7 +260,7 @@ export async function runChatAgent(
     const response = await chatCompletion(provider, [
       ...llmMessages,
       { role: "user", content: "(system: tool budget exhausted — summarise what you have so far and answer the user now, do not request more tools)" },
-    ]);
+    ], undefined, limits.timeout_ms);
     finalContent = response.content;
     warning = "Tool call budget exhausted — response may be incomplete";
     if (limits.fallback_message) finalContent = limits.fallback_message;

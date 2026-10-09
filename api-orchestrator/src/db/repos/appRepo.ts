@@ -21,6 +21,14 @@ export type SessionConfig = {
   require_email_verification?: boolean;
   /** Allow gateway users to self-enroll in two-factor auth (default true). */
   twofa_available?: boolean;
+  /** Max failed login attempts per IP before 429 (default 10, min 3, max 100). */
+  login_rate_limit_max?: number;
+  /** Rate-limit window in minutes (default 15, min 1, max 60). */
+  login_rate_limit_window_min?: number;
+  /** Max consecutive failures per username before account is locked (default 5, 0 = disabled). */
+  lockout_max_attempts?: number;
+  /** Duration in minutes the account stays locked after hitting the threshold (default 30). */
+  lockout_duration_min?: number;
 };
 
 export type SerializedApp = {
@@ -28,6 +36,7 @@ export type SerializedApp = {
   status: string; deprecated_at: string | null; auth_required: boolean;
   mode: string; app_env: any[]; allowed_provider_ids: string[];
   auth_mode: string; session_method: string; session_config: SessionConfig;
+  frontend_key_hash: string | null;
   created_by: string | null; created_at: string; updated_at: string;
 };
 
@@ -62,6 +71,7 @@ function serialize(row: typeof apps.$inferSelect) {
     auth_mode:            row.auth_mode ?? "bearer",
     session_method:       row.session_method ?? "both",
     session_config:       JSON.parse(row.session_config ?? "{}"),
+    frontend_key_hash:    row.frontend_key_hash ?? null,
   };
 }
 
@@ -113,9 +123,10 @@ export const appRepo = {
     if (input.deprecated_at !== undefined) patch["deprecated_at"] = input.deprecated_at;
     if (input.app_env     !== undefined) patch["app_env"]     = JSON.stringify(input.app_env);
     if (input.allowed_provider_ids !== undefined) patch["allowed_provider_ids"] = JSON.stringify(input.allowed_provider_ids);
-    if ((input as any).auth_mode      !== undefined) patch["auth_mode"]      = (input as any).auth_mode;
-    if ((input as any).session_method !== undefined) patch["session_method"] = (input as any).session_method;
-    if ((input as any).session_config !== undefined) patch["session_config"] = JSON.stringify((input as any).session_config);
+    if ((input as any).auth_mode         !== undefined) patch["auth_mode"]         = (input as any).auth_mode;
+    if ((input as any).session_method    !== undefined) patch["session_method"]    = (input as any).session_method;
+    if ((input as any).session_config    !== undefined) patch["session_config"]    = JSON.stringify((input as any).session_config);
+    if ("frontend_key_hash" in (input as any)) patch["frontend_key_hash"] = (input as any).frontend_key_hash ?? null;
     db.update(apps).set(patch).where(eq(apps.id, id)).run();
     return appRepo.findById(db, id);
   },

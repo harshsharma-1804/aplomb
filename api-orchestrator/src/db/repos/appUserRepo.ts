@@ -27,6 +27,10 @@ export type SerializedAppUser = {
   idp_sub: string | null;
   email_verified: boolean;
   last_login_at: string | null;
+  // Username-level lockout
+  failed_login_attempts: number;
+  locked_until: string | null;
+  is_locked: boolean;
   // Two-factor (see Features/TwoFactorAuth-11.md)
   twofa_status: "off" | "enabled" | "enforced";
   twofa_method: "totp" | "email_otp" | null;
@@ -74,6 +78,9 @@ function serialize(row: AppUser): SerializedAppUser {
     idp_sub: row.idp_sub ?? null,
     email_verified: Boolean(row.email_verified_at),
     last_login_at: row.last_login_at ?? null,
+    failed_login_attempts: row.failed_login_attempts ?? 0,
+    locked_until: row.locked_until ?? null,
+    is_locked: Boolean(row.locked_until && row.locked_until > new Date().toISOString()),
     twofa_status: (row.twofa_status as "off" | "enabled" | "enforced") ?? "off",
     twofa_method: (row.twofa_method as "totp" | "email_otp" | null) ?? null,
     twofa_enrolled: Boolean(row.twofa_enrolled_at),
@@ -235,8 +242,37 @@ export const appUserRepo = {
   },
 
   touchLogin(db: DrizzleDb, id: string): void {
-    db.update(app_users).set({ last_login_at: new Date().toISOString() })
-      .where(eq(app_users.id, id)).run();
+    db.update(app_users).set({
+      last_login_at: new Date().toISOString(),
+      failed_login_attempts: 0,
+      locked_until: null,
+    }).where(eq(app_users.id, id)).run();
+  },
+
+  // ── Username-level lockout ────────────────────────────────────────────────────
+
+  /** Record a failed attempt. Locks the account when max is reached. Returns the updated row. */
+  recordLoginFailure(db: DrizzleDb, id: string, maxAttempts: number, lockDurationMs: number): SerializedAppUser {
+    const row = db.select().from(app_users).where(eq(app_users.id, id)).get()!;
+    const attempts = (row.failed_login_attempts ?? 0) + 1;
+    const patch: Record<string, unknown> = {
+      failed_login_attempts: attempts,
+      updated_at: new Date().toISOString(),
+    };
+    if (attempts >= maxAttempts) {
+      patch["locked_until"] = new Date(Date.now() + lockDurationMs).toISOString();
+    }
+    db.update(app_users).set(patch).where(eq(app_users.id, id)).run();
+    return serialize(db.select().from(app_users).where(eq(app_users.id, id)).get()!);
+  },
+
+  /** Admin unlock — clears the lockout and resets the failure counter. */
+  unlock(db: DrizzleDb, id: string): void {
+    db.update(app_users).set({
+      failed_login_attempts: 0,
+      locked_until: null,
+      updated_at: new Date().toISOString(),
+    }).where(eq(app_users.id, id)).run();
   },
 
   // ── Two-factor state (Features/TwoFactorAuth-11.md) ─────────────────────────

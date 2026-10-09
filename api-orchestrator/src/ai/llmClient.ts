@@ -55,13 +55,15 @@ export interface LlmResponse {
 export async function chatCompletion(
   provider: LlmProviderConfig,
   messages: LlmMessage[],
-  tools?: LlmToolDef[]
+  tools?: LlmToolDef[],
+  timeoutMs?: number
 ): Promise<LlmResponse> {
   const apiKey = resolveProviderKey(provider);
   const url = `${provider.base_url.replace(/\/$/, "")}/chat/completions`;
+  const effectiveTimeout = timeoutMs ?? config.ai.llmTimeoutMs;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.ai.llmTimeoutMs);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
 
   let res: Response;
   try {
@@ -80,7 +82,7 @@ export async function chatCompletion(
     });
   } catch (e: any) {
     if (e.name === "AbortError") {
-      throw Object.assign(new Error(`LLM request timed out after ${config.ai.llmTimeoutMs}ms`), { code: "AI_PROVIDER_ERROR" });
+      throw Object.assign(new Error(`LLM request timed out after ${effectiveTimeout}ms`), { code: "AI_PROVIDER_ERROR" });
     }
     throw Object.assign(new Error(`LLM unreachable: ${e.message}`), { code: "AI_PROVIDER_ERROR" });
   } finally {

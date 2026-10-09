@@ -46,9 +46,18 @@ export const identityProviderRepo = {
     return row ? serialize(row) : null;
   },
 
+  /** Returns the first provider for this issuer (legacy — prefer findAllByIssuer). */
   findByIssuer(db: DrizzleDb, issuer: string) {
     const row = db.select().from(identity_providers).where(eq(identity_providers.issuer, issuer)).get();
     return row ? serialize(row) : null;
+  },
+
+  /** Returns ALL providers for this issuer (multiple clients are now allowed). */
+  findAllByIssuer(db: DrizzleDb, issuer: string) {
+    return db.select().from(identity_providers)
+      .where(eq(identity_providers.issuer, issuer))
+      .all()
+      .map(serialize);
   },
 
   listActive(db: DrizzleDb) {

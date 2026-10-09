@@ -95,7 +95,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                   <Badge text={u.email_verified ? "verified" : "unverified"} />
                   <span style={{ fontSize: 11, color: C.muted }}>{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "—"}</span>
                   <TwoFaBadge user={u} />
-                  <Badge text={u.is_active ? "active" : "disabled"} />
+                  <Badge text={u.is_locked ? "🔒 locked" : u.is_active ? "active" : "disabled"} />
                   {!readonly && (
                     <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
                       {u.auth_method !== "identity" && <Btn size="sm" variant="ghost" onClick={() => setResetUser(u)}>Reset PW</Btn>}
@@ -280,6 +280,21 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
       {/* ── Timestamps ──────────────────────────────────────────────────────── */}
       <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px", margin: "14px 0 4px" }}>Activity</div>
       <Row label="Last login" value={fmt(detail.last_login_at)} />
+      {detail.is_locked && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", margin: "8px 0" }}>
+          <span style={{ fontSize: 12, color: "#92400e", flex: 1 }}>
+            🔒 Account locked until {detail.locked_until ? new Date(detail.locked_until).toLocaleString() : "—"} ({detail.failed_login_attempts} failed attempts)
+          </span>
+          {!readonly && (
+            <Btn size="sm" onClick={async () => {
+              try {
+                const updated = await api.put<AppUser>(`/__config/apps/${appId}/users/${detail.id}/unlock`, {});
+                setDetail(updated);
+              } catch (e) { setError(String(e)); }
+            }}>Unlock</Btn>
+          )}
+        </div>
+      )}
       <Row label="Created" value={fmt(detail.created_at)} />
       <Row label="Updated" value={fmt(detail.updated_at)} />
       <Row label="User ID" value={detail.id} mono copyable={detail.id} />

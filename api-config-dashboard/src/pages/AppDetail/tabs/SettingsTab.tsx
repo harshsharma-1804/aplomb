@@ -22,6 +22,7 @@ export function SettingsTab({ app, appId, onAppUpdated, onDeleteApp, onCloneApp 
       <GeneralSection    app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <AuthSection       app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <AiExposeSection   app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
+      <FrontendKeySection app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <EnvSection        app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <QuickActionsSection app={app} appId={appId} onSaved={onAppUpdated} onDelete={onDeleteApp} onClone={onCloneApp} readonly={readonly} />
     </div>
@@ -125,6 +126,10 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
   const [linkIdentity, setLinkIdentity]   = useState(app.session_config?.link_identity_on_verified_email ?? true);
   const [requireVerify, setRequireVerify] = useState(app.session_config?.require_email_verification ?? true);
   const [twofaAvailable, setTwofaAvailable] = useState(app.session_config?.twofa_available ?? true);
+  const [rateLimitMax, setRateLimitMax]     = useState(app.session_config?.login_rate_limit_max ?? 10);
+  const [rateLimitWin, setRateLimitWin]     = useState(app.session_config?.login_rate_limit_window_min ?? 15);
+  const [lockoutMax, setLockoutMax]         = useState(app.session_config?.lockout_max_attempts ?? 5);
+  const [lockoutDur, setLockoutDur]         = useState(app.session_config?.lockout_duration_min ?? 30);
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState("");
   const [saved, setSaved]                 = useState(false);
@@ -169,6 +174,10 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
               link_identity_on_verified_email: linkIdentity,
               require_email_verification: requireVerify,
               twofa_available: twofaAvailable,
+              login_rate_limit_max: rateLimitMax,
+              login_rate_limit_window_min: rateLimitWin,
+              lockout_max_attempts: lockoutMax,
+              lockout_duration_min: lockoutDur,
             },
           },
         );
@@ -301,9 +310,37 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
                   </Field>
                 </div>
 
-                <Field label={<span>Session cookie name<InfoTip text="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie." /></span>}>
-                  <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
-                </Field>
+                 <Field label={<span>Session cookie name<InfoTip text="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie." /></span>}>
+                   <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
+                 </Field>
+
+                 <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 8px" }} />
+                 <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Login rate limiting (per IP)</div>
+                 <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+                   After this many failed attempts from one IP, further logins are blocked for the window duration and return <code>429</code>.
+                 </p>
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+                   <Field label="Max failed attempts" hint="Min 3 · Max 100">
+                     <input type="number" min={3} max={100} style={inputStyle} value={rateLimitMax} onChange={e => { setRateLimitMax(parseInt(e.target.value) || 10); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                   <Field label="Window (minutes)" hint="Min 1 · Max 60">
+                     <input type="number" min={1} max={60} style={inputStyle} value={rateLimitWin} onChange={e => { setRateLimitWin(parseInt(e.target.value) || 15); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                 </div>
+
+                 <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 8px" }} />
+                 <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Username lockout</div>
+                 <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
+                   Blocks an account after too many consecutive failures, regardless of IP. Set to <strong>0</strong> to disable. Admins can unlock from the Users tab.
+                 </p>
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+                   <Field label="Max consecutive failures" hint="0 = disabled · account is locked after this many wrong passwords">
+                     <input type="number" min={0} max={100} style={inputStyle} value={lockoutMax} onChange={e => { setLockoutMax(parseInt(e.target.value) ?? 5); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                   <Field label="Lockout duration (minutes)" hint="Max 1440 (24 h)">
+                     <input type="number" min={1} max={1440} style={inputStyle} value={lockoutDur} onChange={e => { setLockoutDur(parseInt(e.target.value) || 30); setSaved(false); }} disabled={readonly} />
+                   </Field>
+                 </div>
 
                 {["identity", "both"].includes(sessionMethod) && (
                   <>
@@ -572,6 +609,79 @@ function EnvSection({ app, appId, onSaved, readonly }: { app: App; appId: string
 }
 
 // ── Section 4: Quick Actions ──────────────────────────────────────────────────
+
+function FrontendKeySection({ app, appId, onSaved, readonly }: { app: App; appId: string; onSaved: (a: App) => void; readonly: boolean }) {
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generate() {
+    if (!confirm("Generate a new frontend key? The current key (if any) will be replaced immediately.")) return;
+    setBusy(true); setError(""); setNewKey(null);
+    try {
+      const r = await api.post<{ key: string }>(`/__config/apps/${appId}/frontend-key`, {});
+      setNewKey(r.key);
+      onSaved({ ...app, frontend_key_set: true });
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  }
+
+  async function revoke() {
+    if (!confirm("Revoke the frontend key? Login requests will be accepted without a key until you generate a new one.")) return;
+    setBusy(true); setError("");
+    try {
+      await api.del(`/__config/apps/${appId}/frontend-key`);
+      setNewKey(null);
+      onSaved({ ...app, frontend_key_set: false });
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  }
+
+  async function copy() {
+    if (!newKey) return;
+    try { await navigator.clipboard.writeText(newKey); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard unavailable */ }
+  }
+
+  return (
+    <Card>
+      <SectionHead title="Frontend Key" />
+      <div style={{ padding: 16 }}>
+        <p style={{ fontSize: 12, color: C.muted, margin: "0 0 12px" }}>
+          A pre-shared secret that authorises relay servers (e.g. your Next.js backend) to submit login requests
+          on behalf of users. When set, every <code>/login</code>, <code>/signup</code>, <code>/auth/login/*</code>
+          and 2FA request must carry <code>X-Frontend-Key: &lt;key&gt;</code>.
+          Prevents any unauthorised relay from authenticating users on this app —
+          including those bypassing CORS via server-to-server calls.
+        </p>
+        {error && <ErrorBanner message={error} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: C.radius, border: `1px solid ${C.border}`, background: C.bg, marginBottom: 12 }}>
+          <span style={{ fontSize: 13, flex: 1 }}>
+            {app.frontend_key_set ? "🔐 Frontend key is active" : "⚪ No frontend key — all relays accepted"}
+          </span>
+          {!readonly && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn size="sm" onClick={generate} disabled={busy}>{busy ? "Generating…" : app.frontend_key_set ? "Rotate key" : "Generate key"}</Btn>
+              {app.frontend_key_set && <Btn size="sm" variant="danger" onClick={revoke} disabled={busy}>Revoke</Btn>}
+            </div>
+          )}
+        </div>
+        {newKey && (
+          <div style={{ padding: "12px 14px", borderRadius: C.radius, border: "1px solid #9ae6b4", background: "#f0fff4" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#276749", marginBottom: 6 }}>
+              ⚠ Copy this key now — it will not be shown again
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <code style={{ fontSize: 12, flex: 1, wordBreak: "break-all", color: "#276749" }}>{newKey}</code>
+              <Btn size="sm" variant="ghost" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</Btn>
+            </div>
+            <p style={{ fontSize: 11, color: "#276749", margin: "8px 0 0" }}>
+              Set this as <code>APP_FRONTEND_KEY=&lt;key&gt;</code> in your relay server's env and send it as <code>X-Frontend-Key</code> on every login request.
+            </p>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly }: { app: App; appId: string; onSaved: (a: App) => void; onDelete: () => void; onClone: () => void; readonly: boolean }) {
   const [confirmDelete, setConfirmDelete] = useState(false);

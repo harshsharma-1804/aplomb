@@ -66,7 +66,7 @@ export const identity_providers = sqliteTable("identity_providers", {
   id:                  text("id").primaryKey(),
   name:                text("name").notNull(),
   type:                text("type").notNull().default("oidc"),
-  issuer:              text("issuer").notNull().unique(),
+  issuer:              text("issuer").notNull(),             // no longer globally unique
   jwks_uri:            text("jwks_uri"),
   audience:            text("audience").notNull().default("[]"),
   algorithms:          text("algorithms").notNull().default('["RS256"]'),
@@ -79,7 +79,11 @@ export const identity_providers = sqliteTable("identity_providers", {
   created_by:          text("created_by"),
   created_at:          text("created_at").notNull(),
   updated_at:          text("updated_at").notNull(),
-});
+}, (t) => [
+  // Unique per (issuer, client_id) — allows multiple clients for the same IdP.
+  // NULL client_id is treated as a distinct value in SQLite (token-verify-only providers).
+  uniqueIndex("identity_providers_issuer_client_unique").on(t.issuer, t.client_id),
+]);
 
 // ── host_allowlist ────────────────────────────────────────────────────────────
 export const host_allowlist = sqliteTable("host_allowlist", {
@@ -109,6 +113,11 @@ export const apps = sqliteTable("apps", {
   auth_mode:            text("auth_mode").notNull().default("bearer"),      // bearer | session | both
   session_method:       text("session_method").notNull().default("both"),   // gateway | identity | both
   session_config:       text("session_config").notNull().default("{}"),     // { cookie_name?, ttl_idle_min, max_age_min, max_sessions_per_user, ua_enforce }
+  // Frontend key — pre-shared secret for server-to-server relay authentication.
+  // When set, every login/auth/2FA/signup request must carry X-Frontend-Key
+  // matching this hash. Prevents unauthorised relays from acting on behalf of users.
+  // Stored as argon2 hash; the plaintext is shown once on generation and never stored.
+  frontend_key_hash:    text("frontend_key_hash"),
   created_by:           text("created_by"),
   created_at:           text("created_at").notNull(),
   updated_at:           text("updated_at").notNull(),
@@ -287,6 +296,11 @@ export const app_users = sqliteTable("app_users", {
   email_verification_token_hash: text("email_verification_token_hash"),
   verification_token_expires_at: text("verification_token_expires_at"),
   last_login_at:  text("last_login_at"),
+  // ── Username-level lockout (brute-force defence independent of IP) ──────────
+  // Counts consecutive failures against this account regardless of source IP.
+  // Lockout thresholds are configured per app in session_config.
+  failed_login_attempts: integer("failed_login_attempts").notNull().default(0),
+  locked_until:          text("locked_until"),   // ISO timestamp; null = not locked
   // ── Two-factor auth (user-based; see Features/TwoFactorAuth-11.md) ─────────
   // 'off' (default) | 'enabled' (user opted in) | 'enforced' (admin required)
   twofa_status:   text("twofa_status").notNull().default("off"),

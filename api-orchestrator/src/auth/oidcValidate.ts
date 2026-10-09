@@ -102,3 +102,15 @@ export function readIssuerFromToken(token: string): string | null {
     return null;
   }
 }
+
+/** Extract the `aud` claim without verifying the token — used for provider selection only. */
+export function readAudienceFromToken(token: string): string | string[] | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8")) as { aud?: string | string[] };
+    return payload.aud ?? null;
+  } catch {
+    return null;
+  }
+}

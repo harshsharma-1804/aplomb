@@ -5,7 +5,7 @@ import { scriptRepo } from "../db/repos/scriptRepo.js";
 import { config } from "../config/appConfig.js";
 import { getAppByPath } from "../cache/appCache.js";
 import { getProviderByIssuer } from "../cache/providerCache.js";
-import { validateToken, readIssuerFromToken } from "../auth/oidcValidate.js";
+import { validateToken, readIssuerFromToken, readAudienceFromToken } from "../auth/oidcValidate.js";
 import { validateInput } from "./inputValidator.js";
 import { applyTransform } from "./transform.js";
 import { buildBody } from "./bodyBuilder.js";
@@ -189,7 +189,11 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
       return;
     }
 
-    const provider = getProviderByIssuer(issuer);
+    // Read the audience claim from the token (unverified at this point — used
+    // only to select the right client when multiple are registered for the same
+    // issuer; the selected provider's JWKS then fully verifies the token).
+    const tokenAud = readAudienceFromToken(token);
+    const provider = getProviderByIssuer(issuer, tokenAud ?? undefined);
     if (!provider || !provider.is_active) {
       res.status(401).json({ error: "Unauthorized", code: "UNKNOWN_PROVIDER" });
       return;

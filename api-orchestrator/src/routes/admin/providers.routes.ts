@@ -18,7 +18,7 @@ router.post("/", requirePermission("manage:providers"), (req, res) => {
     refreshProviderCache();
     res.status(201).json(provider);
   } catch (err: any) {
-    if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "Issuer already exists", code: "DUPLICATE_ISSUER" }); return; }
+    if (err.message?.includes("UNIQUE")) { res.status(409).json({ error: "A provider with this issuer and client ID combination already exists", code: "DUPLICATE_PROVIDER" }); return; }
     res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
   }
 });

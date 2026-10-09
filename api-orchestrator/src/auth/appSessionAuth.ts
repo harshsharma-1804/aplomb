@@ -3,7 +3,7 @@ import { getDb } from "../db/client.js";
 import { appSessionRepo, resolveSessionConfig, hashUa, deviceLabelFromUa, type SessionPrincipal } from "../db/repos/appSessionRepo.js";
 import { appUserRepo } from "../db/repos/appUserRepo.js";
 import { aiBotRepo } from "../db/repos/aiBotRepo.js";
-import { validateToken, readIssuerFromToken } from "./oidcValidate.js";
+import { validateToken, readIssuerFromToken, readAudienceFromToken } from "./oidcValidate.js";
 import { getProviderByIssuer } from "../cache/providerCache.js";
 import { config } from "../config/appConfig.js";
 import type { CachedApp } from "../cache/appCache.js";
@@ -264,7 +264,8 @@ export async function handleAppAuthRoute(req: Request, res: Response, app: Cache
       return true;
     }
     const issuer = readIssuerFromToken(token);
-    const provider = issuer ? getProviderByIssuer(issuer) : null;
+    const tokenAud = issuer ? readAudienceFromToken(token) : null;
+    const provider = issuer ? getProviderByIssuer(issuer, tokenAud ?? undefined) : null;
     if (!issuer || !provider || !provider.is_active) {
       recordFailure(app.id, ip);
       res.status(401).json({ error: "Unknown identity provider", code: "UNKNOWN_PROVIDER" });

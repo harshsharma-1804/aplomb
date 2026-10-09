@@ -66,7 +66,7 @@ export const identity_providers = sqliteTable("identity_providers", {
   id:                  text("id").primaryKey(),
   name:                text("name").notNull(),
   type:                text("type").notNull().default("oidc"),
-  issuer:              text("issuer").notNull().unique(),
+  issuer:              text("issuer").notNull(),             // no longer globally unique
   jwks_uri:            text("jwks_uri"),
   audience:            text("audience").notNull().default("[]"),
   algorithms:          text("algorithms").notNull().default('["RS256"]'),
@@ -79,7 +79,11 @@ export const identity_providers = sqliteTable("identity_providers", {
   created_by:          text("created_by"),
   created_at:          text("created_at").notNull(),
   updated_at:          text("updated_at").notNull(),
-});
+}, (t) => [
+  // Unique per (issuer, client_id) — allows multiple clients for the same IdP.
+  // NULL client_id is treated as a distinct value in SQLite (token-verify-only providers).
+  uniqueIndex("identity_providers_issuer_client_unique").on(t.issuer, t.client_id),
+]);
 
 // ── host_allowlist ────────────────────────────────────────────────────────────
 export const host_allowlist = sqliteTable("host_allowlist", {

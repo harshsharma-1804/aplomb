@@ -155,6 +155,7 @@ router.put("/:endId/sample",        ...subUpdate("sample_response"));
 router.put("/:endId/mappings",      ...subUpdate("field_mappings"));
 router.put("/:endId/body-mappings", ...subUpdate("upstream"));
 router.put("/:endId/upstream",      ...subUpdate("upstream", upstreamAllowlistGuard));
+router.put("/:endId/array-mode",    ...subUpdate("output_array_mode"));
 
 // ── PUT /:endId/script-config ─────────────────────────────────────────────────
 
@@ -214,7 +215,7 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
         if (!scriptResult || scriptResult.body === undefined) { res.status(502).json({ error: "Script did not return a valid response", code: "SCRIPT_INVALID_RESPONSE" }); return; }
         let transformed: any = {};
         let transformError: string | null = null;
-        try { transformed = applyTransform(scriptResult.body, ep.output_schema ?? [], ep.field_mappings ?? []); } catch (e: any) { transformError = e.message; }
+        try { transformed = applyTransform(scriptResult.body, ep.output_schema ?? [], ep.field_mappings ?? [], Boolean(ep.output_array_mode)); } catch (e: any) { transformError = e.message; }
         res.json({ upstreamRequest: { mode: "script_full", script: scriptDoc.filename }, upstream: scriptResult.body, transformed, validation: buildValidation(ep.output_schema ?? [], transformed), transformError, upstreamStatus: scriptResult.status ?? 200, scriptLogs });
       } catch (e: any) {
         res.status(502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR", scriptLogs });
@@ -260,7 +261,7 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
 
       let transformed: any = {};
       let transformError: string | null = null;
-      try { transformed = applyTransform(dbResult.data, ep.output_schema ?? [], ep.field_mappings ?? []); } catch (e: any) { transformError = e.message; }
+      try { transformed = applyTransform(dbResult.data, ep.output_schema ?? [], ep.field_mappings ?? [], Boolean(ep.output_array_mode)); } catch (e: any) { transformError = e.message; }
 
       res.json({
         upstreamRequest: dbResult.upstreamRequest,
@@ -340,7 +341,7 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
 
     let transformed: any = {};
     let transformError: string | null = null;
-    try { transformed = applyTransform(upstreamJson, ep.output_schema ?? [], ep.field_mappings ?? []); } catch (e: any) { transformError = e.message; }
+    try { transformed = applyTransform(upstreamJson, ep.output_schema ?? [], ep.field_mappings ?? [], Boolean(ep.output_array_mode)); } catch (e: any) { transformError = e.message; }
 
     res.json({ upstreamRequest: upstreamRequestPreview, upstream: upstreamJson, transformed, validation: buildValidation(ep.output_schema ?? [], transformed), transformError, upstreamStatus: result.status, scriptLogs });
   } catch (err: any) {

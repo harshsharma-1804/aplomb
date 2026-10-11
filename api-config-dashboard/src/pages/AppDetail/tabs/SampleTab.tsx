@@ -48,7 +48,11 @@ export function SampleTab({ appId, endpoint, onSaved }: Props) {
     setParseError("");
     try {
       const obj = JSON.parse(raw);
-      setParsed(extractPaths(obj));
+      // If root is an array, use the first element for path extraction so
+      // paths are relative to a single item ($.id, $.name) rather than the
+      // array index ($.0.id, $.0.name). This matches how output_array_mode works.
+      const target = Array.isArray(obj) ? (obj[0] ?? {}) : obj;
+      setParsed(extractPaths(target));
     } catch (e) { setParseError("Invalid JSON — " + String(e)); }
   }
 

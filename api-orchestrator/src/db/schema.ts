@@ -145,9 +145,11 @@ export const endpoints = sqliteTable("endpoints", {
   identity_args:   text("identity_args").notNull().default("[]"),
   request:         text("request").notNull().default("{}"),
   upstream:        text("upstream").notNull().default("{}"),
-  output_schema:   text("output_schema").notNull().default("[]"),
-  field_mappings:  text("field_mappings").notNull().default("[]"),
-  sample_response: text("sample_response"),
+  output_schema:    text("output_schema").notNull().default("[]"),
+  field_mappings:   text("field_mappings").notNull().default("[]"),
+  /** When true, upstream returns a root-level array; mappings applied per item */
+  output_array_mode: integer("output_array_mode", { mode: "boolean" }).notNull().default(false),
+  sample_response:  text("sample_response"),
 
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),

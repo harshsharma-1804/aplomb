@@ -355,8 +355,8 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     res.setHeader("X-Orchestrator-App", String(app.name));
     res.setHeader("X-Orchestrator-Version", app.base_path);
     res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
-    let transformed: Record<string, unknown>;
-    try { transformed = applyTransform(scriptResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+    let transformed: Record<string, unknown> | Record<string, unknown>[];
+    try { transformed = applyTransform(scriptResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode)); }
     catch { transformed = scriptResult.body as Record<string, unknown>; }
     res.status(status).json(transformed);
     writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: 0, total_latency_ms: Date.now() - startTime, status, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
@@ -404,10 +404,10 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
       );
       const upstreamLatencyDb = Date.now() - upstreamStart;
 
-      let transformed: Record<string, unknown>;
+      let transformed: Record<string, unknown> | Record<string, unknown>[];
       let transformOutcome: RequestLogEntry["transform_outcome"] = "ok";
       try {
-        transformed = applyTransform(dbResult.data, endpoint.output_schema ?? [], endpoint.field_mappings ?? []);
+        transformed = applyTransform(dbResult.data, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode));
       } catch (err: any) {
         if (err?.code === "TRANSFORM_ARRAY_PATH_ERROR") {
           res.status(502).json({ error: err.message, code: "TRANSFORM_ARRAY_PATH_ERROR" });
@@ -544,8 +544,8 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
         res.setHeader("X-Orchestrator-App", String(app.name));
         res.setHeader("X-Orchestrator-Version", app.base_path);
         res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
-        let transformed: Record<string, unknown>;
-        try { transformed = applyTransform(earlyReturn.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        let transformed: Record<string, unknown> | Record<string, unknown>[];
+        try { transformed = applyTransform(earlyReturn.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode)); }
         catch { transformed = earlyReturn.body as Record<string, unknown>; }
         res.status(earlyReturn.status ?? 200).json(transformed);
         return;
@@ -620,8 +620,8 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
         res.setHeader("X-Orchestrator-App", String(app.name));
         res.setHeader("X-Orchestrator-Version", app.base_path);
         res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
-        let transformed: Record<string, unknown>;
-        try { transformed = applyTransform(postResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        let transformed: Record<string, unknown> | Record<string, unknown>[];
+        try { transformed = applyTransform(postResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode)); }
         catch { transformed = postResult.body as Record<string, unknown>; }
         res.status(finalStatus).json(transformed);
         writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: upstreamLatency, total_latency_ms: Date.now() - startTime, status: finalStatus, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
@@ -645,10 +645,10 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     return;
   }
 
-  let transformed: Record<string, unknown>;
+  let transformed: Record<string, unknown> | Record<string, unknown>[];
   let transformOutcome: RequestLogEntry["transform_outcome"] = "ok";
   try {
-    transformed = applyTransform(upstreamJson, endpoint.output_schema ?? [], endpoint.field_mappings ?? []);
+    transformed = applyTransform(upstreamJson, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode));
   } catch (err: any) {
     if (err?.code === "TRANSFORM_ARRAY_PATH_ERROR") {
       res.status(502).json({ error: err.message, code: "TRANSFORM_ARRAY_PATH_ERROR" });

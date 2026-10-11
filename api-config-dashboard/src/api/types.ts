@@ -256,6 +256,8 @@ export interface Endpoint {
   sample_response: { json: unknown; captured_at: string } | null;
   output_schema: SchemaField[];
   field_mappings: FieldMapping[];
+  /** When true, upstream returns a root-level array; mappings are applied per item */
+  output_array_mode?: boolean;
   script_mode: ScriptMode;
   script_file_id: string | null;
   created_at: string;

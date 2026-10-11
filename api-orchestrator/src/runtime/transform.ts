@@ -197,7 +197,12 @@ function applyMappings(
 export function applyTransform(
   upstreamJson: unknown,
   outputSchema: ISchemaField[],
-  fieldMappings: IFieldMapping[]
-): Record<string, unknown> {
+  fieldMappings: IFieldMapping[],
+  arrayMode = false
+): Record<string, unknown> | Record<string, unknown>[] {
+  if (arrayMode) {
+    const arr = Array.isArray(upstreamJson) ? upstreamJson : [upstreamJson];
+    return arr.map(item => applyMappings(item, outputSchema, fieldMappings));
+  }
   return applyMappings(upstreamJson, outputSchema, fieldMappings);
 }

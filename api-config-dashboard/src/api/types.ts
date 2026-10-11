@@ -152,7 +152,47 @@ export interface ForwardedHeader {
   required: boolean;
 }
 
+export type UpstreamType = "http" | "graphql" | "mongodb" | "postgresql" | "mysql";
+
+export type DbConnectionType = "mongodb" | "postgresql" | "mysql";
+
+/** Driver-level options stored in app_db_connections.options JSON */
+export interface DbConnOptions {
+  /** Require TLS — needed for Supabase, RDS, Atlas, PlanetScale, etc. */
+  ssl?: boolean;
+  /**
+   * Force IPv4 DNS resolution. Prevents ENETUNREACH on Docker hosts without
+   * IPv6 internet routing (e.g. connect ENETUNREACH 2406:…:5432).
+   */
+  force_ipv4?: boolean;
+}
+
+export interface AppDbConnection {
+  id: string;
+  app_id: string;
+  name: string;
+  db_type: DbConnectionType;
+  host: string;
+  database: string;
+  username: string | null;
+  secret_id: string | null;
+  options: DbConnOptions;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MongoOperation =
+  | "find" | "findOne" | "insertOne"
+  | "updateOne" | "updateMany"
+  | "deleteOne" | "deleteMany"
+  | "aggregate" | "count";
+
 export interface Upstream {
+  /** Provider type — determines which fields below are relevant */
+  upstream_type: UpstreamType;
+
+  // ── HTTP / GraphQL ────────────────────────────────────────────────────────
   url: string;
   method: string;
   forward_cookies: boolean;
@@ -168,6 +208,26 @@ export interface Upstream {
   forwarded_headers: ForwardedHeader[];
   /** When true all safe incoming request headers are forwarded to upstream */
   forward_all_headers: boolean;
+
+  // ── Database (mongodb / postgresql / mysql) ───────────────────────────────
+  /** Named connection from the app's DB Connection Registry (preferred) */
+  db_connection_id?: string;
+  /** Raw connection URL — used only when db_connection_id is not set; supports {{SECRET_KEY}} */
+  db_url?: string;
+  /** Enable TLS for raw db_url connections (named connections use their own options) */
+  db_ssl?: boolean;
+  /** Force IPv4 DNS — fixes ENETUNREACH on Docker hosts without IPv6 routing */
+  db_force_ipv4?: boolean;
+  /** MongoDB only: collection name */
+  db_collection?: string;
+  /** MongoDB only: operation */
+  db_operation?: MongoOperation;
+  /** MongoDB find/aggregate: max documents returned (default 100) */
+  db_result_limit?: number;
+  /** Query template with {pathParam} and {queryParam} placeholders */
+  db_query_template?: string;
+  /** PostgreSQL only: "rows" (array) or "row" (first row object) */
+  db_query_mode?: "rows" | "row";
 }
 
 export interface RequestConfig {
@@ -211,6 +271,8 @@ export interface Endpoint {
   sample_response: { json: unknown; captured_at: string } | null;
   output_schema: SchemaField[];
   field_mappings: FieldMapping[];
+  /** When true, upstream returns a root-level array; mappings are applied per item */
+  output_array_mode?: boolean;
   script_mode: ScriptMode;
   script_file_id: string | null;
   created_at: string;

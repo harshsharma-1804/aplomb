@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.0",
+    "@types/pg": "^8.23.1",
     "better-sqlite3": "^13.0.3",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
@@ -21,9 +22,12 @@
     "helmet": "^8.0.0",
     "jose": "^5.9.6",
     "jsonpath-plus": "^10.3.0",
+    "mongodb": "^6.21.0",
+    "mysql2": "^3.24.5",
     "nanoid": "^6.0.1",
     "nodemailer": "^10.0.12",
     "opossum": "^8.3.0",
+    "pg": "^8.23.1",
     "undici": "^7.3.0"
   },
   "devDependencies": {

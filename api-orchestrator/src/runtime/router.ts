@@ -20,6 +20,7 @@ import { handleAppOAuthRoute } from "../auth/oauthBroker.js";
 import { handleAppSignupRoute } from "../auth/appSignup.js";
 import { handleAppTwoFactorRoute } from "../auth/appTwoFactor.js";
 import { verify as argon2Verify } from "@node-rs/argon2";
+import { callDbUpstream, resolveQueryTemplate } from "./dbUpstream.js";
 
 export async function resolveEnvVars(template: string, app: any): Promise<string> {
   const matches = template.match(/\{\{([^}]+)\}\}/g);
@@ -354,13 +355,107 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     res.setHeader("X-Orchestrator-App", String(app.name));
     res.setHeader("X-Orchestrator-Version", app.base_path);
     res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
-    let transformed: Record<string, unknown>;
-    try { transformed = applyTransform(scriptResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+    let transformed: Record<string, unknown> | Record<string, unknown>[];
+    try { transformed = applyTransform(scriptResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode)); }
     catch { transformed = scriptResult.body as Record<string, unknown>; }
     res.status(status).json(transformed);
     writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: 0, total_latency_ms: Date.now() - startTime, status, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
     return;
   }
+
+  // ── DB / GraphQL upstream branch ─────────────────────────────────────────────
+  const upstreamType: string = (endpoint.upstream as any).upstream_type ?? "http";
+
+  if (upstreamType === "mongodb" || upstreamType === "postgresql" || upstreamType === "mysql") {
+    const dbConnectionId: string | undefined = (endpoint.upstream as any).db_connection_id;
+    const rawDbUrl: string = (endpoint.upstream as any).db_url ?? "";
+
+    if (!dbConnectionId && !rawDbUrl) {
+      res.status(500).json({ error: "Endpoint has no DB connection configured", code: "DB_CONNECTION_ERROR" });
+      return;
+    }
+
+    // Resolve URL for host-allowlist check (named connections resolve inline in callDbUpstream)
+    const resolvedDbUrl = dbConnectionId ? "" : await resolveEnvVars(rawDbUrl, app);
+
+    // Host allowlist — only check for raw URL; named connections are admin-managed
+    if (!dbConnectionId && resolvedDbUrl && !isHostAllowedForOrg(resolvedDbUrl, orgId)) {
+      res.status(403).json({ error: "Upstream DB host is not in your organization's allowlist", code: "HOST_NOT_ALLOWED" });
+      return;
+    }
+
+    let dbResult;
+    try {
+      const upstreamStart = Date.now();
+      dbResult = await callDbUpstream(
+        {
+          upstream_type:     upstreamType as any,
+          db_connection_id:  (endpoint.upstream as any).db_connection_id ?? undefined,
+          db_url:            resolvedDbUrl,
+          db_collection:     (endpoint.upstream as any).db_collection,
+          db_operation:      (endpoint.upstream as any).db_operation,
+          db_result_limit:   (endpoint.upstream as any).db_result_limit,
+          db_query_template: await resolveEnvVars((endpoint.upstream as any).db_query_template ?? "", app),
+          db_query_mode:     (endpoint.upstream as any).db_query_mode,
+        },
+        pathParams,
+        queryParams,
+        appId,
+      );
+      const upstreamLatencyDb = Date.now() - upstreamStart;
+
+      let transformed: Record<string, unknown> | Record<string, unknown>[];
+      let transformOutcome: RequestLogEntry["transform_outcome"] = "ok";
+      try {
+        transformed = applyTransform(dbResult.data, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode));
+      } catch (err: any) {
+        if (err?.code === "TRANSFORM_ARRAY_PATH_ERROR") {
+          res.status(502).json({ error: err.message, code: "TRANSFORM_ARRAY_PATH_ERROR" });
+          return;
+        }
+        transformOutcome = "error";
+        transformed = {};
+      }
+
+      res.setHeader("X-Orchestrator-App",     String(app.name));
+      res.setHeader("X-Orchestrator-Version", app.base_path);
+      res.setHeader("X-Orchestrator-Mode",    (app as any).mode ?? "prod");
+      res.status(200).json(transformed);
+      writeLog({
+        app: String(app.name), endpoint_path: endpoint.path, method,
+        upstream_latency_ms: upstreamLatencyDb, total_latency_ms: Date.now() - startTime,
+        status: 200, transform_outcome: transformOutcome,
+        provider_issuer: principal?.issuer ?? null,
+        sub_hash: principal ? hashSub(principal.sub) : null,
+        request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0,
+        response_body_size: Buffer.byteLength(JSON.stringify(transformed)),
+        input_validation_result: inputValidationResult, output_warning_count: 0,
+      });
+      return;
+    } catch (err: any) {
+      const statusMap: Record<string, number> = {
+        DB_CONNECTION_ERROR:      503,
+        DB_TEMPLATE_PARSE_ERROR:  400,
+        DB_TEMPLATE_PARAM_MISSING: 400,
+        DB_OPERATION_NOT_ALLOWED: 400,
+        DB_QUERY_ERROR:           400,
+        DB_RESULT_PARSE_ERROR:    502,
+      };
+      const code = err?.code ?? "DB_CONNECTION_ERROR";
+      res.status(statusMap[code] ?? 503).json({ error: err.message, code });
+      return;
+    }
+  }
+
+  if (upstreamType === "graphql") {
+    // GraphQL: validate body, call as HTTP POST, feed result through transform
+    if (!req.body?.query || typeof req.body.query !== "string") {
+      res.status(400).json({ error: "GraphQL requests must include a 'query' field in the request body", code: "VALIDATION_ERROR" });
+      return;
+    }
+  }
+
+  // ── HTTP / GraphQL HTTP path ──────────────────────────────────────────────
 
   const { body: upstreamBody } = hasBody && !endpoint.upstream.body_passthrough
     ? buildBody(
@@ -449,8 +544,8 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
         res.setHeader("X-Orchestrator-App", String(app.name));
         res.setHeader("X-Orchestrator-Version", app.base_path);
         res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
-        let transformed: Record<string, unknown>;
-        try { transformed = applyTransform(earlyReturn.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        let transformed: Record<string, unknown> | Record<string, unknown>[];
+        try { transformed = applyTransform(earlyReturn.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode)); }
         catch { transformed = earlyReturn.body as Record<string, unknown>; }
         res.status(earlyReturn.status ?? 200).json(transformed);
         return;
@@ -467,12 +562,18 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   let upstreamLatency = 0;
   try {
     const upstreamStart = Date.now();
+    // GraphQL: always POST, always JSON, body is the GQL query+variables
+    const effectiveMethod = upstreamType === "graphql" ? "POST" : endpoint.upstream.method;
+    const effectiveBody   = upstreamType === "graphql"
+      ? JSON.stringify({ query: req.body.query, variables: req.body.variables ?? null })
+      : upstreamBody;
+
     upstreamResult = await callUpstream(
       endpoint as any,
       resolvedUrl,
-      endpoint.upstream.method,
+      effectiveMethod,
       upstreamHeaders,
-      upstreamBody,
+      effectiveBody,
       idempotencyKey
     );
     upstreamLatency = Date.now() - upstreamStart;
@@ -519,8 +620,8 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
         res.setHeader("X-Orchestrator-App", String(app.name));
         res.setHeader("X-Orchestrator-Version", app.base_path);
         res.setHeader("X-Orchestrator-Mode", (app as any).mode ?? "prod");
-        let transformed: Record<string, unknown>;
-        try { transformed = applyTransform(postResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? []); }
+        let transformed: Record<string, unknown> | Record<string, unknown>[];
+        try { transformed = applyTransform(postResult.body, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode)); }
         catch { transformed = postResult.body as Record<string, unknown>; }
         res.status(finalStatus).json(transformed);
         writeLog({ app: String(app.name), endpoint_path: endpoint.path, method, upstream_latency_ms: upstreamLatency, total_latency_ms: Date.now() - startTime, status: finalStatus, transform_outcome: "ok", provider_issuer: principal?.issuer ?? null, sub_hash: principal ? hashSub(principal.sub) : null, request_body_size: req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0, response_body_size: Buffer.byteLength(JSON.stringify(transformed)), input_validation_result: inputValidationResult, output_warning_count: 0 });
@@ -544,10 +645,10 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
     return;
   }
 
-  let transformed: Record<string, unknown>;
+  let transformed: Record<string, unknown> | Record<string, unknown>[];
   let transformOutcome: RequestLogEntry["transform_outcome"] = "ok";
   try {
-    transformed = applyTransform(upstreamJson, endpoint.output_schema ?? [], endpoint.field_mappings ?? []);
+    transformed = applyTransform(upstreamJson, endpoint.output_schema ?? [], endpoint.field_mappings ?? [], Boolean(endpoint.output_array_mode));
   } catch (err: any) {
     if (err?.code === "TRANSFORM_ARRAY_PATH_ERROR") {
       res.status(502).json({ error: err.message, code: "TRANSFORM_ARRAY_PATH_ERROR" });

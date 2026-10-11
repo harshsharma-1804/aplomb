@@ -152,7 +152,19 @@ export interface ForwardedHeader {
   required: boolean;
 }
 
+export type UpstreamType = "http" | "graphql" | "mongodb" | "postgresql" | "mysql";
+
+export type MongoOperation =
+  | "find" | "findOne" | "insertOne"
+  | "updateOne" | "updateMany"
+  | "deleteOne" | "deleteMany"
+  | "aggregate" | "count";
+
 export interface Upstream {
+  /** Provider type — determines which fields below are relevant */
+  upstream_type: UpstreamType;
+
+  // ── HTTP / GraphQL ────────────────────────────────────────────────────────
   url: string;
   method: string;
   forward_cookies: boolean;
@@ -168,6 +180,20 @@ export interface Upstream {
   forwarded_headers: ForwardedHeader[];
   /** When true all safe incoming request headers are forwarded to upstream */
   forward_all_headers: boolean;
+
+  // ── Database (mongodb / postgresql / mysql) ───────────────────────────────
+  /** Connection URL — supports {{SECRET_KEY}} and {{ENV_VAR}} substitution */
+  db_url?: string;
+  /** MongoDB only: collection name */
+  db_collection?: string;
+  /** MongoDB only: operation */
+  db_operation?: MongoOperation;
+  /** MongoDB find/aggregate: max documents returned (default 100) */
+  db_result_limit?: number;
+  /** Query template with {pathParam} and {queryParam} placeholders */
+  db_query_template?: string;
+  /** PostgreSQL only: "rows" (array) or "row" (first row object) */
+  db_query_mode?: "rows" | "row";
 }
 
 export interface RequestConfig {

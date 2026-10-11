@@ -39,6 +39,10 @@ export const config = {
 
   db: {
     path: optional("DB_PATH", "./data/orchestrator.db"),
+    // External DB upstream pool settings
+    maxPoolSize:      optionalNumber("DB_MAX_POOL_SIZE", 5),
+    connectTimeoutMs: optionalNumber("DB_CONNECT_TIMEOUT_MS", 10_000),
+    queryTimeoutMs:   optionalNumber("DB_QUERY_TIMEOUT_MS", 30_000),
   },
 
   // [KMS candidate] — session signing secret

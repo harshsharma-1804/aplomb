@@ -4,110 +4,146 @@ import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../..
 
 interface Props { appId: string; endpoint: Endpoint; app: App | null; }
 
+// upstreamRequest is either the HTTP shape or the DB shape
+interface HttpUpstreamRequest {
+  url: string;
+  method: string;
+  headers?: Record<string, string>;
+  body?: string | null;
+}
+interface DbUpstreamRequest {
+  db_type: string;
+  db_url_masked: string;
+  operation?: string;
+  collection?: string;
+  resolved_query: string;
+}
+interface ScriptUpstreamRequest {
+  mode: string;
+  script: string;
+}
+
 interface TestResult {
-  upstreamRequest?: { url: string; method: string; headers?: Record<string, string>; body?: string | null };
+  upstreamRequest?: HttpUpstreamRequest | DbUpstreamRequest | ScriptUpstreamRequest;
   upstream?: unknown;
   transformed?: unknown;
   validation?: Array<{ field_path: string; status: string; value?: unknown }>;
   transformError?: string | null;
   upstreamStatus?: number;
   error?: string;
+  scriptLogs?: Array<{ level: string; message: string; ts: string }>;
+}
+
+const DB_TYPE_ICONS: Record<string, string> = { mongodb: "🍃", postgresql: "🐘", mysql: "🐬", graphql: "◈" };
+const DB_TYPE_LABELS: Record<string, string> = { mongodb: "MongoDB", postgresql: "PostgreSQL", mysql: "MySQL", graphql: "GraphQL" };
+
+function isDbUpstreamReq(r: unknown): r is DbUpstreamRequest {
+  return typeof r === "object" && r !== null && "db_type" in r;
+}
+function isScriptUpstreamReq(r: unknown): r is ScriptUpstreamRequest {
+  return typeof r === "object" && r !== null && "mode" in r;
 }
 
 export function TestTab({ appId, endpoint, app }: Props) {
-  const [queryOverrides, setQueryOverrides]   = useState<Array<{ k: string; v: string }>>([]);
-  const [pathOverrides, setPathOverrides]     = useState<Record<string, string>>({});
-  const [requestBody, setRequestBody]         = useState("");
-  const [testHeaders, setTestHeaders]         = useState<Array<{ k: string; v: string }>>([]);
-  const [running, setRunning]                 = useState(false);
-  const [result, setResult]                   = useState<TestResult | null>(null);
-  const [error, setError]                     = useState("");
-  const [activePanel, setActivePanel]         = useState<"upstream_request" | "upstream_response" | "transformed" | "validation">("transformed");
+  const [queryOverrides, setQueryOverrides] = useState<Array<{ k: string; v: string }>>([]);
+  const [pathOverrides, setPathOverrides]   = useState<Record<string, string>>({});
+  const [requestBody, setRequestBody]       = useState("");
+  const [testHeaders, setTestHeaders]       = useState<Array<{ k: string; v: string }>>([]);
+  const [running, setRunning]               = useState(false);
+  const [result, setResult]                 = useState<TestResult | null>(null);
+  const [error, setError]                   = useState("");
+  const [activePanel, setActivePanel]       = useState<"upstream_request" | "upstream_response" | "transformed" | "validation">("transformed");
 
-  const isWriteMethod = ["POST","PUT","PATCH"].includes(endpoint.method);
+  const upstreamType: string = (endpoint.upstream as any)?.upstream_type ?? "http";
+  const isDbType   = upstreamType === "mongodb" || upstreamType === "postgresql" || upstreamType === "mysql";
+  const isGql      = upstreamType === "graphql";
+  const isWriteMethod = ["POST", "PUT", "PATCH"].includes(endpoint.method);
 
-  // Derive path param names from the path pattern itself.
-  // e.g. "/claims/{claimId}" → ["claimId"]
-  // This works even when endpoint.path_params[] is empty (not yet configured).
-  const derivedParamNames: string[] = (endpoint.path.match(/\{([^}]+)\}/g) ?? [])
-    .map(m => m.slice(1, -1));
-
-  // Prefer the configured path_params entries (they may have type/required info),
-  // fall back to derived names from the path pattern.
-  const configuredParams = endpoint.path_params ?? [];
-  const pathParams = derivedParamNames.map(name => {
-    const existing = configuredParams.find(p => p.name.toLowerCase() === name.toLowerCase());
-    return existing ?? { name, type: "string", required: true };
-  });
+  // Path param names derived from the path pattern
+  const derivedParamNames = (endpoint.path.match(/\{([^}]+)\}/g) ?? []).map(m => m.slice(1, -1));
+  const configuredParams  = endpoint.path_params ?? [];
+  const pathParams = derivedParamNames.map(name =>
+    configuredParams.find(p => p.name.toLowerCase() === name.toLowerCase()) ?? { name, type: "string", required: true }
+  );
   const hasPathParams = pathParams.length > 0;
 
-  // ── URL preview helpers ───────────────────────────────────────────────────
+  // ── URL / query preview helpers ───────────────────────────────────────────
   function substituteParams(template: string): string {
-    // Step 1: substitute {pathParam} — case-insensitive
     const lowerOverrides: Record<string, string> = {};
     for (const [k, v] of Object.entries(pathOverrides)) lowerOverrides[k.toLowerCase()] = v;
-
-    let result = template.replace(/\{([^}]+)\}/g, (match, name) => {
+    let out = template.replace(/\{([^}]+)\}/g, (match, name) => {
       const val = pathOverrides[name] ?? lowerOverrides[name.toLowerCase()];
-      return val ? val : match; // keep {param} if no value entered yet
+      return val ? val : match;
     });
-
-    // Step 2: resolve {{ENV_VAR}} for preview (secrets shown as [KEY])
-    result = result.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+    out = out.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
       const envVar = app?.app_env?.find(e => e.key === key);
       if (!envVar) return `{{${key}}}`;
       return envVar.value_type === "secret" ? `[${key}]` : (envVar.plain_value ?? `{{${key}}}`);
     });
-
-    return result;
+    return out;
   }
 
-  const upstreamUrlPreview = substituteParams(endpoint.upstream?.url ?? "");
-  const frontendUrlPreview = app
-    ? substituteParams(`${app.base_path}${endpoint.path}`)
-    : substituteParams(endpoint.path);
+  // DB: substitute {param} in query template for preview
+  function substituteQueryTemplate(): string {
+    const tmpl = (endpoint.upstream as any)?.db_query_template ?? "";
+    if (!tmpl) return "(empty)";
+    const allParams = { ...Object.fromEntries((endpoint.query_params ?? []).map(q => [q.frontend_param, ""])), ...pathOverrides };
+    let out = tmpl;
+    for (const [k, v] of Object.entries(pathOverrides)) {
+      out = out.replaceAll(`{${k}}`, v || `{${k}}`);
+    }
+    for (const qp of (endpoint.query_params ?? [])) {
+      const val = queryOverrides.find(o => o.k === qp.frontend_param)?.v ?? "";
+      if (val) out = out.replaceAll(`{${qp.frontend_param}}`, val);
+    }
+    return out;
+  }
+
+  const frontendUrlPreview = substituteParams(app ? `${app.base_path}${endpoint.path}` : endpoint.path);
+  const upstreamUrlPreview = substituteParams((endpoint.upstream as any)?.url ?? "");
 
   async function run() {
     setRunning(true); setError(""); setResult(null);
     try {
-      // Build test_headers object (ignore rows with empty keys)
       const testHeadersObj: Record<string, string> = {};
       testHeaders.forEach(({ k, v }) => { if (k.trim()) testHeadersObj[k.trim()] = v; });
-
-      // Build query_params object for test
       const queryObj: Record<string, string> = {};
       queryOverrides.forEach(({ k, v }) => { if (k) queryObj[k] = v; });
 
       const body: Record<string, unknown> = {
-        path_params:  pathOverrides,
+        path_params: pathOverrides,
         query_params: queryObj,
         test_headers: testHeadersObj,
       };
 
-      if (isWriteMethod && requestBody.trim()) {
+      // For GraphQL, request_body must have { query, variables }
+      if (isGql && requestBody.trim()) {
+        try { body["request_body"] = JSON.parse(requestBody); }
+        catch { body["request_body"] = { query: requestBody }; }
+      } else if (isWriteMethod && !isDbType && !isGql && requestBody.trim()) {
         try { body["request_body"] = JSON.parse(requestBody); }
         catch { body["request_body"] = requestBody; }
       }
 
-      const res = await fetch(`/__config/apps/${appId}/endpoints/${endpoint._id}/test`, {
+      const resp = await fetch(`/__config/apps/${appId}/endpoints/${endpoint._id}/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(body),
       });
 
-      const data = await res.json() as TestResult;
-      if (!res.ok) { setError((data as any).error ?? `HTTP ${res.status}`); }
-      else { setResult(data); }
+      const data = await resp.json() as TestResult;
+      if (!resp.ok) { setError((data as any).error ?? `HTTP ${resp.status}`); }
+      else { setResult(data); setActivePanel("transformed"); }
     } catch (e) { setError(String(e)); }
     finally { setRunning(false); }
   }
 
   const panels = [
-    { key: "upstream_request",  label: "Upstream Request",   data: result?.upstreamRequest },
-    { key: "upstream_response", label: "Raw Upstream",        data: result?.upstream },
-    { key: "transformed",       label: "Transformed Output",  data: result?.transformed },
-    { key: "validation",        label: "Schema Validation",   data: result?.validation },
+    { key: "upstream_request",  label: isDbType ? "DB Request" : "Upstream Request" },
+    { key: "upstream_response", label: "Raw Result" },
+    { key: "transformed",       label: "Transformed Output" },
+    { key: "validation",        label: "Schema Validation" },
   ] as const;
 
   return (
@@ -115,33 +151,84 @@ export function TestTab({ appId, endpoint, app }: Props) {
       {error && <ErrorBanner message={error} />}
 
       <Card>
-        <SectionHead title="Test Request" action={<Btn size="sm" onClick={run} disabled={running}>{running ? "Running…" : "▶ Run Test"}</Btn>} />
+        <SectionHead
+          title="Test Request"
+          action={<Btn size="sm" onClick={run} disabled={running}>{running ? "Running…" : "▶ Run Test"}</Btn>}
+        />
         <div style={{ padding: 16 }}>
 
-          {/* URL Preview */}
+          {/* ── Request preview ── */}
           <div style={{ marginBottom: 16, padding: 12, background: "var(--selection)", borderRadius: C.radius, border: `1px solid var(--border)` }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Request Preview</div>
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What your client calls (via port 5000):</div>
+
+            {/* Frontend URL (always the same) */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What your client calls:</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
                 <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.method}</span>
                 <span style={{ color: C.text }}>localhost:5000{frontendUrlPreview}</span>
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What orchestrator calls upstream:</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
-                <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.upstream?.method ?? endpoint.method}</span>
-                <span style={{ color: C.muted, wordBreak: "break-all" }}>{upstreamUrlPreview || <em>Set upstream URL in the Upstream tab first</em>}</span>
+
+            {/* DB: show connection + query preview */}
+            {isDbType && (
+              <div>
+                <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>What orchestrator executes in the database:</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 16 }}>{DB_TYPE_ICONS[upstreamType] ?? "🗄"}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>{DB_TYPE_LABELS[upstreamType] ?? upstreamType}</span>
+                  {(endpoint.upstream as any)?.db_connection_id
+                    ? <span style={{ fontSize: 11, color: C.muted }}>via named connection</span>
+                    : <span style={{ fontSize: 11, color: C.muted, fontFamily: "monospace" }}>{substituteParams((endpoint.upstream as any)?.db_url ?? "(no URL set)")}</span>
+                  }
+                </div>
+                {upstreamType === "mongodb" && (
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
+                    <code style={{ marginRight: 10 }}>collection: {(endpoint.upstream as any)?.db_collection || "(not set)"}</code>
+                    <code>operation: {(endpoint.upstream as any)?.db_operation || "find"}</code>
+                  </div>
+                )}
+                {(endpoint.upstream as any)?.db_query_template && (
+                  <div>
+                    <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Query template (with current values substituted):</div>
+                    <pre style={{ margin: 0, padding: "6px 10px", background: "var(--code-bg)", color: "var(--code-text)", borderRadius: C.radius, fontSize: 11, overflowX: "auto", whiteSpace: "pre-wrap" }}>
+                      {substituteQueryTemplate()}
+                    </pre>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
+
+            {/* GraphQL: show endpoint + note about body */}
+            {isGql && (
+              <div>
+                <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What orchestrator POSTs to:</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
+                  <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>POST</span>
+                  <span style={{ color: C.muted }}>{upstreamUrlPreview || <em>Set GraphQL URL in Upstream tab</em>}</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Body from the "GraphQL Query" field below → forwarded as <code>{`{ query, variables }`}</code></div>
+              </div>
+            )}
+
+            {/* HTTP: show method + upstream URL */}
+            {!isDbType && !isGql && (
+              <div>
+                <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What orchestrator calls upstream:</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
+                  <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{(endpoint.upstream as any)?.method ?? endpoint.method}</span>
+                  <span style={{ color: C.muted, wordBreak: "break-all" }}>{upstreamUrlPreview || <em>Set upstream URL in the Upstream tab first</em>}</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Path Parameters — named inputs from endpoint.path_params */}
+          {/* ── Path params ── */}
           {hasPathParams && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".4px" }}>
-                Path Parameters — fill to resolve the URL above
+                Path Parameters
+                {isDbType && <span style={{ fontWeight: 400, textTransform: "none", marginLeft: 8 }}>— values are substituted as <code>{"{param}"}</code> placeholders in the query template</span>}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {pathParams.map(pp => (
@@ -151,7 +238,7 @@ export function TestTab({ appId, endpoint, app }: Props) {
                       style={inputStyle}
                       value={pathOverrides[pp.name] ?? ""}
                       onChange={e => setPathOverrides(p => ({ ...p, [pp.name]: e.target.value }))}
-                      placeholder={`enter value for ${pp.name}`}
+                      placeholder={`value for ${pp.name}`}
                       autoFocus={pathParams.indexOf(pp) === 0}
                     />
                   </div>
@@ -160,13 +247,22 @@ export function TestTab({ appId, endpoint, app }: Props) {
             </div>
           )}
 
-          {/* Query Params */}
+          {/* ── Query param overrides ── */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>Query Param Overrides</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>
+                Query Param Overrides
+                {isDbType && <span style={{ fontWeight: 400, textTransform: "none", marginLeft: 8 }}>— substituted as <code>{"{param}"}</code> in the query template</span>}
+              </span>
               <Btn size="sm" variant="ghost" onClick={() => setQueryOverrides(p => [...p, { k: "", v: "" }])}>+ Add</Btn>
             </div>
-            {queryOverrides.length === 0 && <p style={{ fontSize: 12, color: C.muted }}>No overrides — endpoint defaults will be used.</p>}
+            {queryOverrides.length === 0 && (
+              <p style={{ fontSize: 12, color: C.muted }}>
+                {(endpoint.query_params ?? []).length > 0
+                  ? `Configured params: ${(endpoint.query_params ?? []).map(q => q.frontend_param).join(", ")} — add overrides above to set their values for this test.`
+                  : "No query params configured. Add overrides for ad-hoc testing."}
+              </p>
+            )}
             {queryOverrides.map((qo, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0 8px", marginBottom: 6 }}>
                 <input style={inputStyle} value={qo.k} onChange={e => setQueryOverrides(p => p.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} placeholder="param name" />
@@ -176,76 +272,88 @@ export function TestTab({ appId, endpoint, app }: Props) {
             ))}
           </div>
 
-          {/* Test Headers — ad-hoc, not persisted */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>Test Headers</span>
-                <span style={{ fontSize: 10, color: C.muted, marginLeft: 8 }}>added to this test run only — not saved</span>
+          {/* ── Test headers (HTTP only) ── */}
+          {!isDbType && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>Test Headers</span>
+                  <span style={{ fontSize: 10, color: C.muted, marginLeft: 8 }}>added to this test run only</span>
+                </div>
+                <Btn size="sm" variant="ghost" onClick={() => setTestHeaders(h => [...h, { k: "", v: "" }])}>+ Add</Btn>
               </div>
-              <Btn size="sm" variant="ghost" onClick={() => setTestHeaders(h => [...h, { k: "", v: "" }])}>+ Add</Btn>
+              {testHeaders.length === 0 && (
+                <p style={{ fontSize: 12, color: C.muted }}>
+                  Add headers for this run — e.g. <code>Authorization: Bearer &lt;token&gt;</code>. Static headers from the Upstream tab are always included automatically.
+                </p>
+              )}
+              {testHeaders.map((h, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0 8px", marginBottom: 6 }}>
+                  <input style={inputStyle} value={h.k} onChange={e => setTestHeaders(p => p.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} placeholder="Header-Name" />
+                  <input style={inputStyle} value={h.v} onChange={e => setTestHeaders(p => p.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} placeholder="value" />
+                  <button onClick={() => setTestHeaders(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }}>×</button>
+                </div>
+              ))}
             </div>
-            {testHeaders.length === 0 && (
-              <p style={{ fontSize: 12, color: C.muted }}>
-                Add headers for this run — e.g. <code>Authorization: Bearer &lt;token&gt;</code> or <code>X-Correlation-ID: test-123</code>.
-                Static headers from the Upstream tab are always included automatically.
-              </p>
-            )}
-            {testHeaders.map((h, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0 8px", marginBottom: 6 }}>
-                <input style={inputStyle} value={h.k} onChange={e => setTestHeaders(p => p.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} placeholder="Header-Name" />
-                <input style={inputStyle} value={h.v} onChange={e => setTestHeaders(p => p.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} placeholder="header-value" />
-                <button onClick={() => setTestHeaders(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }}>×</button>
-              </div>
-            ))}
-          </div>
+          )}
 
-          {/* Request Body */}
-          {isWriteMethod && (
-            <Field label={`Request Body (${endpoint.request?.content_type ?? "application/json"})`}>
+          {/* ── Request body (HTTP POST/PUT/PATCH) ── */}
+          {isWriteMethod && !isDbType && (
+            <Field label={isGql ? "GraphQL Query (paste { query, variables } JSON or bare query string)" : `Request Body (${endpoint.request?.content_type ?? "application/json"})`}>
               <textarea value={requestBody} onChange={e => setRequestBody(e.target.value)}
-                style={{ ...inputStyle, height: 100, fontFamily: "monospace", fontSize: 11, resize: "vertical" }}
-                placeholder='{"key": "value"}' />
+                style={{ ...inputStyle, height: isGql ? 120 : 100, fontFamily: "monospace", fontSize: 11, resize: "vertical" }}
+                placeholder={isGql ? '{\n  "query": "{ __typename }",\n  "variables": {}\n}' : '{"key": "value"}'} />
             </Field>
           )}
 
-          {/* Info: which static headers will be sent */}
-          {(endpoint.upstream?.static_headers?.length ?? 0) > 0 && (
+          {/* ── Static headers hint (HTTP) ── */}
+          {!isDbType && (endpoint.upstream as any)?.static_headers?.length > 0 && (
             <div style={{ marginTop: 8, padding: "8px 12px", background: "var(--selection)", borderRadius: C.radius, fontSize: 12, color: "var(--primary)" }}>
-              <strong>Static headers from config (always included):</strong>{" "}
-              {endpoint.upstream.static_headers.map(sh => (
+              <strong>Static headers (always included):</strong>{" "}
+              {(endpoint.upstream as any).static_headers.map((sh: any) => (
                 <code key={sh.name} style={{ marginRight: 8 }}>{sh.name}: {sh.value}</code>
               ))}
             </div>
           )}
-          {(endpoint.upstream?.forwarded_headers?.length ?? 0) > 0 && (
+          {!isDbType && (endpoint.upstream as any)?.forwarded_headers?.length > 0 && (
             <div style={{ marginTop: 6, padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, fontSize: 12, color: "var(--warning)" }}>
-              <strong>Header forwarding rules (from real frontend — not applied in test):</strong>{" "}
-              {endpoint.upstream.forwarded_headers.map(fh => (
+              <strong>Header forwarding rules (not applied in test — simulate via Test Headers above):</strong>{" "}
+              {(endpoint.upstream as any).forwarded_headers.map((fh: any) => (
                 <code key={fh.from_name} style={{ marginRight: 8 }}>
-                  {fh.from_name}{fh.to_name && fh.to_name !== fh.from_name ? ` → ${fh.to_name}` : ""}
-                  {fh.required ? " (required)" : ""}
+                  {fh.from_name}{fh.to_name && fh.to_name !== fh.from_name ? ` → ${fh.to_name}` : ""}{fh.required ? " (required)" : ""}
                 </code>
               ))}
-              <span style={{ display: "block", marginTop: 4 }}>Use "Test Headers" above to simulate these for the test.</span>
+            </div>
+          )}
+
+          {/* ── DB hint ── */}
+          {isDbType && !(endpoint.upstream as any)?.db_connection_id && !(endpoint.upstream as any)?.db_url && (
+            <div style={{ marginTop: 8, padding: "8px 12px", background: "var(--warning-background)", borderRadius: C.radius, fontSize: 12, color: "var(--warning)" }}>
+              No database connection configured. Go to the <strong>Upstream tab</strong> and select a connection or enter a URL, then come back to test.
             </div>
           )}
         </div>
       </Card>
 
-      {/* Results */}
+      {/* ── Results ── */}
       {result && (
         <Card>
-          <SectionHead title={`Results — upstream returned HTTP ${result.upstreamStatus ?? "?"}`} />
+          <SectionHead
+            title={
+              isDbType
+                ? `Results — DB query returned ${Array.isArray(result.upstream) ? `${(result.upstream as any[]).length} row(s)` : "1 result"}`
+                : `Results — upstream returned HTTP ${result.upstreamStatus ?? "?"}`
+            }
+          />
           <div style={{ padding: "0 16px 4px 16px", display: "flex", gap: 0, borderBottom: `1px solid ${C.border}` }}>
-            {panels.map(panel => (
-              <button key={panel.key} onClick={() => setActivePanel(panel.key as any)} style={{
+            {panels.map(p => (
+              <button key={p.key} onClick={() => setActivePanel(p.key as any)} style={{
                 padding: "8px 12px", background: "none", border: "none", cursor: "pointer",
                 fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-                color: activePanel === panel.key ? C.primary : C.muted,
-                borderBottom: activePanel === panel.key ? `2px solid ${C.primary}` : "2px solid transparent",
+                color: activePanel === p.key ? C.primary : C.muted,
+                borderBottom: activePanel === p.key ? `2px solid ${C.primary}` : "2px solid transparent",
                 marginBottom: -1,
-              }}>{panel.label}</button>
+              }}>{p.label}</button>
             ))}
           </div>
           <div style={{ padding: 16 }}>
@@ -254,13 +362,23 @@ export function TestTab({ appId, endpoint, app }: Props) {
                 Transform error: {result.transformError}
               </div>
             )}
-            {panels.map(panel => panel.key === activePanel && (
-              panel.key === "validation"
-                ? <ValidationPanel key={panel.key} validation={result.validation} />
-                : <pre key={panel.key} style={{ margin: 0, padding: 12, background: "var(--code-bg)", color: "var(--code-text)", borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 400 }}>
-                    {JSON.stringify(panel.data, null, 2) ?? "No data"}
-                  </pre>
-            ))}
+
+            {activePanel === "upstream_request" && (
+              isDbUpstreamReq(result.upstreamRequest)
+                ? <DbRequestPanel req={result.upstreamRequest} />
+                : isScriptUpstreamReq(result.upstreamRequest)
+                  ? <pre style={codeStyle}>{JSON.stringify(result.upstreamRequest, null, 2)}</pre>
+                  : <HttpRequestPanel req={result.upstreamRequest as HttpUpstreamRequest} />
+            )}
+            {activePanel === "upstream_response" && (
+              <pre style={codeStyle}>{JSON.stringify(result.upstream, null, 2) ?? "No data"}</pre>
+            )}
+            {activePanel === "transformed" && (
+              <pre style={codeStyle}>{JSON.stringify(result.transformed, null, 2) ?? "No data"}</pre>
+            )}
+            {activePanel === "validation" && (
+              <ValidationPanel validation={result.validation} />
+            )}
           </div>
         </Card>
       )}
@@ -268,40 +386,125 @@ export function TestTab({ appId, endpoint, app }: Props) {
   );
 }
 
+// ── Shared code block style ───────────────────────────────────────────────────
+
+const codeStyle: React.CSSProperties = {
+  margin: 0, padding: 12,
+  background: "var(--code-bg)", color: "var(--code-text)",
+  borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 400,
+};
+
+// ── DB request panel ──────────────────────────────────────────────────────────
+
+function DbRequestPanel({ req }: { req: DbUpstreamRequest }) {
+  const icon = DB_TYPE_ICONS[req.db_type] ?? "🗄";
+  const label = DB_TYPE_LABELS[req.db_type] ?? req.db_type;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--code-bg)", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 22 }}>{icon}</span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{label}</div>
+          <div style={{ fontSize: 11, color: C.muted, fontFamily: "monospace" }}>{req.db_url_masked}</div>
+        </div>
+      </div>
+      {req.collection && (
+        <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", fontSize: 12, gap: 6 }}>
+          <span style={{ color: C.muted, fontWeight: 600 }}>Collection</span>
+          <code>{req.collection}</code>
+        </div>
+      )}
+      {req.operation && (
+        <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", fontSize: 12, gap: 6 }}>
+          <span style={{ color: C.muted, fontWeight: 600 }}>Operation</span>
+          <code>{req.operation}</code>
+        </div>
+      )}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 4 }}>
+          {req.db_type === "mongodb" ? "Resolved Query / Filter" : "Resolved SQL"}
+        </div>
+        <pre style={codeStyle}>{req.resolved_query}</pre>
+      </div>
+    </div>
+  );
+}
+
+// ── HTTP request panel ────────────────────────────────────────────────────────
+
+function HttpRequestPanel({ req }: { req?: HttpUpstreamRequest }) {
+  if (!req) return <p style={{ fontSize: 12, color: C.muted }}>No request data</p>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ background: "var(--selection)", color: C.primary, padding: "2px 8px", borderRadius: 4, fontWeight: 700, fontSize: 12 }}>{req.method}</span>
+        <code style={{ fontSize: 12, wordBreak: "break-all" }}>{req.url}</code>
+      </div>
+      {req.headers && Object.keys(req.headers).length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 4 }}>Headers</div>
+          <pre style={codeStyle}>{Object.entries(req.headers).map(([k, v]) => `${k}: ${v}`).join("\n")}</pre>
+        </div>
+      )}
+      {req.body && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 4 }}>Body</div>
+          <pre style={codeStyle}>{typeof req.body === "string" ? req.body : JSON.stringify(req.body, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Schema validation panel ───────────────────────────────────────────────────
+
 function ValidationPanel({ validation }: { validation?: TestResult["validation"] }) {
-  if (!validation || validation.length === 0) return <p style={{ fontSize: 12, color: C.muted }}>No validation data</p>;
+  if (!validation || validation.length === 0) return <p style={{ fontSize: 12, color: C.muted }}>No output schema defined — configure one in the Output tab to see validation here.</p>;
 
   const statusColor: Record<string, string> = {
-    matched: C.success ?? "var(--success)",
+    matched: "var(--success)",
     missing: "var(--danger)",
     nullable_absent: "var(--warning)",
     type_mismatch: "var(--warning)",
   };
 
+  const summary = {
+    matched: validation.filter(v => v.status === "matched").length,
+    missing: validation.filter(v => v.status === "missing").length,
+    nullable: validation.filter(v => v.status === "nullable_absent").length,
+  };
+
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-      <thead>
-        <tr style={{ background: "var(--surface-muted)" }}>
-          {["Field Path", "Status", "Value"].map(h => (
-            <th key={h} style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {validation.map((v, i) => (
-          <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-            <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11 }}>{v.field_path}</td>
-            <td style={{ padding: "6px 10px" }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: statusColor[v.status] ?? "var(--muted)" }}>
-                {v.status.replace(/_/g, " ").toUpperCase()}
-              </span>
-            </td>
-            <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11, color: "var(--muted)" }}>
-              {v.value !== undefined ? JSON.stringify(v.value) : "—"}
-            </td>
+    <div>
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 12 }}>
+        <span style={{ color: "var(--success)", fontWeight: 600 }}>✓ {summary.matched} matched</span>
+        {summary.missing > 0   && <span style={{ color: "var(--danger)",  fontWeight: 600 }}>✗ {summary.missing} missing</span>}
+        {summary.nullable > 0  && <span style={{ color: "var(--warning)", fontWeight: 600 }}>◌ {summary.nullable} nullable absent</span>}
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: "var(--surface-muted)" }}>
+            {["Field Path", "Status", "Value"].map(h => (
+              <th key={h} style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: C.muted, borderBottom: `1px solid ${C.border}` }}>{h}</th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {validation.map((v, i) => (
+            <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11 }}>{v.field_path}</td>
+              <td style={{ padding: "6px 10px" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: statusColor[v.status] ?? C.muted }}>
+                  {v.status.replace(/_/g, " ").toUpperCase()}
+                </span>
+              </td>
+              <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11, color: C.muted }}>
+                {v.value !== undefined ? JSON.stringify(v.value) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

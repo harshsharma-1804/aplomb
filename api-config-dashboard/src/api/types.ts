@@ -156,14 +156,6 @@ export type UpstreamType = "http" | "graphql" | "mongodb" | "postgresql" | "mysq
 
 export type DbConnectionType = "mongodb" | "postgresql" | "mysql";
 
-/** Driver-level options stored in app_db_connections.options JSON */
-export interface DbConnOptions {
-  /** Enable TLS/SSL — required for Supabase, RDS, Atlas, PlanetScale, etc. */
-  ssl?: boolean;
-  /** Force IPv4 DNS resolution — fixes ENETUNREACH on Docker hosts without IPv6 internet routing */
-  force_ipv4?: boolean;
-}
-
 export interface AppDbConnection {
   id: string;
   app_id: string;
@@ -173,7 +165,7 @@ export interface AppDbConnection {
   database: string;
   username: string | null;
   secret_id: string | null;
-  options: DbConnOptions;
+  options: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;

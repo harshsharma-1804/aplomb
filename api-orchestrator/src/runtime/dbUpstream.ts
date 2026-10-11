@@ -18,17 +18,6 @@ import { getDb } from "../db/client.js";
 
 export type DbUpstreamType = "mongodb" | "postgresql" | "mysql";
 
-/**
- * Driver-level connection options stored in app_db_connections.options JSON.
- * ssl:         require TLS (needed for Supabase, RDS, Mongo Atlas, etc.)
- * force_ipv4:  pass family:4 / ipv4only to the driver to avoid ENETUNREACH on
- *              Docker hosts where IPv6 is not routed to the internet.
- */
-export interface DbConnOptions {
-  ssl?:        boolean;
-  force_ipv4?: boolean;
-}
-
 export interface DbEndpointConfig {
   upstream_type:      DbUpstreamType;
   /** Named connection ID (from app_db_connections). When set, db_url is ignored. */
@@ -72,7 +61,7 @@ export function buildConnectionUrl(
  * Resolves the effective DB URL for a request — either from a named connection
  * (db_connection_id) or from the already-resolved db_url on the endpoint config.
  */
-export function resolveDbUrl(cfg: DbEndpointConfig, appId: string): { url: string; opts: DbConnOptions } {
+export function resolveDbUrl(cfg: DbEndpointConfig, appId: string): string {
   if (cfg.db_connection_id) {
     const conn = appDbConnectionRepo.findByIdAndApp(getDb(), cfg.db_connection_id, appId);
     if (!conn) {
@@ -81,17 +70,12 @@ export function resolveDbUrl(cfg: DbEndpointConfig, appId: string): { url: strin
         { code: "DB_CONNECTION_ERROR" }
       );
     }
-    const rawOpts: DbConnOptions = (conn.options ?? {}) as DbConnOptions;
-    return {
-      url:  buildConnectionUrl(conn.db_type as DbUpstreamType, conn.host, conn.database, conn.username, conn.secret_id),
-      opts: rawOpts,
-    };
+    return buildConnectionUrl(conn.db_type as DbUpstreamType, conn.host, conn.database, conn.username, conn.secret_id);
   }
   if (!cfg.db_url) {
     throw Object.assign(new Error("No DB connection configured on this endpoint"), { code: "DB_CONNECTION_ERROR" });
   }
-  // Raw db_url: no named connection so no stored options — caller can't set opts here
-  return { url: cfg.db_url, opts: {} };
+  return cfg.db_url;
 }
 
 export interface DbUpstreamResult {
@@ -130,27 +114,22 @@ const mongoClients = new Map<string, import("mongodb").MongoClient>();
 const pgPools      = new Map<string, import("pg").Pool>();
 const mysqlPools   = new Map<string, import("mysql2/promise").Pool>();
 
-function urlKey(resolvedUrl: string, opts?: DbConnOptions): string {
-  const suffix = `ssl=${opts?.ssl ?? false}:ipv4=${opts?.force_ipv4 ?? false}`;
-  return createHash("sha256").update(resolvedUrl + "|" + suffix).digest("hex");
+function urlKey(resolvedUrl: string): string {
+  return createHash("sha256").update(resolvedUrl).digest("hex");
 }
 
 // ── MongoDB pool ──────────────────────────────────────────────────────────────
 
-async function getMongoClient(resolvedUrl: string, opts?: DbConnOptions): Promise<import("mongodb").MongoClient> {
-  const key = urlKey(resolvedUrl, opts);
+async function getMongoClient(resolvedUrl: string): Promise<import("mongodb").MongoClient> {
+  const key = urlKey(resolvedUrl);
   if (mongoClients.has(key)) return mongoClients.get(key)!;
 
   const { MongoClient } = await import("mongodb");
   const client = new MongoClient(resolvedUrl, {
-    maxPoolSize:              config.db.maxPoolSize,
-    connectTimeoutMS:         config.db.connectTimeoutMs,
+    maxPoolSize:        config.db.maxPoolSize,
+    connectTimeoutMS:   config.db.connectTimeoutMs,
     serverSelectionTimeoutMS: config.db.connectTimeoutMs,
-    socketTimeoutMS:          config.db.queryTimeoutMs,
-    // force_ipv4: pass family=4 so DNS never picks AAAA records
-    ...(opts?.force_ipv4 ? { family: 4 } : {}),
-    // ssl: enable TLS (Atlas, DocumentDB, etc.)
-    ...(opts?.ssl ? { tls: true } : {}),
+    socketTimeoutMS:    config.db.queryTimeoutMs,
   });
   await client.connect();
   mongoClients.set(key, client);
@@ -159,24 +138,17 @@ async function getMongoClient(resolvedUrl: string, opts?: DbConnOptions): Promis
 
 // ── PostgreSQL pool ───────────────────────────────────────────────────────────
 
-async function getPgPool(resolvedUrl: string, opts?: DbConnOptions): Promise<import("pg").Pool> {
-  const key = urlKey(resolvedUrl, opts);
+async function getPgPool(resolvedUrl: string): Promise<import("pg").Pool> {
+  const key = urlKey(resolvedUrl);
   if (pgPools.has(key)) return pgPools.get(key)!;
 
   const { Pool } = await import("pg");
   const pool = new Pool({
-    connectionString:                    resolvedUrl,
-    max:                                 config.db.maxPoolSize,
-    connectionTimeoutMillis:             config.db.connectTimeoutMs,
-    statement_timeout:                   config.db.queryTimeoutMs,
+    connectionString: resolvedUrl,
+    max:              config.db.maxPoolSize,
+    connectionTimeoutMillis: config.db.connectTimeoutMs,
+    statement_timeout:       config.db.queryTimeoutMs,
     idle_in_transaction_session_timeout: config.db.queryTimeoutMs,
-    // force_ipv4: Node's net.connect family option — prevents picking IPv6 addresses
-    ...(opts?.force_ipv4 ? { family: 4 } : {}),
-    // ssl: allow self-signed certs (Supabase, RDS with self-signed, etc.)
-    // Set rejectUnauthorized:false so Supabase's cert chain is accepted.
-    // For stricter setups, users can add a CA cert via env — this matches
-    // what the Supabase JS client does by default.
-    ...(opts?.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
   });
   pgPools.set(key, pool);
   return pool;
@@ -184,8 +156,8 @@ async function getPgPool(resolvedUrl: string, opts?: DbConnOptions): Promise<imp
 
 // ── MySQL pool ────────────────────────────────────────────────────────────────
 
-async function getMysqlPool(resolvedUrl: string, opts?: DbConnOptions): Promise<import("mysql2/promise").Pool> {
-  const key = urlKey(resolvedUrl, opts);
+async function getMysqlPool(resolvedUrl: string): Promise<import("mysql2/promise").Pool> {
+  const key = urlKey(resolvedUrl);
   if (mysqlPools.has(key)) return mysqlPools.get(key)!;
 
   const mysql2 = await import("mysql2/promise");
@@ -193,10 +165,6 @@ async function getMysqlPool(resolvedUrl: string, opts?: DbConnOptions): Promise<
     uri:             resolvedUrl,
     connectionLimit: config.db.maxPoolSize,
     connectTimeout:  config.db.connectTimeoutMs,
-    // force_ipv4: mysql2 supports the 'family' option (4 = IPv4 only)
-    ...(opts?.force_ipv4 ? { family: 4 } : {}),
-    // ssl: enable TLS without verifying the cert chain (matches mysql2 defaults for managed DBs)
-    ...(opts?.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
   });
   mysqlPools.set(key, pool);
   return pool;
@@ -295,8 +263,7 @@ function mongoSafeValue(v: unknown): unknown {
 async function executeMongo(
   resolvedUrl: string,
   cfg: DbEndpointConfig,
-  resolvedTemplate: string,
-  opts?: DbConnOptions
+  resolvedTemplate: string
 ): Promise<unknown> {
   const operation = (cfg.db_operation ?? "find").toLowerCase();
   if (!ALLOWED_MONGO_OPS.has(operation)) {
@@ -308,7 +275,7 @@ async function executeMongo(
 
   let client: import("mongodb").MongoClient;
   try {
-    client = await getMongoClient(resolvedUrl, opts);
+    client = await getMongoClient(resolvedUrl);
   } catch (e: any) {
     throw Object.assign(new Error(`MongoDB connection failed: ${e.message}`), { code: "DB_CONNECTION_ERROR" });
   }
@@ -389,12 +356,11 @@ async function executePg(
   resolvedUrl: string,
   cfg: DbEndpointConfig,
   sql: string,
-  values: string[],
-  opts?: DbConnOptions
+  values: string[]
 ): Promise<unknown> {
   let pool: import("pg").Pool;
   try {
-    pool = await getPgPool(resolvedUrl, opts);
+    pool = await getPgPool(resolvedUrl);
   } catch (e: any) {
     throw Object.assign(new Error(`PostgreSQL connection failed: ${e.message}`), { code: "DB_CONNECTION_ERROR" });
   }
@@ -417,12 +383,11 @@ async function executeMysql(
   resolvedUrl: string,
   _cfg: DbEndpointConfig,
   sql: string,
-  values: string[],
-  opts?: DbConnOptions
+  values: string[]
 ): Promise<unknown> {
   let pool: import("mysql2/promise").Pool;
   try {
-    pool = await getMysqlPool(resolvedUrl, opts);
+    pool = await getMysqlPool(resolvedUrl);
   } catch (e: any) {
     throw Object.assign(new Error(`MySQL connection failed: ${e.message}`), { code: "DB_CONNECTION_ERROR" });
   }
@@ -450,7 +415,7 @@ export async function callDbUpstream(
   queryParams: Record<string, string>,
   appId: string,
 ): Promise<DbUpstreamResult> {
-  const { url: resolvedUrl, opts } = resolveDbUrl(cfg, appId);
+  const resolvedUrl = resolveDbUrl(cfg, appId);
   const dbType = cfg.upstream_type;
   const template = cfg.db_query_template ?? "";
 
@@ -475,23 +440,23 @@ export async function callDbUpstream(
   const { resolved, values } = resolveQueryTemplate(template, pathParams, queryParams, dbType);
 
   const upstreamRequest = {
-    db_type:        dbType,
-    db_url_masked:  maskDbUrl(resolvedUrl),
-    operation:      cfg.db_operation,
-    collection:     cfg.db_collection,
+    db_type:       dbType,
+    db_url_masked: maskDbUrl(resolvedUrl),
+    operation:     cfg.db_operation,
+    collection:    cfg.db_collection,
     resolved_query: resolved || "(empty — all documents)",
   };
 
   let data: unknown;
 
   if (dbType === "mongodb") {
-    data = await executeMongo(resolvedUrl, cfg, resolved, opts);
+    data = await executeMongo(resolvedUrl, cfg, resolved);
   } else if (dbType === "postgresql") {
     if (!resolved.trim()) throw Object.assign(new Error("SQL query template is empty"), { code: "DB_TEMPLATE_PARSE_ERROR" });
-    data = await executePg(resolvedUrl, cfg, resolved, values, opts);
+    data = await executePg(resolvedUrl, cfg, resolved, values);
   } else if (dbType === "mysql") {
     if (!resolved.trim()) throw Object.assign(new Error("SQL query template is empty"), { code: "DB_TEMPLATE_PARSE_ERROR" });
-    data = await executeMysql(resolvedUrl, cfg, resolved, values, opts);
+    data = await executeMysql(resolvedUrl, cfg, resolved, values);
   } else {
     throw Object.assign(new Error(`Unsupported upstream_type: ${dbType}`), { code: "DB_CONNECTION_ERROR" });
   }

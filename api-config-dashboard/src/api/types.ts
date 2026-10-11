@@ -156,6 +156,17 @@ export type UpstreamType = "http" | "graphql" | "mongodb" | "postgresql" | "mysq
 
 export type DbConnectionType = "mongodb" | "postgresql" | "mysql";
 
+/** Driver-level options stored in app_db_connections.options JSON */
+export interface DbConnOptions {
+  /** Require TLS — needed for Supabase, RDS, Atlas, PlanetScale, etc. */
+  ssl?: boolean;
+  /**
+   * Force IPv4 DNS resolution. Prevents ENETUNREACH on Docker hosts without
+   * IPv6 internet routing (e.g. connect ENETUNREACH 2406:…:5432).
+   */
+  force_ipv4?: boolean;
+}
+
 export interface AppDbConnection {
   id: string;
   app_id: string;
@@ -165,7 +176,7 @@ export interface AppDbConnection {
   database: string;
   username: string | null;
   secret_id: string | null;
-  options: Record<string, unknown>;
+  options: DbConnOptions;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -203,6 +214,10 @@ export interface Upstream {
   db_connection_id?: string;
   /** Raw connection URL — used only when db_connection_id is not set; supports {{SECRET_KEY}} */
   db_url?: string;
+  /** Enable TLS for raw db_url connections (named connections use their own options) */
+  db_ssl?: boolean;
+  /** Force IPv4 DNS — fixes ENETUNREACH on Docker hosts without IPv6 routing */
+  db_force_ipv4?: boolean;
   /** MongoDB only: collection name */
   db_collection?: string;
   /** MongoDB only: operation */

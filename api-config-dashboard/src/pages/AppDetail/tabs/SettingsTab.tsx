@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
-import type { App, AppEnvVar, ListResult, IdentityProvider, Secret, AppDbConnection, DbConnectionType } from "../../../api/types";
+import type { App, AppEnvVar, ListResult, IdentityProvider, Secret, AppDbConnection, DbConnectionType, DbConnOptions } from "../../../api/types";
 import { Card, SectionHead, Btn, Field, inputStyle, Badge, Confirm, C, Toggle, InfoTip } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
@@ -698,8 +698,9 @@ const DB_TYPE_ICONS: Record<DbConnectionType, string> = {
   mysql:      "🐬",
 };
 
-const EMPTY_CONN: Omit<AppDbConnection, "id" | "app_id" | "created_by" | "created_at" | "updated_at" | "options"> = {
+const EMPTY_CONN: Omit<AppDbConnection, "id" | "app_id" | "created_by" | "created_at" | "updated_at"> = {
   name: "", db_type: "postgresql", host: "", database: "", username: null, secret_id: null,
+  options: { ssl: false, force_ipv4: false },
 };
 
 function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: boolean }) {
@@ -731,7 +732,7 @@ function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: bo
   }
 
   function openEdit(c: AppDbConnection) {
-    setForm({ name: c.name, db_type: c.db_type, host: c.host, database: c.database, username: c.username, secret_id: c.secret_id });
+    setForm({ name: c.name, db_type: c.db_type, host: c.host, database: c.database, username: c.username, secret_id: c.secret_id, options: { ssl: Boolean(c.options?.ssl), force_ipv4: Boolean(c.options?.force_ipv4) } });
     setEditing(c.id);
     setError("");
     setShowPw(false);
@@ -803,7 +804,9 @@ function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: bo
                     <span style={{ marginRight: 10 }}><strong>{DB_TYPE_LABELS[c.db_type]}</strong></span>
                     <span style={{ marginRight: 10 }}>{c.host}/{c.database}</span>
                     {c.username && <span style={{ marginRight: 10 }}>user: {c.username}</span>}
-                    {c.secret_id && <span>🔒 {secretName(c.secret_id)}</span>}
+                    {c.secret_id && <span style={{ marginRight: 10 }}>🔒 {secretName(c.secret_id)}</span>}
+                    {c.options?.ssl        && <span style={{ marginRight: 6, color: C.success, fontWeight: 600 }}>TLS</span>}
+                    {c.options?.force_ipv4 && <span style={{ color: C.primary, fontWeight: 600 }}>IPv4</span>}
                   </div>
                 </div>
                 {!readonly && (
@@ -851,7 +854,8 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const set = (k: keyof typeof EMPTY_CONN, v: string | null) => setForm({ ...form, [k]: v });
+  const set    = (k: keyof typeof EMPTY_CONN, v: string | null) => setForm({ ...form, [k]: v });
+  const setOpt = (k: keyof DbConnOptions, v: boolean) => setForm({ ...form, options: { ...(form.options ?? {}), [k]: v } });
 
   const hostPlaceholder =
     form.db_type === "mongodb"    ? "localhost:27017" :
@@ -892,7 +896,33 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
           </select>
         </Field>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+      {/* ── Connection options ── */}
+      <div style={{ marginTop: 10, padding: "10px 14px", background: "var(--code-bg)", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Connection Options</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={Boolean(form.options?.ssl)} onChange={e => setOpt("ssl", e.target.checked)}
+              style={{ marginTop: 2, width: 15, height: 15, accentColor: C.primary, cursor: "pointer", flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>Enable TLS / SSL</div>
+              <div style={{ fontSize: 11, color: C.muted }}>Required for Supabase, AWS RDS, MongoDB Atlas, PlanetScale, and most managed cloud databases.</div>
+            </div>
+          </label>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={Boolean(form.options?.force_ipv4)} onChange={e => setOpt("force_ipv4", e.target.checked)}
+              style={{ marginTop: 2, width: 15, height: 15, accentColor: C.primary, cursor: "pointer", flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>Force IPv4</div>
+              <div style={{ fontSize: 11, color: C.muted }}>
+                Prevents <code>ENETUNREACH</code> when Docker has no IPv6 internet route and the host resolves to an AAAA record first.
+                Enable this if you see errors like <code>connect ENETUNREACH 2406:…:5432</code>.
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <Btn size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
         <Btn size="sm" onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save Connection"}</Btn>
       </div>

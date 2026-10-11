@@ -145,9 +145,11 @@ export const endpoints = sqliteTable("endpoints", {
   identity_args:   text("identity_args").notNull().default("[]"),
   request:         text("request").notNull().default("{}"),
   upstream:        text("upstream").notNull().default("{}"),
-  output_schema:   text("output_schema").notNull().default("[]"),
-  field_mappings:  text("field_mappings").notNull().default("[]"),
-  sample_response: text("sample_response"),
+  output_schema:    text("output_schema").notNull().default("[]"),
+  field_mappings:   text("field_mappings").notNull().default("[]"),
+  /** When true, upstream returns a root-level array; mappings applied per item */
+  output_array_mode: integer("output_array_mode", { mode: "boolean" }).notNull().default(false),
+  sample_response:  text("sample_response"),
 
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
@@ -411,6 +413,31 @@ export type Endpoint         = typeof endpoints.$inferSelect;
 export type NewEndpoint      = typeof endpoints.$inferInsert;
 export type AppScript        = typeof app_scripts.$inferSelect;
 export type NewAppScript     = typeof app_scripts.$inferInsert;
+// ── app_db_connections ────────────────────────────────────────────────────────
+// Named database connection registry per app. Stores type, host, database, and
+// a reference to the Secrets vault for the password. Full URL assembled at runtime.
+
+export const app_db_connections = sqliteTable("app_db_connections", {
+  id:         text("id").primaryKey(),
+  app_id:     text("app_id").notNull().references(() => apps.id),
+  name:       text("name").notNull(),
+  db_type:    text("db_type").notNull(),   // "mongodb" | "postgresql" | "mysql"
+  host:       text("host").notNull(),      // "localhost:27017" or "host:port"
+  database:   text("database").notNull(),  // database / default-db name
+  username:   text("username"),
+  secret_id:  text("secret_id"),           // secrets.id — password resolved at runtime
+  options:    text("options").notNull().default("{}"),  // extra driver options JSON
+  created_by: text("created_by"),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+}, (t) => [
+  uniqueIndex("idx_app_db_connections_unique").on(t.app_id, t.name),
+  index("idx_app_db_connections_app").on(t.app_id),
+]);
+
+export type AppDbConnection    = typeof app_db_connections.$inferSelect;
+export type NewAppDbConnection = typeof app_db_connections.$inferInsert;
+
 export type VersionHistory   = typeof version_history.$inferSelect;
 export type NewVersionHistory = typeof version_history.$inferInsert;
 export type CorsOrigin       = typeof cors_origins.$inferSelect;

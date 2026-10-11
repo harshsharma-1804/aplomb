@@ -19,6 +19,7 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 import { appSessionRepo } from "./db/repos/appSessionRepo.js";
 import { purgeLoginChallenges } from "./auth/appTwoFactor.js";
 import rootRouter from "./routes/index.route.js";
+import { closeAllPools } from "./runtime/dbUpstream.js";
 
 const app = express();
 
@@ -191,7 +192,7 @@ async function start(): Promise<void> {
     stopAllowlistCachePolling();
     stopCorsCachePolling();
     clearInterval(sessionPurge);
-    server.close(() => { closeDb(); process.exit(0); });
+    server.close(async () => { await closeAllPools(); closeDb(); process.exit(0); });
     setTimeout(() => process.exit(1), 10_000);
   }
 

@@ -51,9 +51,15 @@ export function isUpstreamAllowed(url: string): boolean {
   return true;
 }
 
+const ALLOWED_MONGO_OPS = [
+  "find", "findOne", "insertOne", "updateOne", "updateMany",
+  "deleteOne", "deleteMany", "aggregate", "count",
+];
+
 /**
  * Express middleware — reads upstream URL from req.body.upstream?.url
  * or req.body.url and rejects 400 if the host is not allowlisted.
+ * Also checks db_url for database upstream types and validates MongoDB operations.
  * Attach to any route that accepts an upstream URL in its body.
  */
 export function upstreamAllowlistGuard(
@@ -61,20 +67,53 @@ export function upstreamAllowlistGuard(
   res: Response,
   next: NextFunction
 ): void {
+  const upstreamType: string | undefined = req.body?.upstream?.upstream_type;
+
+  // ── HTTP / GraphQL upstream URL ────────────────────────────────────────────
   const url: string | undefined = req.body?.upstream?.url ?? req.body?.url;
-  if (!url) { next(); return; }
+  if (url && !url.includes("{{")) {
+    if (!isUpstreamAllowed(url)) {
+      res.status(400).json({
+        error: "Upstream host is not in your organization's allowlist. Add it under Tenant Settings → Host Allowlist.",
+        code: "HOST_NOT_ALLOWED",
+      });
+      return;
+    }
+  }
 
-  // URL contains {{ENV_VAR}} template syntax — the actual hostname is only known
-  // at runtime after env var resolution. Skip write-time check; the runtime
-  // router re-validates after resolving the template.
-  if (url.includes("{{")) { next(); return; }
+  // ── DB upstream URL (mongodb / postgresql / mysql) ─────────────────────────
+  const dbUrl: string | undefined = req.body?.upstream?.db_url;
+  if (
+    dbUrl && !dbUrl.includes("{{") &&
+    (upstreamType === "mongodb" || upstreamType === "postgresql" || upstreamType === "mysql")
+  ) {
+    if (!isUpstreamAllowed(dbUrl)) {
+      res.status(400).json({
+        error: "DB upstream host is not in your organization's allowlist. Add it under Tenant Settings → Host Allowlist.",
+        code: "HOST_NOT_ALLOWED",
+      });
+      return;
+    }
+  }
 
-  if (!isUpstreamAllowed(url)) {
-    res.status(400).json({
-      error: "Upstream host is not in your organization's allowlist. Add it under Tenant Settings → Host Allowlist.",
-      code: "HOST_NOT_ALLOWED",
-    });
-    return;
+  // ── MongoDB: validate operation + block $where at save time ───────────────
+  if (upstreamType === "mongodb") {
+    const op: string | undefined = req.body?.upstream?.db_operation;
+    if (op && !ALLOWED_MONGO_OPS.includes(op)) {
+      res.status(400).json({
+        error: `MongoDB operation "${op}" is not allowed. Allowed: ${ALLOWED_MONGO_OPS.join(", ")}`,
+        code: "DB_OPERATION_NOT_ALLOWED",
+      });
+      return;
+    }
+    const tmpl: string | undefined = req.body?.upstream?.db_query_template;
+    if (tmpl?.includes("$where")) {
+      res.status(400).json({
+        error: "$where is not allowed in MongoDB query templates",
+        code: "DB_OPERATION_NOT_ALLOWED",
+      });
+      return;
+    }
   }
 
   next();

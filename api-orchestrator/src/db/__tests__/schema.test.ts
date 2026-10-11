@@ -66,6 +66,7 @@ const DDL = `
     path_params TEXT NOT NULL DEFAULT '[]', query_params TEXT NOT NULL DEFAULT '[]',
     request TEXT NOT NULL DEFAULT '{}', upstream TEXT NOT NULL DEFAULT '{}',
     output_schema TEXT NOT NULL DEFAULT '[]', field_mappings TEXT NOT NULL DEFAULT '[]',
+    output_array_mode INTEGER NOT NULL DEFAULT 0,
     identity_args TEXT NOT NULL DEFAULT '[]',
     sample_response TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     UNIQUE(app_id, method, path)

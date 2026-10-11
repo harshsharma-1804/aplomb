@@ -20,6 +20,7 @@ export type CreateEndpointInput = {
   upstream?: Record<string, unknown>;
   output_schema?: unknown[];
   field_mappings?: unknown[];
+  output_array_mode?: boolean;
   sample_response?: unknown;
   created_by?: string;
 };
@@ -36,10 +37,11 @@ function serialize(row: typeof endpoints.$inferSelect) {
     identity_args:   JSON.parse(row.identity_args  ?? "[]"),
     request:         JSON.parse(row.request        ?? "{}"),
     upstream:        JSON.parse(row.upstream       ?? "{}"),
-    output_schema:   JSON.parse(row.output_schema  ?? "[]"),
-    field_mappings:  JSON.parse(row.field_mappings ?? "[]"),
-    sample_response: row.sample_response ? JSON.parse(row.sample_response) : null,
-    is_active:       Boolean(row.is_active),
+    output_schema:     JSON.parse(row.output_schema  ?? "[]"),
+    field_mappings:    JSON.parse(row.field_mappings ?? "[]"),
+    output_array_mode: Boolean(row.output_array_mode),
+    sample_response:   row.sample_response ? JSON.parse(row.sample_response) : null,
+    is_active:         Boolean(row.is_active),
   };
 }
 
@@ -63,9 +65,10 @@ export const endpointRepo = {
       identity_args:  JSON.stringify(input.identity_args  ?? []),
       request:        JSON.stringify(input.request        ?? {}),
       upstream:       JSON.stringify(input.upstream       ?? {}),
-      output_schema:  JSON.stringify(input.output_schema  ?? []),
-      field_mappings: JSON.stringify(input.field_mappings ?? []),
-      sample_response: input.sample_response ? JSON.stringify(input.sample_response) : null,
+      output_schema:     JSON.stringify(input.output_schema  ?? []),
+      field_mappings:    JSON.stringify(input.field_mappings ?? []),
+      output_array_mode: input.output_array_mode ?? false,
+      sample_response:   input.sample_response ? JSON.stringify(input.sample_response) : null,
       created_at: t,
       updated_at: t,
     }).run();
@@ -103,9 +106,10 @@ export const endpointRepo = {
     if ((input as any).identity_args !== undefined) patch["identity_args"] = JSON.stringify((input as any).identity_args);
     if (input.request        !== undefined) patch["request"]        = JSON.stringify(input.request);
     if (input.upstream       !== undefined) patch["upstream"]       = JSON.stringify(input.upstream);
-    if (input.output_schema  !== undefined) patch["output_schema"]  = JSON.stringify(input.output_schema);
-    if (input.field_mappings !== undefined) patch["field_mappings"] = JSON.stringify(input.field_mappings);
-    if (input.sample_response !== undefined) patch["sample_response"] = input.sample_response ? JSON.stringify(input.sample_response) : null;
+    if (input.output_schema     !== undefined) patch["output_schema"]     = JSON.stringify(input.output_schema);
+    if (input.field_mappings    !== undefined) patch["field_mappings"]    = JSON.stringify(input.field_mappings);
+    if (input.output_array_mode !== undefined) patch["output_array_mode"] = input.output_array_mode;
+    if (input.sample_response   !== undefined) patch["sample_response"]   = input.sample_response ? JSON.stringify(input.sample_response) : null;
     db.update(endpoints).set(patch).where(eq(endpoints.id, id)).run();
     return endpointRepo.findById(db, id);
   },

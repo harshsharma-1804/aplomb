@@ -66,3 +66,7 @@ Validated dirty bot tab/sidebar navigation, Stay draft retention, Discard naviga
 App-detail header groups Save, Export and Settings at the right edge, with Save first to keep the other two actions in place. Endpoint pencil stays last/rightmost; removed the empty Test Save spacer while preserving header height. Deployment to port 3004 remains on hold.
 
 Script Save placement: the shared Save changes control now appears immediately after the description field in the script editor toolbar. It retains change review and unsaved-navigation protection; Export and Settings remain in the app header. TypeScript and whitespace checks passed and browser inspection confirmed the toolbar control.
+
+## Target branch merge
+
+Merged sqlite-orchestrator-unification commit c4188ca (database upstream support) into the redesign. Resolved endpoint editor, app settings and stylesheet conflicts using the redesigned UI, retaining the target branch backend, migrations and database providers. Removed the duplicate legacy database connection section introduced by the automatic merge. Dashboard production build, backend TypeScript check, all 66 backend tests and whitespace checks passed. No Docker build or deployment performed.

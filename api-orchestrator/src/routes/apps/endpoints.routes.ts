@@ -10,6 +10,7 @@ import { callUpstream } from "../../runtime/upstream.js";
 import { applyTransform } from "../../runtime/transform.js";
 import { isHostAllowedForOrg } from "../../cache/allowlistCache.js";
 import { resolveEnvVars } from "../../runtime/router.js";
+import { callDbUpstream } from "../../runtime/dbUpstream.js";
 import { runScript } from "../../runtime/scriptRunner.js";
 import { buildContext } from "../../runtime/ctxBuilder.js";
 import { refreshToolRegistry } from "../../ai/toolRegistry.js";
@@ -154,6 +155,7 @@ router.put("/:endId/sample",        ...subUpdate("sample_response"));
 router.put("/:endId/mappings",      ...subUpdate("field_mappings"));
 router.put("/:endId/body-mappings", ...subUpdate("upstream"));
 router.put("/:endId/upstream",      ...subUpdate("upstream", upstreamAllowlistGuard));
+router.put("/:endId/array-mode",    ...subUpdate("output_array_mode"));
 
 // ── PUT /:endId/script-config ─────────────────────────────────────────────────
 
@@ -178,17 +180,34 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
   if (!ep || ep.app_id !== ps["appId"]!) { res.status(404).json({ error: "Endpoint not found", code: "NOT_FOUND" }); return; }
 
   const { path_params = {}, query_params = {}, request_body = null, test_headers = {} } = req.body ?? {};
+  const pp = path_params as Record<string, string>;
+  const orgId = "";
 
   try {
     const appDoc = appRepo.findById(db, ps["appId"]!);
     const scriptMode = ep.script_mode ?? "none";
     const scriptLogs: any[] = [];
-    const pp = path_params as Record<string, string>;
-    const orgId = "";
+    const upstreamType: string = (ep.upstream as any).upstream_type ?? "http";
 
+    // ── shared validation helper ──────────────────────────────────────────────
+    function buildValidation(schema: any[], transformed: any): any[] {
+      const validation: any[] = [];
+      function walk(fields: any[], data: any, prefix = "") {
+        for (const f of fields ?? []) {
+          const fullPath = prefix ? `${prefix}.${f.field_path}` : f.field_path;
+          const value = data?.[f.field_path];
+          const missing = value === undefined || value === null;
+          validation.push({ field_path: fullPath, status: missing && !f.nullable ? "missing" : missing ? "nullable_absent" : "matched", value: missing ? undefined : value });
+          if (f.type === "object" && f.item_schema) walk(f.item_schema, value, fullPath);
+        }
+      }
+      walk(schema, transformed);
+      return validation;
+    }
+
+    // ── script_full short-circuits everything ─────────────────────────────────
     if (scriptMode === "script_full") {
-      const scriptFileId = ep.script_file_id;
-      const scriptDoc = scriptFileId ? scriptRepo.findById(db, scriptFileId) : null;
+      const scriptDoc = ep.script_file_id ? scriptRepo.findById(db, ep.script_file_id) : null;
       if (!scriptDoc) { res.status(400).json({ error: "No script file assigned", code: "SCRIPT_LOAD_ERROR" }); return; }
       const ctx = buildContext(appDoc as any, orgId, request_body ?? {}, pp, query_params as any, null, scriptLogs);
       try {
@@ -196,14 +215,67 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
         if (!scriptResult || scriptResult.body === undefined) { res.status(502).json({ error: "Script did not return a valid response", code: "SCRIPT_INVALID_RESPONSE" }); return; }
         let transformed: any = {};
         let transformError: string | null = null;
-        try { transformed = applyTransform(scriptResult.body, ep.output_schema ?? [], ep.field_mappings ?? []); } catch (e: any) { transformError = e.message; }
-        res.json({ upstreamRequest: { mode: "script_full", script: scriptDoc.filename }, upstream: scriptResult.body, transformed, validation: [], transformError, upstreamStatus: scriptResult.status ?? 200, scriptLogs });
+        try { transformed = applyTransform(scriptResult.body, ep.output_schema ?? [], ep.field_mappings ?? [], Boolean(ep.output_array_mode)); } catch (e: any) { transformError = e.message; }
+        res.json({ upstreamRequest: { mode: "script_full", script: scriptDoc.filename }, upstream: scriptResult.body, transformed, validation: buildValidation(ep.output_schema ?? [], transformed), transformError, upstreamStatus: scriptResult.status ?? 200, scriptLogs });
       } catch (e: any) {
         res.status(502).json({ error: e.message, code: e.code ?? "SCRIPT_EXECUTION_ERROR", scriptLogs });
       }
       return;
     }
 
+    // ── DB upstream branch (mongodb / postgresql / mysql) ─────────────────────
+    if (upstreamType === "mongodb" || upstreamType === "postgresql" || upstreamType === "mysql") {
+      const rawDbUrl: string = (ep.upstream as any).db_url ?? "";
+      const resolvedDbUrl = rawDbUrl && appDoc ? await resolveEnvVars(rawDbUrl, appDoc as any) : rawDbUrl;
+      const resolvedTemplate = appDoc
+        ? await resolveEnvVars((ep.upstream as any).db_query_template ?? "", appDoc as any)
+        : ((ep.upstream as any).db_query_template ?? "");
+
+      let dbResult: any;
+      try {
+        dbResult = await callDbUpstream(
+          {
+            upstream_type:     upstreamType as any,
+            db_connection_id:  (ep.upstream as any).db_connection_id ?? undefined,
+            db_url:            resolvedDbUrl,
+            db_collection:     (ep.upstream as any).db_collection,
+            db_operation:      (ep.upstream as any).db_operation,
+            db_result_limit:   (ep.upstream as any).db_result_limit,
+            db_query_template: resolvedTemplate,
+            db_query_mode:     (ep.upstream as any).db_query_mode,
+          },
+          pp,
+          query_params as Record<string, string>,
+          ps["appId"]!,
+        );
+      } catch (e: any) {
+        const statusMap: Record<string, number> = {
+          DB_CONNECTION_ERROR: 503, DB_TEMPLATE_PARSE_ERROR: 400,
+          DB_TEMPLATE_PARAM_MISSING: 400, DB_OPERATION_NOT_ALLOWED: 400,
+          DB_QUERY_ERROR: 400, DB_RESULT_PARSE_ERROR: 502,
+        };
+        const code = e?.code ?? "DB_CONNECTION_ERROR";
+        res.status(statusMap[code] ?? 503).json({ error: e.message, code });
+        return;
+      }
+
+      let transformed: any = {};
+      let transformError: string | null = null;
+      try { transformed = applyTransform(dbResult.data, ep.output_schema ?? [], ep.field_mappings ?? [], Boolean(ep.output_array_mode)); } catch (e: any) { transformError = e.message; }
+
+      res.json({
+        upstreamRequest: dbResult.upstreamRequest,
+        upstream: dbResult.data,
+        transformed,
+        validation: buildValidation(ep.output_schema ?? [], transformed),
+        transformError,
+        upstreamStatus: 200,
+        scriptLogs,
+      });
+      return;
+    }
+
+    // ── HTTP / GraphQL upstream branch ────────────────────────────────────────
     let urlTemplate = (ep.upstream as any).url ?? "";
     if (appDoc) urlTemplate = await resolveEnvVars(urlTemplate, appDoc as any);
 
@@ -240,21 +312,25 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
     }
     for (const [k, v] of Object.entries(testHeadersObj)) { if (k) upstreamHeaders[k] = v; }
 
+    // GraphQL: always POST, pass query+variables from test body
+    const effectiveMethod = upstreamType === "graphql" ? "POST" : (ep.upstream as any).method;
     let upstreamBody: string | null = null;
-    if (request_body !== null && request_body !== undefined) {
+    if (upstreamType === "graphql") {
+      upstreamBody = JSON.stringify({ query: (request_body as any)?.query ?? "", variables: (request_body as any)?.variables ?? null });
+      upstreamHeaders["Content-Type"] = "application/json";
+    } else if (request_body !== null && request_body !== undefined) {
       upstreamBody = typeof request_body === "string" ? request_body : JSON.stringify(request_body);
       upstreamHeaders["Content-Type"] = (ep.upstream as any).body_content_type ?? "application/json";
     }
 
-    const upstreamRequestPreview = { url: resolvedUrl, method: (ep.upstream as any).method, headers: { ...upstreamHeaders }, body: upstreamBody };
-    const result = await callUpstream(ep as any, resolvedUrl, (ep.upstream as any).method, upstreamHeaders, upstreamBody, null);
+    const upstreamRequestPreview = { url: resolvedUrl, method: effectiveMethod, headers: { ...upstreamHeaders }, body: upstreamBody };
+    const result = await callUpstream(ep as any, resolvedUrl, effectiveMethod, upstreamHeaders, upstreamBody, null);
 
     let upstreamJson: unknown;
     try { upstreamJson = JSON.parse(result.body); } catch { upstreamJson = result.body; }
 
     if (scriptMode === "script_post" || scriptMode === "script_pre_post") {
-      const scriptFileId = ep.script_file_id;
-      const scriptDoc = scriptFileId ? scriptRepo.findById(db, scriptFileId) : null;
+      const scriptDoc = ep.script_file_id ? scriptRepo.findById(db, ep.script_file_id) : null;
       if (!scriptDoc) { res.status(400).json({ error: "No script file assigned", code: "SCRIPT_LOAD_ERROR" }); return; }
       const ctx = buildContext(appDoc as any, orgId, request_body ?? {}, pp, query_params as any, null, scriptLogs);
       try {
@@ -265,21 +341,9 @@ router.post("/:endId/test", requirePermission("view:any"), async (req, res) => {
 
     let transformed: any = {};
     let transformError: string | null = null;
-    try { transformed = applyTransform(upstreamJson, ep.output_schema ?? [], ep.field_mappings ?? []); } catch (e: any) { transformError = e.message; }
+    try { transformed = applyTransform(upstreamJson, ep.output_schema ?? [], ep.field_mappings ?? [], Boolean(ep.output_array_mode)); } catch (e: any) { transformError = e.message; }
 
-    const validation: any[] = [];
-    function walkSchema(fields: any[], obj: any, prefix = "") {
-      for (const f of fields ?? []) {
-        const fullPath = prefix ? `${prefix}.${f.field_path}` : f.field_path;
-        const value = obj?.[f.field_path];
-        const missing = value === undefined || value === null;
-        validation.push({ field_path: fullPath, status: missing && !f.nullable ? "missing" : missing ? "nullable_absent" : "matched", value: missing ? undefined : value });
-        if (f.type === "object" && f.item_schema) walkSchema(f.item_schema, value, fullPath);
-      }
-    }
-    walkSchema(ep.output_schema ?? [], transformed);
-
-    res.json({ upstreamRequest: upstreamRequestPreview, upstream: upstreamJson, transformed, validation, transformError, upstreamStatus: result.status, scriptLogs });
+    res.json({ upstreamRequest: upstreamRequestPreview, upstream: upstreamJson, transformed, validation: buildValidation(ep.output_schema ?? [], transformed), transformError, upstreamStatus: result.status, scriptLogs });
   } catch (err: any) {
     console.error("[test endpoint]", err);
     res.status(502).json({ error: err.message ?? "Test call failed", code: "TEST_UPSTREAM_ERROR" });

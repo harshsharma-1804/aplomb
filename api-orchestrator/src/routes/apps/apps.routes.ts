@@ -2,6 +2,7 @@ import { param } from "../../utils/params.js";
 import { Router } from "express";
 import { randomBytes } from "crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
+import { appDbConnectionRepo } from "../../db/repos/appDbConnectionRepo.js";
 import { getDb } from "../../db/client.js";
 import { appRepo } from "../../db/repos/appRepo.js";
 import { endpointRepo } from "../../db/repos/endpointRepo.js";
@@ -675,6 +676,78 @@ router.post("/:id/rollback", requirePermission("rollback"), (req, res) => {
   appRepo.update(db, appId, (snapshot.snapshot as any)?.app ?? {});
   refreshApp(appId);
   writeHistory(appId, "rollback", `Rolled back to snapshot from ${new Date(snapshot.created_at).toLocaleString()}`, req);
+  res.json({ success: true });
+});
+
+// ── DB Connections ─────────────────────────────────────────────────────────────
+
+router.get("/:id/db-connections", requirePermission("manage:apps"), (req, res) => {
+  const appId = param(req.params["id"]);
+  if (!appRepo.findById(getDb(), appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const list = appDbConnectionRepo.list(getDb(), appId);
+  res.json({ count: list.length, results: list });
+});
+
+router.post("/:id/db-connections", requirePermission("manage:apps"), (req, res) => {
+  const appId = param(req.params["id"]);
+  if (!appRepo.findById(getDb(), appId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
+  const { name, db_type, host, database, username, secret_id, options } = req.body ?? {};
+  if (!name || !db_type || !host || !database) {
+    res.status(400).json({ error: "name, db_type, host, and database are required", code: "VALIDATION_ERROR" }); return;
+  }
+  const VALID_TYPES = ["mongodb", "postgresql", "mysql"];
+  if (!VALID_TYPES.includes(db_type)) {
+    res.status(400).json({ error: `db_type must be one of: ${VALID_TYPES.join(", ")}`, code: "VALIDATION_ERROR" }); return;
+  }
+  try {
+    const conn = appDbConnectionRepo.create(getDb(), {
+      app_id: appId, name, db_type, host, database,
+      username: username ?? null, secret_id: secret_id ?? null,
+      options: options ?? {}, created_by: req.dashboardUser?.id,
+    });
+    writeHistory(appId, "modified", `DB connection created: ${conn.name}`, req);
+    res.status(201).json(conn);
+  } catch (e: any) {
+    if (e.message?.includes("UNIQUE")) { res.status(409).json({ error: "A connection with that name already exists for this app", code: "DUPLICATE_NAME" }); return; }
+    res.status(500).json({ error: e.message, code: "INTERNAL_ERROR" });
+  }
+});
+
+router.put("/:id/db-connections/:connId", requirePermission("manage:apps"), (req, res) => {
+  const appId  = param(req.params["id"]);
+  const connId = param(req.params["connId"]);
+  const conn = appDbConnectionRepo.findByIdAndApp(getDb(), connId, appId);
+  if (!conn) { res.status(404).json({ error: "Connection not found", code: "NOT_FOUND" }); return; }
+  const { name, db_type, host, database, username, secret_id, options } = req.body ?? {};
+  if (db_type) {
+    const VALID_TYPES = ["mongodb", "postgresql", "mysql"];
+    if (!VALID_TYPES.includes(db_type)) {
+      res.status(400).json({ error: `db_type must be one of: ${VALID_TYPES.join(", ")}`, code: "VALIDATION_ERROR" }); return;
+    }
+  }
+  try {
+    const updated = appDbConnectionRepo.update(getDb(), connId, {
+      name, db_type, host, database,
+      username: "username" in (req.body ?? {}) ? (username ?? null) : undefined,
+      secret_id: "secret_id" in (req.body ?? {}) ? (secret_id ?? null) : undefined,
+      options,
+    });
+    writeHistory(appId, "modified", `DB connection updated: ${updated?.name}`, req);
+    res.json(updated);
+  } catch (e: any) {
+    if (e.message?.includes("UNIQUE")) { res.status(409).json({ error: "A connection with that name already exists for this app", code: "DUPLICATE_NAME" }); return; }
+    res.status(500).json({ error: e.message, code: "INTERNAL_ERROR" });
+  }
+});
+
+router.delete("/:id/db-connections/:connId", requirePermission("manage:apps"), (req, res) => {
+  const appId  = param(req.params["id"]);
+  const connId = param(req.params["connId"]);
+  if (!appDbConnectionRepo.findByIdAndApp(getDb(), connId, appId)) {
+    res.status(404).json({ error: "Connection not found", code: "NOT_FOUND" }); return;
+  }
+  appDbConnectionRepo.delete(getDb(), connId);
+  writeHistory(appId, "modified", "DB connection deleted", req);
   res.json({ success: true });
 });
 

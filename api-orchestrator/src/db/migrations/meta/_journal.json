@@ -127,6 +127,13 @@
       "when": 1790598548895,
       "tag": "0017_app_frontend_key",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1790598548896,
+      "tag": "0018_app_db_connections",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
-import type { App, AppEnvVar, ListResult, IdentityProvider, Secret } from "../../../api/types";
+import type { App, AppEnvVar, ListResult, IdentityProvider, Secret, AppDbConnection, DbConnectionType } from "../../../api/types";
 import { Card, SectionHead, Btn, Field, inputStyle, Badge, Confirm, C, Toggle, InfoTip } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
@@ -23,6 +23,7 @@ export function SettingsTab({ app, appId, onAppUpdated, onDeleteApp, onCloneApp 
       <AuthSection       app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <AiExposeSection   app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <FrontendKeySection app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
+      <DbConnectionsSection appId={appId} readonly={readonly} />
       <EnvSection        app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
       <QuickActionsSection app={app} appId={appId} onSaved={onAppUpdated} onDelete={onDeleteApp} onClone={onCloneApp} readonly={readonly} />
     </div>
@@ -680,6 +681,222 @@ function FrontendKeySection({ app, appId, onSaved, readonly }: { app: App; appId
         )}
       </div>
     </Card>
+  );
+}
+
+// ── DB Connections Section ────────────────────────────────────────────────────
+
+const DB_TYPE_LABELS: Record<DbConnectionType, string> = {
+  mongodb:    "MongoDB",
+  postgresql: "PostgreSQL",
+  mysql:      "MySQL",
+};
+
+const DB_TYPE_ICONS: Record<DbConnectionType, string> = {
+  mongodb:    "🍃",
+  postgresql: "🐘",
+  mysql:      "🐬",
+};
+
+const EMPTY_CONN: Omit<AppDbConnection, "id" | "app_id" | "created_by" | "created_at" | "updated_at" | "options"> = {
+  name: "", db_type: "postgresql", host: "", database: "", username: null, secret_id: null,
+};
+
+function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: boolean }) {
+  const [connections, setConnections] = useState<AppDbConnection[]>([]);
+  const [secrets, setSecrets]         = useState<Secret[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [editing, setEditing]         = useState<string | null>(null); // id or "new"
+  const [form, setForm]               = useState({ ...EMPTY_CONN });
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState("");
+  const [deleteId, setDeleteId]       = useState<string | null>(null);
+  const [showPw, setShowPw]           = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<{ results: AppDbConnection[] }>(`/__config/apps/${appId}/db-connections`),
+      api.get<ListResult<Secret>>("/__config/admin/secrets"),
+    ]).then(([conns, secs]) => {
+      setConnections(conns.results);
+      setSecrets(secs.results);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [appId]);
+
+  function openNew() {
+    setForm({ ...EMPTY_CONN });
+    setEditing("new");
+    setError("");
+    setShowPw(false);
+  }
+
+  function openEdit(c: AppDbConnection) {
+    setForm({ name: c.name, db_type: c.db_type, host: c.host, database: c.database, username: c.username, secret_id: c.secret_id });
+    setEditing(c.id);
+    setError("");
+    setShowPw(false);
+  }
+
+  function cancelEdit() { setEditing(null); setError(""); }
+
+  async function saveConn() {
+    if (!form.name.trim() || !form.host.trim() || !form.database.trim()) {
+      setError("Name, host, and database are required."); return;
+    }
+    setSaving(true); setError("");
+    try {
+      if (editing === "new") {
+        const c = await api.post<AppDbConnection>(`/__config/apps/${appId}/db-connections`, form);
+        setConnections(cs => [...cs, c]);
+      } else {
+        const c = await api.put<AppDbConnection>(`/__config/apps/${appId}/db-connections/${editing}`, form);
+        setConnections(cs => cs.map(x => x.id === editing ? c : x));
+      }
+      setEditing(null);
+    } catch (e: any) { setError(String(e)); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteConn(id: string) {
+    try {
+      await api.del(`/__config/apps/${appId}/db-connections/${id}`);
+      setConnections(cs => cs.filter(c => c.id !== id));
+    } catch (e: any) { setError(String(e)); }
+    finally { setDeleteId(null); }
+  }
+
+  const secretName = (id: string | null) => id ? (secrets.find(s => s._id === id)?.name ?? id) : "—";
+
+  return (
+    <Card>
+      <SectionHead
+        title="Database Connections"
+        action={!readonly ? <Btn size="sm" variant="ghost" onClick={openNew}>+ Add Connection</Btn> : undefined}
+      />
+      <div style={{ padding: 16 }}>
+        <p style={{ fontSize: 12, color: C.muted, margin: "0 0 12px" }}>
+          Named database connections for this app. Endpoints can reference a connection by name instead of entering a raw URL — credentials are resolved from the Secrets vault at runtime.
+        </p>
+
+        {loading && <p style={{ fontSize: 12, color: C.muted }}>Loading…</p>}
+
+        {/* Connection list */}
+        {!loading && connections.length === 0 && editing !== "new" && (
+          <p style={{ fontSize: 12, color: C.muted }}>No connections yet. Add one to use it in endpoint Upstream configuration.</p>
+        )}
+
+        {connections.map(c => (
+          <div key={c.id} style={{ marginBottom: 8 }}>
+            {editing === c.id ? (
+              <ConnForm
+                form={form} setForm={setForm} secrets={secrets}
+                showPw={showPw} setShowPw={setShowPw}
+                saving={saving} error={error}
+                onSave={saveConn} onCancel={cancelEdit}
+              />
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: C.radius, border: `1px solid ${C.border}`, background: C.bg }}>
+                <span style={{ fontSize: 18 }}>{DB_TYPE_ICONS[c.db_type]}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                    <span style={{ marginRight: 10 }}><strong>{DB_TYPE_LABELS[c.db_type]}</strong></span>
+                    <span style={{ marginRight: 10 }}>{c.host}/{c.database}</span>
+                    {c.username && <span style={{ marginRight: 10 }}>user: {c.username}</span>}
+                    {c.secret_id && <span>🔒 {secretName(c.secret_id)}</span>}
+                  </div>
+                </div>
+                {!readonly && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn size="sm" variant="ghost" onClick={() => openEdit(c)}>Edit</Btn>
+                    <Btn size="sm" variant="danger" onClick={() => setDeleteId(c.id)}>Delete</Btn>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {editing === "new" && (
+          <ConnForm
+            form={form} setForm={setForm} secrets={secrets}
+            showPw={showPw} setShowPw={setShowPw}
+            saving={saving} error={error}
+            onSave={saveConn} onCancel={cancelEdit}
+          />
+        )}
+
+        {error && !editing && <p style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</p>}
+      </div>
+
+      {deleteId && (
+        <Confirm
+          message={`Delete connection "${connections.find(c => c.id === deleteId)?.name}"? Endpoints using it will stop working.`}
+          onConfirm={() => deleteConn(deleteId)}
+          onCancel={() => setDeleteId(null)}
+        />
+      )}
+    </Card>
+  );
+}
+
+function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, onSave, onCancel }: {
+  form: typeof EMPTY_CONN;
+  setForm: (f: typeof EMPTY_CONN) => void;
+  secrets: Secret[];
+  showPw: boolean;
+  setShowPw: (v: boolean) => void;
+  saving: boolean;
+  error: string;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const set = (k: keyof typeof EMPTY_CONN, v: string | null) => setForm({ ...form, [k]: v });
+
+  const hostPlaceholder =
+    form.db_type === "mongodb"    ? "localhost:27017" :
+    form.db_type === "postgresql" ? "localhost:5432"  :
+                                    "localhost:3306";
+
+  return (
+    <div style={{ padding: 14, borderRadius: C.radius, border: `1px solid ${C.primary}`, background: C.selection, marginBottom: 8 }}>
+      {error && <p style={{ fontSize: 12, color: C.danger, margin: "0 0 10px" }}>{error}</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: "0 10px" }}>
+        <Field label="Connection Name">
+          <input style={inputStyle} value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. claims-db-prod" autoFocus />
+        </Field>
+        <Field label="Type">
+          <select style={inputStyle} value={form.db_type} onChange={e => set("db_type", e.target.value as DbConnectionType)}>
+            <option value="mongodb">MongoDB</option>
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mysql">MySQL</option>
+          </select>
+        </Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
+        <Field label="Host" hint="host:port">
+          <input style={inputStyle} value={form.host ?? ""} onChange={e => set("host", e.target.value)} placeholder={hostPlaceholder} />
+        </Field>
+        <Field label="Database">
+          <input style={inputStyle} value={form.database ?? ""} onChange={e => set("database", e.target.value)} placeholder="my_database" />
+        </Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
+        <Field label="Username (optional)">
+          <input style={inputStyle} value={form.username ?? ""} onChange={e => set("username", e.target.value || null)} placeholder="db_user" autoComplete="off" />
+        </Field>
+        <Field label="Password Secret" hint="Select from the Secrets vault — password is never stored here">
+          <select style={inputStyle} value={form.secret_id ?? ""} onChange={e => set("secret_id", e.target.value || null)}>
+            <option value="">— no password / use URL auth —</option>
+            {secrets.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+        <Btn size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
+        <Btn size="sm" onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save Connection"}</Btn>
+      </div>
+    </div>
   );
 }
 

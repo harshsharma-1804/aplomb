@@ -10,19 +10,72 @@
 
 import { createHash } from "crypto";
 import { config } from "../config/appConfig.js";
+import { appDbConnectionRepo } from "../db/repos/appDbConnectionRepo.js";
+import { resolveSecret } from "../secrets/resolver.js";
+import { getDb } from "../db/client.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type DbUpstreamType = "mongodb" | "postgresql" | "mysql";
 
 export interface DbEndpointConfig {
-  upstream_type:     DbUpstreamType;
-  db_url:            string; // already resolved (env vars substituted)
-  db_collection?:    string; // MongoDB only
-  db_operation?:     string; // MongoDB only
-  db_result_limit?:  number; // MongoDB find/aggregate only, default 100
+  upstream_type:      DbUpstreamType;
+  /** Named connection ID (from app_db_connections). When set, db_url is ignored. */
+  db_connection_id?:  string;
+  db_url:             string; // pre-resolved connection URL (used when no db_connection_id)
+  db_collection?:     string; // MongoDB only
+  db_operation?:      string; // MongoDB only
+  db_result_limit?:   number; // MongoDB find/aggregate only, default 100
   db_query_template?: string;
-  db_query_mode?:    "rows" | "row"; // PostgreSQL only, default "rows"
+  db_query_mode?:     "rows" | "row"; // PostgreSQL only, default "rows"
+}
+
+/**
+ * Builds a connection URL from a named AppDbConnection row.
+ * Schema:
+ *   mongodb:    mongodb://[user:pass@]host/database
+ *   postgresql: postgresql://[user:pass@]host/database
+ *   mysql:      mysql://[user:pass@]host/database
+ */
+export function buildConnectionUrl(
+  dbType: DbUpstreamType,
+  host: string,
+  database: string,
+  username?: string | null,
+  secretId?: string | null,
+): string {
+  const password = secretId ? resolveSecret(secretId) : null;
+  const auth = username
+    ? `${encodeURIComponent(username)}${password ? `:${encodeURIComponent(password)}` : ""}@`
+    : password
+    ? `:${encodeURIComponent(password)}@`
+    : "";
+  const scheme =
+    dbType === "mongodb"    ? "mongodb" :
+    dbType === "postgresql" ? "postgresql" :
+    "mysql";
+  return `${scheme}://${auth}${host}/${database}`;
+}
+
+/**
+ * Resolves the effective DB URL for a request — either from a named connection
+ * (db_connection_id) or from the already-resolved db_url on the endpoint config.
+ */
+export function resolveDbUrl(cfg: DbEndpointConfig, appId: string): string {
+  if (cfg.db_connection_id) {
+    const conn = appDbConnectionRepo.findByIdAndApp(getDb(), cfg.db_connection_id, appId);
+    if (!conn) {
+      throw Object.assign(
+        new Error(`DB connection "${cfg.db_connection_id}" not found for this app`),
+        { code: "DB_CONNECTION_ERROR" }
+      );
+    }
+    return buildConnectionUrl(conn.db_type as DbUpstreamType, conn.host, conn.database, conn.username, conn.secret_id);
+  }
+  if (!cfg.db_url) {
+    throw Object.assign(new Error("No DB connection configured on this endpoint"), { code: "DB_CONNECTION_ERROR" });
+  }
+  return cfg.db_url;
 }
 
 export interface DbUpstreamResult {
@@ -360,8 +413,9 @@ export async function callDbUpstream(
   cfg: DbEndpointConfig,
   pathParams: Record<string, string>,
   queryParams: Record<string, string>,
+  appId: string,
 ): Promise<DbUpstreamResult> {
-  const resolvedUrl = cfg.db_url;
+  const resolvedUrl = resolveDbUrl(cfg, appId);
   const dbType = cfg.upstream_type;
   const template = cfg.db_query_template ?? "";
 

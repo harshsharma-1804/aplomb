@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
 import type {
   App, Endpoint, QueryParam, PathParam, StaticHeader, ForwardedHeader,
-  AppScript, ScriptMode, UpstreamType, MongoOperation,
+  AppScript, ScriptMode, UpstreamType, MongoOperation, AppDbConnection,
 } from "../../../api/types";
 import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
@@ -100,6 +100,18 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
   const [forwardedHeaders, setForwardedHeaders] = useState<ForwardedHeader[]>(endpoint.upstream?.forwarded_headers ?? []);
   const [forwardAllHeaders, setForwardAllHeaders] = useState<boolean>(endpoint.upstream?.forward_all_headers ?? false);
 
+  // ── DB connection registry ─────────────────────────────────────────────────
+  const [dbConnections, setDbConnections] = useState<AppDbConnection[]>([]);
+  const [dbConnectionId, setDbConnectionId] = useState<string>(
+    endpoint.upstream?.db_connection_id ?? ""
+  );
+
+  useEffect(() => {
+    api.get<{ results: AppDbConnection[] }>(`/__config/apps/${appId}/db-connections`)
+      .then(r => setDbConnections(r.results))
+      .catch(() => {});
+  }, [appId]);
+
   // ── DB fields ──────────────────────────────────────────────────────────────
   const [dbUrl, setDbUrl]             = useState(endpoint.upstream?.db_url ?? "");
   const [dbUrlVisible, setDbUrlVisible] = useState(false);
@@ -147,7 +159,8 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
       };
 
       if (isDbType || upstreamType === "graphql") {
-        upstream.db_url            = dbUrl;
+        upstream.db_connection_id  = dbConnectionId || undefined;
+        upstream.db_url            = dbConnectionId ? undefined : dbUrl;
         upstream.db_collection     = dbCollection;
         upstream.db_operation      = dbOperation;
         upstream.db_result_limit   = dbResultLimit;
@@ -390,42 +403,96 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
         <Card>
           <SectionHead title="Database Connection" />
           <div style={{ padding: 16 }}>
-            <Field label="Connection URL" hint={
-              upstreamType === "mongodb"    ? "mongodb://host:27017/dbname  or  {{MONGO_URL}}" :
-              upstreamType === "postgresql" ? "postgresql://user:pass@host:5432/dbname  or  {{PG_URL}}" :
-                                              "mysql://user:pass@host:3306/dbname  or  {{MYSQL_URL}}"
-            }>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input
-                  type={dbUrlVisible ? "text" : "password"}
-                  style={{ ...inputStyle, flex: 1, fontFamily: "monospace" }}
-                  value={dbUrl}
-                  onChange={e => setDbUrl(e.target.value)}
-                  placeholder={
-                    upstreamType === "mongodb"    ? "mongodb://host:27017/mydb  or  {{MONGO_URL}}" :
-                    upstreamType === "postgresql" ? "postgresql://user:pass@host:5432/db  or  {{PG_URL}}" :
-                                                    "mysql://user:pass@host:3306/db  or  {{MYSQL_URL}}"
-                  }
-                  disabled={readonly}
-                  autoComplete="off"
-                />
-                <button
-                  onClick={() => setDbUrlVisible(v => !v)}
-                  title={dbUrlVisible ? "Hide connection URL" : "Show connection URL"}
-                  style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.surface, cursor: "pointer", fontSize: 14 }}
-                >
-                  {dbUrlVisible ? "🙈" : "👁"}
-                </button>
-                {!readonly && app?.app_env?.length ? <EnvPicker envVars={app.app_env} onSelect={key => setDbUrl(v => v + `{{${key}}}`)} /> : null}
-              </div>
-              <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
-                Use <code>{"{{SECRET_KEY}}"}</code> to reference a secret from Admin → Secrets — credentials are never stored in plaintext.
-              </p>
-            </Field>
 
+            {/* Connection picker */}
+            {dbConnections.length > 0 ? (
+              <Field label="Connection" hint="Select a named connection configured in App → Settings → Database Connections">
+                <select
+                  style={inputStyle}
+                  value={dbConnectionId}
+                  onChange={e => setDbConnectionId(e.target.value)}
+                  disabled={readonly}
+                >
+                  <option value="">— select a connection —</option>
+                  {dbConnections
+                    .filter(c => c.db_type === upstreamType)
+                    .map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.host}/{c.database})
+                      </option>
+                    ))}
+                  {dbConnections.filter(c => c.db_type !== upstreamType).length > 0 && (
+                    <optgroup label={`Other types (incompatible with ${upstreamType})`}>
+                      {dbConnections
+                        .filter(c => c.db_type !== upstreamType)
+                        .map(c => (
+                          <option key={c.id} value={c.id} disabled>
+                            {c.name} [{c.db_type}]
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+                {!dbConnectionId && (
+                  <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+                    No connection selected — you can enter a raw URL below instead.
+                  </p>
+                )}
+              </Field>
+            ) : (
+              <div style={{ padding: "8px 12px", background: C.bg, borderRadius: C.radius, border: `1px solid ${C.border}`, fontSize: 12, color: C.muted, marginBottom: 12 }}>
+                No named connections yet.{" "}
+                <strong>Go to App → Settings → Database Connections</strong> to add one, then come back to select it here.
+                You can also enter a raw URL below.
+              </div>
+            )}
+
+            {/* Raw URL fallback — shown when no named connection selected */}
+            {!dbConnectionId && (
+              <Field label="Raw Connection URL (fallback)" hint="Used only when no named connection is selected above. Supports {{ENV_VAR}} and {{SECRET_KEY}}.">
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type={dbUrlVisible ? "text" : "password"}
+                    style={{ ...inputStyle, flex: 1, fontFamily: "monospace" }}
+                    value={dbUrl}
+                    onChange={e => setDbUrl(e.target.value)}
+                    placeholder={
+                      upstreamType === "mongodb"    ? "mongodb://host:27017/mydb  or  {{MONGO_URL}}" :
+                      upstreamType === "postgresql" ? "postgresql://user:pass@host:5432/db  or  {{PG_URL}}" :
+                                                      "mysql://user:pass@host:3306/db  or  {{MYSQL_URL}}"
+                    }
+                    disabled={readonly}
+                    autoComplete="off"
+                  />
+                  <button
+                    onClick={() => setDbUrlVisible(v => !v)}
+                    title={dbUrlVisible ? "Hide URL" : "Show URL"}
+                    style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.surface, cursor: "pointer", fontSize: 14 }}
+                  >
+                    {dbUrlVisible ? "🙈" : "👁"}
+                  </button>
+                  {!readonly && app?.app_env?.length ? <EnvPicker envVars={app.app_env} onSelect={key => setDbUrl(v => v + `{{${key}}}`)} /> : null}
+                </div>
+              </Field>
+            )}
+
+            {/* Selected connection summary */}
+            {dbConnectionId && (() => {
+              const sel = dbConnections.find(c => c.id === dbConnectionId);
+              return sel ? (
+                <div style={{ padding: "8px 12px", background: C.bg, borderRadius: C.radius, border: `1px solid ${C.border}`, fontSize: 12, marginTop: 4 }}>
+                  <span style={{ marginRight: 10 }}>🔌 <strong>{sel.name}</strong></span>
+                  <span style={{ color: C.muted, marginRight: 10 }}>{sel.host}/{sel.database}</span>
+                  {sel.username && <span style={{ color: C.muted, marginRight: 10 }}>user: {sel.username}</span>}
+                  {sel.secret_id && <span style={{ color: C.muted }}>🔒 password from Secrets</span>}
+                </div>
+              ) : null;
+            })()}
+
+            {/* MongoDB operation fields */}
             {upstreamType === "mongodb" && (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px", marginTop: 12 }}>
                   <Field label="Collection">
                     <input style={inputStyle} value={dbCollection} onChange={e => setDbCollection(e.target.value)} placeholder="collection name" disabled={readonly} />
                   </Field>
@@ -436,7 +503,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                   </Field>
                 </div>
                 {showResultLimit && (
-                  <Field label="Result Limit" hint="Maximum documents returned (default 100). Applies to find and aggregate operations.">
+                  <Field label="Result Limit" hint="Maximum documents returned (default 100). Applies to find and aggregate.">
                     <input type="number" style={{ ...inputStyle, width: 120 }} value={dbResultLimit} min={1} max={10000}
                       onChange={e => setDbResultLimit(Number(e.target.value))} disabled={readonly} />
                   </Field>
@@ -444,13 +511,16 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
               </>
             )}
 
+            {/* PostgreSQL query mode */}
             {upstreamType === "postgresql" && (
-              <Field label="Query Mode" hint='"rows" returns all matching rows as an array. "row" returns the first row as an object.'>
-                <select style={{ ...inputStyle, width: 200 }} value={dbQueryMode} onChange={e => setDbQueryMode(e.target.value as "rows" | "row")} disabled={readonly}>
+              <div style={{ marginTop: 12 }}>
+              <Field label="Query Mode" hint='"rows" returns all matching rows as array. "row" returns first row as object.'>
+                <select style={{ ...inputStyle, width: 220 }} value={dbQueryMode} onChange={e => setDbQueryMode(e.target.value as "rows" | "row")} disabled={readonly}>
                   <option value="rows">rows — return all rows as array</option>
                   <option value="row">row — return first row as object</option>
                 </select>
               </Field>
+              </div>
             )}
           </div>
         </Card>

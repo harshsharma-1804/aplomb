@@ -367,15 +367,19 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
   const upstreamType: string = (endpoint.upstream as any).upstream_type ?? "http";
 
   if (upstreamType === "mongodb" || upstreamType === "postgresql" || upstreamType === "mysql") {
+    const dbConnectionId: string | undefined = (endpoint.upstream as any).db_connection_id;
     const rawDbUrl: string = (endpoint.upstream as any).db_url ?? "";
-    if (!rawDbUrl) {
-      res.status(500).json({ error: "Endpoint is missing a DB connection URL", code: "DB_CONNECTION_ERROR" });
+
+    if (!dbConnectionId && !rawDbUrl) {
+      res.status(500).json({ error: "Endpoint has no DB connection configured", code: "DB_CONNECTION_ERROR" });
       return;
     }
-    const resolvedDbUrl = await resolveEnvVars(rawDbUrl, app);
 
-    // Host allowlist — same check as HTTP upstreams
-    if (!isHostAllowedForOrg(resolvedDbUrl, orgId)) {
+    // Resolve URL for host-allowlist check (named connections resolve inline in callDbUpstream)
+    const resolvedDbUrl = dbConnectionId ? "" : await resolveEnvVars(rawDbUrl, app);
+
+    // Host allowlist — only check for raw URL; named connections are admin-managed
+    if (!dbConnectionId && resolvedDbUrl && !isHostAllowedForOrg(resolvedDbUrl, orgId)) {
       res.status(403).json({ error: "Upstream DB host is not in your organization's allowlist", code: "HOST_NOT_ALLOWED" });
       return;
     }
@@ -385,16 +389,18 @@ runtimeRouter.all("/*path", async (req: Request, res: Response) => {
       const upstreamStart = Date.now();
       dbResult = await callDbUpstream(
         {
-          upstream_type:    upstreamType as any,
-          db_url:           resolvedDbUrl,
-          db_collection:    (endpoint.upstream as any).db_collection,
-          db_operation:     (endpoint.upstream as any).db_operation,
-          db_result_limit:  (endpoint.upstream as any).db_result_limit,
+          upstream_type:     upstreamType as any,
+          db_connection_id:  (endpoint.upstream as any).db_connection_id ?? undefined,
+          db_url:            resolvedDbUrl,
+          db_collection:     (endpoint.upstream as any).db_collection,
+          db_operation:      (endpoint.upstream as any).db_operation,
+          db_result_limit:   (endpoint.upstream as any).db_result_limit,
           db_query_template: await resolveEnvVars((endpoint.upstream as any).db_query_template ?? "", app),
-          db_query_mode:    (endpoint.upstream as any).db_query_mode,
+          db_query_mode:     (endpoint.upstream as any).db_query_mode,
         },
         pathParams,
         queryParams,
+        appId,
       );
       const upstreamLatencyDb = Date.now() - upstreamStart;
 

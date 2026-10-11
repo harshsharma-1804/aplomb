@@ -154,6 +154,23 @@ export interface ForwardedHeader {
 
 export type UpstreamType = "http" | "graphql" | "mongodb" | "postgresql" | "mysql";
 
+export type DbConnectionType = "mongodb" | "postgresql" | "mysql";
+
+export interface AppDbConnection {
+  id: string;
+  app_id: string;
+  name: string;
+  db_type: DbConnectionType;
+  host: string;
+  database: string;
+  username: string | null;
+  secret_id: string | null;
+  options: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type MongoOperation =
   | "find" | "findOne" | "insertOne"
   | "updateOne" | "updateMany"
@@ -182,7 +199,9 @@ export interface Upstream {
   forward_all_headers: boolean;
 
   // ── Database (mongodb / postgresql / mysql) ───────────────────────────────
-  /** Connection URL — supports {{SECRET_KEY}} and {{ENV_VAR}} substitution */
+  /** Named connection from the app's DB Connection Registry (preferred) */
+  db_connection_id?: string;
+  /** Raw connection URL — used only when db_connection_id is not set; supports {{SECRET_KEY}} */
   db_url?: string;
   /** MongoDB only: collection name */
   db_collection?: string;

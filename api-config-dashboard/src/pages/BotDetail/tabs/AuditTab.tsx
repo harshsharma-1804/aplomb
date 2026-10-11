@@ -1,7 +1,8 @@
+import { CircleCheck, CircleAlert, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
 import type { AiBot, AiToolCall } from "../../../api/types";
-import { Card, SectionHead, Btn, Spinner, ErrorBanner, C } from "../../../components";
+import { Card, SectionHead, Btn, Spinner, ErrorBanner, C, Code } from "../../../components";
 
 interface Props { bot: AiBot; }
 
@@ -29,57 +30,5 @@ export function AuditTab({ bot }: Props) {
 
   useEffect(() => { load(); }, [bot._id]);
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {error && <ErrorBanner message={error} />}
-
-      <Card>
-        <SectionHead
-          title={`Tool Call Audit — ${bot.name}`}
-          action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>}
-        />
-
-        {loading ? <div style={{ padding: 24 }}><Spinner /></div> : (
-          <div style={{ padding: "8px 16px" }}>
-            {calls.length === 0 && (
-              <div style={{ padding: "24px 0", fontSize: 13, color: C.muted, textAlign: "center" }}>No tool calls recorded for this bot yet.</div>
-            )}
-            {calls.map(c => (
-              <div key={c._id} style={{ borderBottom: `1px solid ${C.border}`, padding: "8px 0" }}>
-                <div
-                  style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}
-                  onClick={() => setExpanded(expanded === c._id ? null : c._id)}
-                >
-                  <span style={{
-                    fontWeight: 700, fontSize: 11, padding: "2px 7px", borderRadius: 99,
-                    background: OUTCOME_COLOR[c.outcome] + "15",
-                    color: OUTCOME_COLOR[c.outcome] ?? C.text,
-                    border: `1px solid ${OUTCOME_COLOR[c.outcome] ?? C.border}50`,
-                    whiteSpace: "nowrap",
-                  }}>{c.outcome}</span>
-                  <code style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.tool_name}</code>
-                  <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{c.latency_ms}ms</span>
-                  <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleString()}</span>
-                  <span style={{ fontSize: 11, color: C.muted }}>{expanded === c._id ? "▲" : "▼"}</span>
-                </div>
-
-                {expanded === c._id && (
-                  <div style={{ marginTop: 8, paddingLeft: 8, fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div><span style={{ color: C.muted, fontWeight: 600 }}>User:</span> {c.user_id || "—"}</div>
-                    {c.detail && <div style={{ color: OUTCOME_COLOR[c.outcome] ?? C.text }}><span style={{ color: C.muted, fontWeight: 600 }}>Detail:</span> {c.detail}</div>}
-                    <div>
-                      <span style={{ color: C.muted, fontWeight: 600 }}>Args:</span>
-                      <pre style={{ margin: "4px 0 0", background: C.bg, padding: "6px 10px", borderRadius: 4, fontSize: 11, overflowX: "auto" }}>
-                        {JSON.stringify(c.tool_args, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
+  return <div className="ui-stack">{error && <ErrorBanner message={error}/>}<Card><SectionHead title="Tool call audit" action={<Btn variant="secondary" size="sm" onClick={load}><RefreshCw/>Refresh</Btn>}/>{loading ? <Spinner/> : !calls.length ? <div className="ui-card__body ui-muted">No tool calls recorded for this bot yet.</div> : calls.map(c=><div key={c._id}><button className="ui-log app-log" aria-expanded={expanded===c._id} onClick={()=>setExpanded(expanded===c._id ? null : c._id)}>{c.outcome==="ok" ? <CircleCheck size={15} style={{color:"var(--success)"}}/> : <CircleAlert size={15} style={{color:OUTCOME_COLOR[c.outcome] ?? C.danger}}/>}<span className="ui-mono ui-truncate">{c.tool_name}</span><span className="ui-row"><span className="ui-bar"><i style={{width:`${Math.min(100,c.latency_ms/30)}%`}}/></span><span className="ui-mono ui-muted" style={{width:56,textAlign:"right"}}>{c.latency_ms} ms</span></span><span className="ui-muted ui-num" style={{fontSize:12}}>{new Date(c.created_at).toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</span>{expanded===c._id ? <ChevronUp size={15}/> : <ChevronDown size={15}/>}</button>{expanded===c._id && <div className="ui-card__body"><p className="ui-muted">User: {c.user_id || "—"} · {c.outcome}</p>{c.detail && <p>{c.detail}</p>}<Code title="Tool arguments" value={c.tool_args}/></div>}</div>)}</Card></div>;
 }

@@ -1,8 +1,11 @@
+import { Plus, Trash2, Lock } from "lucide-react";
+import { PageHeaderActions } from "../../../components/PageSave";
+import { CollectionHead } from "../../../components/CollectionHead";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
 import type { AiProvider, AiToolCall } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confirm, Badge, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confirm, Badge, C, Modal, Table } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 interface VaultSecret { _id: string; name: string; }
@@ -28,6 +31,7 @@ export function AiTab() {
   const [pError, setPError]           = useState("");
   const [pSaving, setPSaving]         = useState(false);
   const [providerDelete, setProviderDelete] = useState<AiProvider | null>(null);
+  const [query,setQuery]=useState("");
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
 
@@ -63,32 +67,11 @@ export function AiTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {error && <ErrorBanner message={error} />}
 
-      {/* Bot Registry shortcut */}
-      <Card>
-        <SectionHead
-          title="Bot Registry"
-          action={<Btn size="sm" onClick={() => navigate("/bots")}>Open Bot Registry →</Btn>}
-        />
-        <div style={{ padding: "12px 16px", fontSize: 13, color: C.muted }}>
-          Bots are managed in the <strong>Bot Registry</strong> — register bots, configure rules, guardrails, bindings, limits and view per-bot audit trails there.
-        </div>
-      </Card>
-
-      {/* LLM Providers */}
-      <Card>
-        <SectionHead
-          title={`LLM Providers (${providers.length})`}
-          action={editable ? <Btn size="sm" onClick={() => setShowProviderForm(s => !s)}>{showProviderForm ? "Cancel" : "+ Add Provider"}</Btn> : undefined}
-        />
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--selection)", fontSize: 12, color: "var(--primary)" }}>
-          OpenAI-compatible endpoints (OpenAI, Azure, OpenRouter, Ollama, vLLM…). API keys are stored as vault references — never as plain text.
-          Assign providers to bots in the Bot Registry → Bindings tab.
-        </div>
-
-        {showProviderForm && (
-          <form onSubmit={addProvider} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "var(--surface-muted)" }}>
+      {editable && <PageHeaderActions><Btn onClick={()=>setShowProviderForm(true)}><Plus/>Add provider</Btn></PageHeaderActions>}
+      <Card><CollectionHead count={providers.length} noun="providers" query={query} onQuery={setQuery} onRefresh={load}/>{loading ? <Spinner/> : <Table cols={[{key:"name",label:"Provider",render:v=><strong style={{fontWeight:600}}>{String(v)}</strong>},{key:"base_url",label:"Base URL",render:v=><span className="ui-mono ui-muted">{String(v)}</span>},{key:"model",label:"Model",render:v=><span className="ui-mono">{String(v)}</span>},{key:"secret_id",label:"Auth",render:(v,r)=>v ? <span className="ui-row ui-mono ui-muted"><Lock size={14}/>{String(r.secret_name || "Vault reference")}</span> : <span className="ui-badge">Local</span>},{key:"is_active",label:"Status",render:v=><Badge text={v ? "active" : "disabled"}/>},{key:"_actions",label:"",render:(_,r)=>editable && <button className="ui-iconbtn" aria-label={`Delete provider ${r.name}`} onClick={()=>setProviderDelete(r as unknown as AiProvider)}><Trash2/></button>}]} rows={providers.filter(p=>`${p.name} ${p.model} ${p.base_url}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string,unknown>[]}/>}<div className="ui-card__foot">API keys are stored as vault references, never as plain text. Assign providers to bots in Bot Registry, Bindings.</div></Card>
+      {showProviderForm && <Modal title="Add provider" onClose={()=>!pSaving && setShowProviderForm(false)}>          <form onSubmit={addProvider}>
             {pError && <ErrorBanner message={pError} />}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+            <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field label="Name"><input style={inputStyle} value={pName} onChange={e => setPName(e.target.value)} placeholder="openai-prod" required /></Field>
               <Field label="Model"><input style={inputStyle} value={pModel} onChange={e => setPModel(e.target.value)} placeholder="gpt-4o-mini" required /></Field>
             </div>
@@ -118,31 +101,10 @@ export function AiTab() {
                 ✓ No API key required — the orchestrator will call this endpoint without an Authorization header. Suitable for Ollama, llama.cpp, and other local model servers.
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <div className="ui-modal__foot"><Btn variant="secondary" disabled={pSaving} onClick={()=>setShowProviderForm(false)}>Cancel</Btn>
               <Btn type="submit" disabled={pSaving}>{pSaving ? "Saving…" : "Add Provider"}</Btn>
             </div>
-          </form>
-        )}
-
-        {loading ? <Spinner /> : (
-          <div style={{ padding: "8px 16px" }}>
-            {providers.length === 0 && <div style={{ color: C.muted, fontSize: 13, padding: "8px 0" }}>No providers configured yet.</div>}
-            {providers.map(p => (
-              <div key={p._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
-                    {p.name} {p.is_active && <Badge text="active" />}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.muted }}>
-                    {p.base_url} · <code>{p.model}</code> · {p.secret_id ? `🔒 vault (${p.secret_name ?? 'secret'})` : <span style={{ background: 'var(--success-background)', color: 'var(--success)', border: '1px solid var(--success)', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>local · no auth</span>}
-                  </div>
-                </div>
-                {editable && <Btn size="sm" variant="danger" onClick={() => setProviderDelete(p)}>Delete</Btn>}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+          </form></Modal>}
 
       {/* Global tool-call audit (last 25) */}
       <Card>
@@ -172,7 +134,7 @@ export function AiTab() {
           onCancel={() => setProviderDelete(null)}
           onConfirm={async () => {
             try { await api.del(`/__config/admin/ai/providers/${providerDelete._id}`); setProviderDelete(null); load(); }
-            catch (e) { alert(String(e)); }
+            catch (e) { /* The API client reports the failure through the shared toast. */ }
           }}
         />
       )}

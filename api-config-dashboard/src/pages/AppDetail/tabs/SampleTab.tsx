@@ -1,3 +1,5 @@
+import { usePageSave } from "../../../components/PageSave";
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../../api/client";
 import type { Endpoint } from "../../../api/types";
@@ -44,11 +46,17 @@ export function SampleTab({ appId, endpoint, onSaved }: Props) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
 
+  usePageSave({sample:raw},save,{enabled:can("edit:endpoints"),disabled:saving});
+
   function parse() {
     setParseError("");
     try {
       const obj = JSON.parse(raw);
-      setParsed(extractPaths(obj));
+      // If root is an array, use the first element for path extraction so
+      // paths are relative to a single item ($.id, $.name) rather than the
+      // array index ($.0.id, $.0.name). This matches how output_array_mode works.
+      const target = Array.isArray(obj) ? (obj[0] ?? {}) : obj;
+      setParsed(extractPaths(target));
     } catch (e) { setParseError("Invalid JSON — " + String(e)); }
   }
 
@@ -64,7 +72,7 @@ export function SampleTab({ appId, endpoint, onSaved }: Props) {
       const json = JSON.parse(raw);
       const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}/sample`, { json, captured_at: new Date().toISOString() });
       onSaved(ep);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
@@ -72,18 +80,20 @@ export function SampleTab({ appId, endpoint, onSaved }: Props) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {error && <ErrorBanner message={error} />}
       <Card>
-        <SectionHead title="Paste Upstream Sample Response"
+        <SectionHead title="Sample response"
           action={
             <div style={{ display: "flex", gap: 8 }}>
-              <Btn size="sm" variant="ghost" onClick={parse}>Parse Fields</Btn>
-              {can("edit:endpoints") && <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Sample"}</Btn>}
+              <Btn size="sm" variant="secondary" onClick={parse}><Sparkles size={16} /> Parse fields</Btn>
+              {can("edit:endpoints") && <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Sample"}</Btn>}
             </div>
           } />
         <div style={{ padding: 16 }}>
-          {parseError && <div style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{parseError}</div>}
-          <textarea value={raw} onChange={e => setRaw(e.target.value)} disabled={!can("edit:endpoints")}
-            style={{ width: "100%", height: 220, fontFamily: "monospace", fontSize: 12, padding: 10, border: `1px solid ${C.border}`, borderRadius: C.radius, resize: "vertical", boxSizing: "border-box", background: "var(--paste-editor-bg)", color: C.codeText }}
-            placeholder='Paste JSON response from upstream here, then click "Parse Fields"' />
+          {parseError && <ErrorBanner message={parseError}/>}
+          <div className="ui-code"><div className="ui-code__bar"><span>Upstream sample · JSON</span></div>
+            <textarea aria-label="Sample response JSON" value={raw} onChange={e => setRaw(e.target.value)} disabled={!can("edit:endpoints")}
+              style={{width:"100%",minHeight:300,fontFamily:"var(--font-mono)",fontSize:13,padding:16,border:0,resize:"vertical",boxSizing:"border-box",background:"var(--code-bg)",color:"var(--code-text)"}}
+              placeholder='Paste an upstream JSON response, then parse its fields.' />
+          </div>
         </div>
       </Card>
 

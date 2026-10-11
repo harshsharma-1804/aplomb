@@ -1,0 +1,5 @@
+# Overlay a locally verified dashboard onto the exact running backend image.
+# Build the dashboard first with: npm ci && npm run build
+ARG ORCHESTRATOR_RUNTIME_IMAGE=orchestrator-unified:pre-redesign-20261011
+FROM ${ORCHESTRATOR_RUNTIME_IMAGE}
+COPY --chown=1001:1001 dist/ /app/dashboard/

@@ -136,7 +136,7 @@ function RuleBtn({ onClick, disabled, danger, children, title }: { onClick: () =
       title={title}
       style={{
         width: 24, height: 24, borderRadius: 4,
-        border: `1px solid ${danger ? C.danger + "60" : C.border}`,
+        border: `1px solid ${danger ? "color-mix(in srgb, var(--danger) 38%, transparent)" : C.border}`,
         background: "none", cursor: disabled ? "not-allowed" : "pointer",
         color: disabled ? C.muted : danger ? C.danger : C.text,
         fontSize: 13, lineHeight: 1, padding: 0,

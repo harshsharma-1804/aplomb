@@ -1,7 +1,10 @@
+import { Plus, Trash2, Pencil } from "lucide-react";
+import { PageHeaderActions } from "../../../components/PageSave";
+import { CollectionHead } from "../../../components/CollectionHead";
 import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
 import type { ListResult, Secret, MailSender, MailRoute } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Badge, Confirm, Modal, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Badge, Confirm, Modal, C, Table } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 /**
@@ -23,6 +26,7 @@ export function MailTab() {
   const [routes, setRoutes] = useState<MailRoute[]>([]);
   const [purposes, setPurposes] = useState<string[]>(["verification"]);
   const [secrets, setSecrets] = useState<Secret[]>([]);
+  const [query,setQuery]=useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<MailSender | null>(null);
@@ -50,49 +54,9 @@ export function MailTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card>
-        <SectionHead
-          title={`Mail senders (${senders.length})`}
-          action={!readonly ? <Btn size="sm" onClick={() => setShowCreate(true)}>+ Add Sender</Btn> : undefined}
-        />
-        <div style={{ padding: 16 }}>
-          <p style={{ fontSize: 12, color: C.muted, margin: "0 0 12px" }}>
-            Configure as many SMTP senders as you need (Gmail app password, Amazon SES, Postmark, anything SMTP)
-            and route each purpose to a different one. Passwords live in the <strong>Secrets</strong> vault —
-            only the reference is stored.
-          </p>
-          {error && <ErrorBanner message={error} />}
-          {loading ? <span style={{ fontSize: 12, color: C.muted }}>Loading…</span> : senders.length === 0 ? (
-            <p style={{ fontSize: 12, color: C.muted }}>No senders yet — add one to enable verification emails.</p>
-          ) : (
-            <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr 1.4fr 110px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
-                {["NAME", "HOST", "FROM", "STATUS", ""].map(h => (
-                  <span key={h} style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</span>
-                ))}
-              </div>
-              {senders.map(s => (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr 1.4fr 110px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${routedIds.has(s.id) ? C.primary : C.border}`, marginBottom: 4, background: s.is_active ? C.surface : C.bg }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>
-                    {s.name}
-                    {routedIds.has(s.id) && <span style={{ marginLeft: 6 }}><Badge text="routed" /></span>}
-                  </div>
-                  <code style={{ fontSize: 11 }}>{s.host}:{s.port}{s.secure ? " (SSL)" : ""}</code>
-                  <span style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis" }}>{s.from_address}</span>
-                  <Badge text={s.is_active ? "active" : "inactive"} />
-                  {!readonly && (
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Btn size="sm" variant="ghost" onClick={() => setTestSender(s)}>Test</Btn>
-                      <Btn size="sm" variant="ghost" onClick={() => setEditing(s)}>Edit</Btn>
-                      <button onClick={() => setDeleteSender(s)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Card>
+      {!readonly && <PageHeaderActions><Btn onClick={()=>setShowCreate(true)}><Plus/>Add sender</Btn></PageHeaderActions>}
+      {error && <ErrorBanner message={error}/>}
+      <Card><CollectionHead count={senders.length} noun="senders" query={query} onQuery={setQuery} onRefresh={load}/>{loading ? <div className="ui-card__body">Loading…</div> : <Table cols={[{key:"name",label:"Sender",render:v=><strong style={{fontWeight:600}}>{String(v)}</strong>},{key:"host",label:"Host",render:(v,r)=><span className="ui-mono ui-muted">{String(v)}:{String(r.port)}</span>},{key:"from_address",label:"From",render:v=><span className="ui-muted">{String(v)}</span>},{key:"is_active",label:"Status",render:v=><Badge text={v ? "active" : "disabled"}/>},{key:"_actions",label:"",render:(_,r)=>!readonly && <span className="ui-row"><Btn variant="ghost" size="sm" onClick={()=>setTestSender(r as unknown as MailSender)}>Test</Btn><Btn variant="ghost" size="sm" onClick={()=>setEditing(r as unknown as MailSender)}><Pencil/>Edit</Btn><button className="ui-iconbtn" aria-label={`Delete sender ${r.name}`} onClick={()=>setDeleteSender(r as unknown as MailSender)}><Trash2/></button></span>}]} rows={senders.filter(s=>`${s.name} ${s.host} ${s.from_address}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string,unknown>[]}/>}</Card>
 
       <Card>
         <SectionHead title="Routing — which sender handles which purpose" />
@@ -159,7 +123,7 @@ function PurposeRoute({ purpose, label, senders, routes, readonly, onChanged }: 
       if (senderId) await api.put("/__config/admin/mail-config/routes", { purpose, sender_id: senderId });
       else await api.del(`/__config/admin/mail-config/routes?purpose=${encodeURIComponent(purpose)}`);
       onChanged();
-    } catch (e) { alert(String(e)); } finally { setSaving(false); }
+    } catch (e) { /* The API client reports the failure through the shared toast. */ } finally { setSaving(false); }
   }
 
   return (
@@ -211,7 +175,7 @@ function SenderModal({ sender, secrets, onClose, onDone }: {
     <Modal title={sender ? `Edit sender — ${sender.name}` : "Add mail sender"} onClose={onClose} width={540}>
       <form onSubmit={submit}>
         {error && <ErrorBanner message={error} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+        <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
           <Field label="Name" hint="e.g. Gmail notifications, SES transactional"><input style={inputStyle} value={form.name} onChange={set("name")} required autoFocus /></Field>
           <Field label="From name"><input style={inputStyle} value={form.from_name} onChange={set("from_name")} placeholder="Acme Portal" /></Field>
         </div>

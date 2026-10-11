@@ -1,8 +1,10 @@
+import { useGuardedAction } from "../../components/PageSave";
+import { Bot, Download, Power } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { api } from "../../api/client";
 import type { AiBot } from "../../api/types";
-import { Badge, Btn, Spinner, ErrorBanner, C } from "../../components";
+import { Badge, Btn, Spinner, ErrorBanner, Tabs, C } from "../../components";
 import { useBreadcrumb } from "../../components/BreadcrumbContext";
 import { useSession } from "../../auth/SessionContext";
 import { OverviewTab } from "./tabs/OverviewTab";
@@ -22,6 +24,7 @@ const TABS = [
 type TabKey = typeof TABS[number]["key"];
 
 export function BotDetailPage() {
+  const guard=useGuardedAction();
   const { botId } = useParams<{ botId: string }>();
   const location = useLocation();
   const { can } = useSession();
@@ -31,6 +34,7 @@ export function BotDetailPage() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<TabKey>("overview");
   const [exporting, setExporting] = useState(false);
+  const [toggling,setToggling]=useState(false);
 
   async function load() {
     if (!botId) return;
@@ -82,10 +86,10 @@ export function BotDetailPage() {
   const readonly = !can("manage:providers");
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="app-page" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexShrink: 0, flexWrap: "wrap", gap: 10 }}>
-        <div>
+      <div className="ui-pagehead" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexShrink: 0, flexWrap: "wrap", gap: 10 }}>
+        <div className="app-bot-heading"><span className="ui-tile"><Bot /></span><div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{bot.name}</h1>
             <Badge text={bot.is_active ? "active" : "disabled"} />
@@ -93,29 +97,18 @@ export function BotDetailPage() {
           <div style={{ fontSize: 12, color: C.muted }}>
             {bot.allowed_app_ids.length} app{bot.allowed_app_ids.length !== 1 ? "s" : ""} · {bot.allowed_provider_ids.length} provider{bot.allowed_provider_ids.length !== 1 ? "s" : ""} · {bot.rules.length} rule{bot.rules.length !== 1 ? "s" : ""}
           </div>
-        </div>
-        {can("manage:providers") && (
-          <Btn size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
-            {exporting ? "Preparing…" : "Export ↓"}
-          </Btn>
-        )}
+        </div></div>
+        <div className="ui-row app-bot-header-actions">{can("manage:providers") && (
+          <div className="ui-row"><Btn variant={bot.is_active ? "secondary" : "success"} disabled={toggling} onClick={async()=>{setToggling(true);try{setBot(await api.put<AiBot>(`/__config/admin/ai/bots/${bot._id}`,{is_active:!bot.is_active}));}catch(e){setError(String(e));}finally{setToggling(false);}}}><Power />{bot.is_active ? "Disable" : "Enable"}</Btn><Btn variant="secondary" onClick={handleExport} disabled={exporting}>
+            <Download />{exporting ? "Preparing…" : "Export"}
+          </Btn></div>
+        )}<div data-page-save-slot /></div>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, flexShrink: 0 }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            padding: "8px 16px", background: "none", border: "none", cursor: "pointer",
-            fontSize: 13, fontWeight: 600,
-            color: tab === t.key ? C.primary : C.muted,
-            borderBottom: tab === t.key ? `2px solid ${C.primary}` : "2px solid transparent",
-            marginBottom: -2,
-          }}>{t.label}</button>
-        ))}
-      </div>
+      <Tabs tabs={TABS.map(t => ({ ...t }))} active={tab} onChange={k => {if(k!==tab)guard(()=>setTab(k as TabKey));}} />
 
       {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+      <div className="ui-page__body">
         {tab === "overview"  && <OverviewTab  bot={bot} onUpdated={setBot} readonly={readonly} />}
         {tab === "rules"     && <BehaviourTab     bot={bot} onUpdated={setBot} readonly={readonly} />}
         {tab === "bindings"  && <BindingsTab  bot={bot} onUpdated={setBot} readonly={readonly} />}

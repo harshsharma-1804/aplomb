@@ -1,3 +1,5 @@
+import { usePageSave, useGuardedAction } from "../../components/PageSave";
+import { Braces, ListTree, Network, FileJson, GitCompareArrows, FlaskConical, FolderPlus, Pencil, Search, Settings, Boxes, Users, Clock, FileCode2, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { api } from "../../api/client";
@@ -11,7 +13,7 @@ import { UpstreamTab } from "./tabs/UpstreamTab";
 import { SampleTab } from "./tabs/SampleTab";
 import { MappingTab } from "./tabs/MappingTab";
 import { TestTab } from "./tabs/TestTab";
-import { SettingsTab } from "./tabs/SettingsTab";
+import { SettingsTab, APP_SETTINGS_SECTIONS } from "./tabs/SettingsTab";
 import { ScriptsTab } from "./tabs/ScriptsTab";
 import { UsersTab } from "./tabs/UsersTab";
 import { SessionsTab } from "./tabs/SessionsTab";
@@ -27,16 +29,20 @@ const TABS = [
 ];
 
 export function AppDetailPage() {
+  const guard=useGuardedAction();
   const { appId } = useParams<{ appId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { can } = useSession();
 
   const [app, setApp] = useState<App | null>(null);
+  const [endpointQuery, setEndpointQuery] = useState("");
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [activeTab, setActiveTab] = useState("response-schema");
-  const [topTab, setTopTab] = useState<"endpoints" | "users" | "sessions" | "scripts" | "settings">("endpoints");
+  const routeSection = location.pathname.split("/")[3];
+  const topTab = ["users","sessions","scripts","settings"].includes(routeSection) ? routeSection : "endpoints";
+  const setTopTab = (key:string) => navigate(`/apps/${appId}${key === "endpoints" ? "" : `/${key}`}`);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddEndpoint, setShowAddEndpoint] = useState(false);
@@ -104,7 +110,7 @@ export function AppDetailPage() {
         const merged = Array.from(new Set([...prev, ...fromServer])).sort();
         return merged;
       });
-      if (e.results.length > 0 && !selectedEndpoint) setSelectedEndpoint(e.results[0]!);
+      setSelectedEndpoint(prev => e.results.find(ep => ep._id === prev?._id) ?? e.results[0] ?? null);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }
@@ -113,7 +119,9 @@ export function AppDetailPage() {
   useEffect(() => { setEndpointSettingsOpen(false); }, [selectedEndpoint?._id]);
   useBreadcrumb(location.pathname, app ? [
     { label: "App Registry", to: "/apps" },
-    { label: app.name },
+    { label: app.name, ...(topTab === "settings" ? { to:`/apps/${appId}` } : {}) },
+    ...(topTab === "settings" ? [{label:"Settings", ...(location.pathname.split("/")[4] ? {to:`/apps/${appId}/settings`} : {})}] : []),
+    ...(topTab === "settings" && location.pathname.split("/")[4] ? [{label:APP_SETTINGS_SECTIONS.find(s=>s.key===location.pathname.split("/")[4])?.label ?? "Settings"}] : []),
   ] : null);
 
   async function handleDeleteEndpoint(ep: Endpoint) {
@@ -122,7 +130,7 @@ export function AppDetailPage() {
       setDeleteEndpoint(null);
       if (selectedEndpoint?._id === ep._id) setSelectedEndpoint(null);
       load();
-    } catch (e) { alert(String(e)); }
+    } catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   async function handleToggleActive(ep: Endpoint) {
@@ -130,7 +138,7 @@ export function AppDetailPage() {
       const updated = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${ep._id}`, { is_active: !ep.is_active });
       setEndpoints(prev => prev.map(e => e._id === updated._id ? updated : e));
       if (selectedEndpoint?._id === updated._id) setSelectedEndpoint(updated);
-    } catch (e) { alert(String(e)); }
+    } catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   if (loading) return <Spinner />;
@@ -138,14 +146,14 @@ export function AppDetailPage() {
   if (!app) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="app-page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* ── App header ─────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 12, flexShrink: 0 }}>
+      {topTab !== "settings" && <div className="ui-pagehead" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 12, flexShrink: 0 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{app.name}</h1>
+            <h1 className="app-detail-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{app.name}</h1>
             <Badge text={app.status} />
-            {app.mode && <ModeBadge mode={app.mode} />}
+            {app.mode && <Badge text={app.mode} />}
             {app.auth_required === false && (
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "var(--warning-background)", color: "var(--warning)", border: "1px solid var(--warning)" }}>
                 🔓 AUTH OFF
@@ -157,25 +165,17 @@ export function AppDetailPage() {
             <span style={{ fontSize: 11, color: C.muted }}>→ frontend calls this prefix + endpoint path</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {can("manage:apps") && <Btn size="sm" variant="ghost" onClick={() => navigate(`/apps/${appId}/history`)}>History</Btn>}
-          {can("manage:apps") && <Btn size="sm" variant="outline" onClick={() => navigate(`/apps/${appId}/compare`)}>Compare</Btn>}
-          {can("export:app") && <Btn size="sm" variant="outline" onClick={() => setShowExport(true)}>Export ↓</Btn>}
+        <div className="ui-row app-detail-header-actions">
+          <div data-page-save-slot />
+          {can("export:app") && <Btn variant="secondary" onClick={() => setShowExport(true)}><Download />Export</Btn>}
+          <Btn variant="secondary" aria-pressed={topTab === "settings"} onClick={() => setTopTab("settings")}><Settings />Settings</Btn>
         </div>
-      </div>
+      </div>}
 
       {/* ── Top-level tabs: Endpoints | Settings ───────────────────────── */}
-      <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, flexShrink: 0 }}>
-        {([{ key: "endpoints", label: "Endpoints" }, { key: "users", label: "Users" }, { key: "sessions", label: "Sessions" }, { key: "scripts", label: "Scripts" }, { key: "settings", label: "⚙ Settings" }] as const).map(t => (
-          <button key={t.key} onClick={() => setTopTab(t.key)} style={{
-            padding: "8px 16px", background: "none", border: "none", cursor: "pointer",
-            fontSize: 13, fontWeight: 600,
-            color: topTab === t.key ? C.primary : C.muted,
-            borderBottom: topTab === t.key ? `2px solid ${C.primary}` : "2px solid transparent",
-            marginBottom: -2,
-          }}>{t.label}</button>
-        ))}
-      </div>
+      {topTab !== "settings" && <div className="ui-tabs app-detail-tabs" aria-label="Application sections">
+        {[{key:"endpoints",label:"Endpoints",icon:Boxes},{key:"users",label:"Users",icon:Users},{key:"sessions",label:"Sessions",icon:Clock},{key:"scripts",label:"Scripts",icon:FileCode2}].map(t=><button type="button" key={t.key} className={`ui-tab ${topTab===t.key ? "is-active" : ""}`} aria-pressed={topTab===t.key} onClick={()=>setTopTab(t.key)}><t.icon />{t.label}{t.key==="endpoints" && <span className="ui-count">{endpoints.length}</span>}</button>)}
+      </div>}
 
       {/* ── Users tab (gateway-auth app users) ─────────────────────────── */}
       {topTab === "users" && (
@@ -200,8 +200,10 @@ export function AppDetailPage() {
 
       {/* ── Settings tab ───────────────────────────────────────────────── */}
       {topTab === "settings" && (
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <div className="app-settings-page">
           <SettingsTab
+            section={location.pathname.split("/")[4]}
+            onRestored={load}
             app={app}
             appId={appId!}
             onAppUpdated={updated => setApp(updated)}
@@ -215,23 +217,23 @@ export function AppDetailPage() {
       )}
 
       {/* ── Endpoints two-column layout ────────────────────────────────── */}
-      {topTab === "endpoints" && <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "stretch", flex: 1, minHeight: 0 }}>
+      {topTab === "endpoints" && <div className="app-editor-grid" style={{ display: "grid", gridTemplateColumns: "284px minmax(0,1fr)", gap: 16, alignItems: "stretch", flex: 1, minHeight: 0 }}>
 
         {/* ── Endpoint sidebar ─────────────────────────────────────────── */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div className="app-endpoint-tree" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Header */}
-          <div style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}`, background: C.bg }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px" }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>ENDPOINTS ({endpoints.length})</span>
+          <div style={{ flexShrink: 0 }}>
+            <div className="ui-row" style={{ padding:"10px 10px 4px" }}>
+              <div className="ui-search ui-grow"><Search /><input className="ui-input ui-input--sm" aria-label="Filter endpoints" placeholder="Filter endpoints" value={endpointQuery} onChange={e=>setEndpointQuery(e.target.value)} /></div>
               {can("edit:endpoints") && (
                 <div style={{ display: "flex", gap: 4 }}>
                   <button
                     onClick={() => { setShowAddFolder(f => !f); setNewFolderName(""); }}
                     title="New folder"
                     style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: C.radius, cursor: "pointer", color: C.muted, fontSize: 12, padding: "2px 7px", lineHeight: 1.4 }}>
-                    📁
+                    <FolderPlus size={14} />
                   </button>
-                  <Btn size="sm" onClick={() => setShowAddEndpoint(true)}>+</Btn>
+                  <Btn size="sm" aria-label="New endpoint" style={{width:30,padding:0}} onClick={() => setShowAddEndpoint(true)}>+</Btn>
                 </div>
               )}
             </div>
@@ -290,21 +292,22 @@ export function AppDetailPage() {
             {endpoints.length === 0 && endpointFolders.length === 0 ? (
               <div style={{ padding: 16, fontSize: 12, color: C.muted, textAlign: "center" }}>No endpoints yet</div>
             ) : (() => {
-              const rootEndpoints = endpoints.filter(ep => !ep.folder);
+              const rootEndpoints = endpoints.filter(ep => !ep.folder && `${ep.method} ${ep.name} ${ep.path}`.toLowerCase().includes(endpointQuery.toLowerCase()));
 
               return (
                 <>
                   {/* Folders (from state — allows empty folders) */}
                   {endpointFolders.map(folder => {
-                    const folderEps = endpoints.filter(ep => ep.folder === folder);
-                    const isCollapsed = collapsedFolders.has(folder);
+                    const folderEps = endpoints.filter(ep => ep.folder === folder && `${ep.method} ${ep.name} ${ep.path}`.toLowerCase().includes(endpointQuery.toLowerCase()));
+                    if (endpointQuery && !folderEps.length) return null;
+                    const isCollapsed = !endpointQuery && collapsedFolders.has(folder);
                     const isOver = dragOverTarget === folder;
                     const isMenuOpen = folderMenuOpen === folder;
                     const isRenaming = renamingFolder === folder;
                     return (
                       <div key={folder}>
                         {/* Folder header row */}
-                        <div
+                        <div className="app-tree-group"
                           onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverTarget(folder); }}
                           onDrop={e => {
                             e.preventDefault(); e.stopPropagation();
@@ -316,18 +319,17 @@ export function AppDetailPage() {
                           }}
                           style={{
                             display: "flex", alignItems: "center", gap: 6,
-                            padding: "7px 8px 7px 10px", cursor: "pointer",
-                            borderBottom: `1px solid ${C.border}`,
-                            background: isOver ? C.selection : C.bg,
+                            padding: "8px 10px", cursor: "pointer",
+                            borderBottom: "none",
+                            background: isOver ? C.selection : "none",
                             outline: isOver ? `1px dashed ${C.primary}` : undefined,
                             position: "relative",
                           }}>
                           <span
                             onClick={() => setCollapsedFolders(f => { const n = new Set(f); isCollapsed ? n.delete(folder) : n.add(folder); return n; })}
                             style={{ fontSize: 10, color: C.muted, userSelect: "none", flexShrink: 0 }}>
-                            {isCollapsed ? "▶" : "▼"}
+                            {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                           </span>
-                          <span style={{ fontSize: 11, flexShrink: 0 }}>📁</span>
                           {isRenaming ? (
                             <input
                               autoFocus
@@ -348,7 +350,7 @@ export function AppDetailPage() {
                               {folder}
                             </span>
                           )}
-                          <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>{folderEps.length}</span>
+                          <span className="ui-count">{folderEps.length}</span>
                           {can("edit:endpoints") && !isRenaming && (
                             <>
                               <button
@@ -388,15 +390,16 @@ export function AppDetailPage() {
                         
                         {/* Folder endpoints */}
                         {!isCollapsed && folderEps.map(ep => (
-                          <div
+                          <button type="button" className="ui-tree__item app-endpoint-row"
                             key={ep._id}
                             draggable
                             onDragStart={() => setDragEndpointId(ep._id)}
                             onDragEnd={() => { setDragEndpointId(null); setDragOverTarget(null); }}
-                            onClick={() => setSelectedEndpoint(ep)}
+                            aria-pressed={selectedEndpoint?._id === ep._id}
+                            onClick={() => {if(ep._id!==selectedEndpoint?._id)guard(()=>setSelectedEndpoint(ep));}}
                             style={{
-                              padding: "8px 10px 8px 28px", cursor: "pointer",
-                              borderBottom: `1px solid ${C.border}`,
+                              padding: "6px 9px 6px 22px", cursor: "pointer",
+                              borderBottom: "none",
                               background: selectedEndpoint?._id === ep._id ? C.selection : dragEndpointId === ep._id ? "var(--surface-muted)" : "",
                               display: "flex", alignItems: "center", gap: 6,
                             }}>
@@ -404,11 +407,11 @@ export function AppDetailPage() {
                             <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
                               {ep.name}
                             </span>
-                          </div>
+                          </button>
                         ))}
                         {/* Empty folder drop hint */}
                         {!isCollapsed && folderEps.length === 0 && (
-                          <div style={{ padding: "8px 10px 8px 28px", fontSize: 11, color: C.muted, fontStyle: "italic", borderBottom: `1px solid ${C.border}` }}>
+                          <div style={{ padding: "6px 9px 6px 22px", fontSize: 11, color: C.muted, fontStyle: "italic", borderBottom: `1px solid ${C.border}` }}>
                             Drag endpoints here or use +
                           </div>
                         )}
@@ -418,15 +421,16 @@ export function AppDetailPage() {
 
                   {/* Root (unfoldered) endpoints */}
                   {rootEndpoints.map(ep => (
-                    <div
+                    <button type="button" className="ui-tree__item app-endpoint-row"
                       key={ep._id}
                       draggable
                       onDragStart={() => setDragEndpointId(ep._id)}
                       onDragEnd={() => { setDragEndpointId(null); setDragOverTarget(null); }}
-                      onClick={() => setSelectedEndpoint(ep)}
+                      aria-pressed={selectedEndpoint?._id === ep._id}
+                            onClick={() => {if(ep._id!==selectedEndpoint?._id)guard(()=>setSelectedEndpoint(ep));}}
                       style={{
-                        padding: "9px 10px", cursor: "pointer",
-                        borderBottom: `1px solid ${C.border}`,
+                        padding: "6px 9px", cursor: "pointer",
+                        borderBottom: "none",
                         background: selectedEndpoint?._id === ep._id ? C.selection : dragEndpointId === ep._id ? "var(--surface-muted)" : "",
                         display: "flex", alignItems: "center", gap: 6,
                       }}>
@@ -434,7 +438,7 @@ export function AppDetailPage() {
                       <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: ep.is_active ? C.text : C.muted }}>
                         {ep.name}
                       </span>
-                    </div>
+                    </button>
                   ))}
                 </>
               );
@@ -443,7 +447,7 @@ export function AppDetailPage() {
         </div>
 
         {/* ── Endpoint detail / tabs ────────────────────────────────────── */}
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div className="app-editor-pane" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
           {!selectedEndpoint ? (
             <div style={{ padding: 32, textAlign: "center", color: C.muted, background: C.surface, borderRadius: C.radius, border: `1px solid ${C.border}` }}>
               Select an endpoint from the list or create one to get started.
@@ -451,7 +455,7 @@ export function AppDetailPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
               {/* ── Endpoint headline ───────────────────────────────────── */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexShrink: 0 }}>
+              <div className="app-endpoint-head" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexShrink: 0 }}>
                 <MethodBadge method={selectedEndpoint.method} />
                 <span style={{ fontWeight: 600 }}>{selectedEndpoint.path}</span>
                 <span style={{ fontSize: 12, color: C.muted }}>{selectedEndpoint.name}</span>
@@ -461,7 +465,7 @@ export function AppDetailPage() {
                 <div style={{ flex: 1 }} />
                 {can("edit:endpoints") && (
                   <button
-                    onClick={() => setEndpointSettingsOpen(o => !o)}
+                    onClick={() => guard(()=>setEndpointSettingsOpen(o => !o))}
                     title="Endpoint settings"
                     style={{
                       background: endpointSettingsOpen ? C.selection : "none",
@@ -474,7 +478,7 @@ export function AppDetailPage() {
                       lineHeight: 1,
                       flexShrink: 0,
                     }}>
-                    ✎
+                    <Pencil size={15} />
                   </button>
                 )}
               </div>
@@ -496,19 +500,17 @@ export function AppDetailPage() {
                 </div>
               ) : (
                 <>
-                  <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, overflowX: "auto", flexShrink: 0 }}>
-                    {TABS.map(t => (
-                      <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-                        padding: "8px 14px", background: "none", border: "none", cursor: "pointer",
-                        fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-                        color: activeTab === t.key ? C.primary : C.muted,
-                        borderBottom: activeTab === t.key ? `2px solid ${C.primary}` : "2px solid transparent",
-                        marginBottom: -2,
-                      }}>{t.label}</button>
-                    ))}
-                  </div>
+                  <nav className="ui-stepper app-endpoint-stepper" aria-label="Endpoint configuration steps">
+                    {TABS.map((t,i)=>{
+                      const ep=selectedEndpoint;
+                      const inputCount=ep.request?.input_schema?.length ?? 0, outputCount=ep.output_schema?.length ?? 0, mappingCount=ep.field_mappings?.length ?? 0;
+                      const StepIcon=[Braces,ListTree,Network,FileJson,GitCompareArrows,FlaskConical][i];
+                      const meta=[`${inputCount} fields · ${ep.request?.validation ?? "strict"}`,`${outputCount} fields`,ep.script_mode!=="none" ? "Script handler" : ep.upstream?.upstream_type ?? "HTTP",ep.sample_response ? "Captured" : "Capture data",`${mappingCount} mapped`,"Run a request"][i];
+                      return <button type="button" key={t.key} className={`ui-step ${activeTab===t.key ? "is-current" : ""}`} aria-current={activeTab===t.key ? "step" : undefined} onClick={()=>{if(activeTab!==t.key)guard(()=>setActiveTab(t.key));}}><span className="ui-step__dot">{<StepIcon/>}</span><span className="ui-step__text"><span className="ui-step__label">{["Request","Response","Upstream","Sample","Mapping","Test"][i]}</span><span className="ui-step__meta">{meta}</span></span></button>;
+                    })}
+                  </nav>
 
-                  <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                  <div className="app-editor-body ui-page__body" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
                     {activeTab === "request-schema"  && <RequestSchemaTab  key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
                     {activeTab === "response-schema" && <ResponseSchemaTab key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} onSaved={ep => setSelectedEndpoint(ep)} />}
                     {activeTab === "upstream"        && <UpstreamTab        key={selectedEndpoint._id} appId={appId!} endpoint={selectedEndpoint} app={app} onSaved={ep => setSelectedEndpoint(ep)} />}
@@ -604,8 +606,9 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
   const pathChanged   = form.path   !== endpoint.path;
   const breakingChange = methodChanged || pathChanged;
 
-  async function submit(ev: React.FormEvent) {
-    ev.preventDefault();
+  usePageSave(form,save,{disabled:saving || !form.name || !form.path});
+
+  async function save() {
     setSaving(true); setError(""); setSaved(false);
     try {
       const identityArgs = form.identity_args.split(",").map(s => s.trim()).filter(Boolean);
@@ -615,13 +618,13 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
       });
       onSaved(ep);
       setSaved(true);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radius, padding: 20 }}>
-      <form onSubmit={submit}>
+      <form onSubmit={ev=>{ev.preventDefault();void save();}}>
         {error && <ErrorBanner message={error} />}
 
         {breakingChange && (
@@ -685,7 +688,7 @@ function EndpointSettingsPanel({ appId, endpoint, onSaved, onDelete, onToggleAct
           </Btn>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {saved && <span style={{ fontSize: 12, color: C.success }}>✓ Saved</span>}
-            <Btn type="submit" disabled={saving}>
+            <Btn pageSave type="submit" disabled={saving}>
               {saving ? "Saving…" : "Save Changes"}
             </Btn>
           </div>

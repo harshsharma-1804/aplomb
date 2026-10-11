@@ -1,11 +1,15 @@
+import { Plus } from "lucide-react";
+import { PageHeaderActions } from "../../components/PageSave";
+import { CollectionHead } from "../../components/CollectionHead";
 import { useState, useEffect } from "react";
 import { api } from "../../api/client";
 import type { IdentityProvider, ListResult, Secret } from "../../api/types";
-import { Card, SectionHead, Table, Btn, Badge, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, C } from "../../components";
+import { Card, SectionHead, Table, Btn, Badge, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, C, DeleteIcon } from "../../components";
 
 export function ProvidersPage() {
   const [providers, setProviders] = useState<IdentityProvider[]>([]);
   const [secrets, setSecrets] = useState<Secret[]>([]);
+  const [query,setQuery]=useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<IdentityProvider | null>(null);
@@ -43,29 +47,21 @@ export function ProvidersPage() {
         );
       }},
     { key: "is_active", label: "Status", render: (v: unknown) => <Badge text={v ? "active" : "inactive"} /> },
-    { key: "_id", label: "Actions", render: (_: unknown, row: Record<string, unknown>) => (
+    { key: "_id", label: "", render: (_: unknown, row: Record<string, unknown>) => (
       <div style={{ display: "flex", gap: 6 }}>
         <Btn size="sm" variant="ghost" onClick={() => setEditing(row as unknown as IdentityProvider)}>Edit</Btn>
-        <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(row as unknown as IdentityProvider)}>Delete</Btn>
+        <DeleteIcon onClick={() => setDeleteTarget(row as unknown as IdentityProvider)} label={`Delete provider ${row.name}`} />
       </div>
     )},
   ];
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Identity Providers</h1>
-          <p style={{ margin: "2px 0 0", color: C.muted, fontSize: 13 }}>
-            OIDC providers whose tokens the runtime accepts — and, when a client ID + vault secret are set, full redirect login for apps.
-          </p>
-        </div>
-        <Btn onClick={() => setShowCreate(true)}>+ Add Provider</Btn>
-      </div>
+      <PageHeaderActions><Btn onClick={()=>setShowCreate(true)}><Plus/>Add provider</Btn></PageHeaderActions>
       {error && <ErrorBanner message={error} />}
       <Card>
-        <SectionHead title={`${providers.length} provider${providers.length !== 1 ? "s" : ""}`} action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>} />
-        {loading ? <Spinner /> : <Table cols={cols as Parameters<typeof Table>[0]["cols"]} rows={providers as unknown as Record<string, unknown>[]} />}
+        <CollectionHead count={providers.length} noun="providers" query={query} onQuery={setQuery} onRefresh={load}/>
+        {loading ? <Spinner /> : <Table cols={cols as Parameters<typeof Table>[0]["cols"]} rows={providers.filter(p=>`${p.name} ${p.issuer}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string, unknown>[]} />}
       </Card>
       {showCreate && <ProviderModal onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} secrets={secrets} />}
       {editing && <ProviderModal provider={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} secrets={secrets} />}

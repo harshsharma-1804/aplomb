@@ -1,3 +1,5 @@
+import { Plus, Info, ArrowUp, ArrowDown, X } from "lucide-react";
+import { usePageSave } from "../../../components/PageSave";
 import { useState } from "react";
 import { api } from "../../../api/client";
 import type { AiBot } from "../../../api/types";
@@ -12,6 +14,8 @@ export function BehaviourTab({ bot, onUpdated, readonly }: Props) {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState("");
   const [saved, setSaved]     = useState(false);
+
+  usePageSave({persona,rules},save,{enabled:!readonly,disabled:saving});
 
   function addRule() {
     const trimmed = newRule.trim();
@@ -41,19 +45,19 @@ export function BehaviourTab({ bot, onUpdated, readonly }: Props) {
       const d = await api.put<AiBot>(`/__config/admin/ai/bots/${bot._id}`, { rules, persona });
       onUpdated(d);
       setSaved(true);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="app-behaviour-grid">
       {error && <ErrorBanner message={error} />}
 
       {/* Persona */}
       <Card>
         <SectionHead
           title="Custom Persona / Identity"
-          action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined}
+          action={!readonly ? <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined}
         />
         <div style={{ padding: 16 }}>
           <Field label="Instructions / Persona" hint="Replaces the default 'You are an API assistant…' opener. Describe who the bot is and what it specialises in. Leave blank to use the default.">
@@ -72,11 +76,9 @@ export function BehaviourTab({ bot, onUpdated, readonly }: Props) {
       <Card>
         <SectionHead
           title={`Guardrail Rules (${rules.length}/20)`}
-          action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined}
+          action={!readonly ? <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined}
         />
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--warning-background)", fontSize: 12, color: "var(--warning)" }}>
-          <strong>These are soft instructions</strong> — injected as the highest-priority section of the system prompt. The model is guided but not code-blocked by these. For hard enforcement (topic blocking, scope filtering, tool-only mode) use the <strong>Limits</strong> tab.
-        </div>
+        <div className="ui-card__body"><div className="ui-callout ui-callout--neutral"><Info/><span><strong>These are soft instructions</strong>, injected as the highest-priority section of the system prompt. For hard enforcement use the Limits tab.</span></div></div>
 
         {/* Add rule */}
         {!readonly && (
@@ -90,7 +92,7 @@ export function BehaviourTab({ bot, onUpdated, readonly }: Props) {
               disabled={rules.length >= 20}
               maxLength={500}
             />
-            <Btn onClick={addRule} disabled={!newRule.trim() || rules.length >= 20}>+ Add</Btn>
+            <Btn variant="secondary" onClick={addRule} disabled={!newRule.trim() || rules.length >= 20}><Plus/>Add</Btn>
           </div>
         )}
 
@@ -105,18 +107,14 @@ export function BehaviourTab({ bot, onUpdated, readonly }: Props) {
             </div>
           )}
           {rules.map((r, i) => (
-            <div key={i} style={{
-              display: "flex", alignItems: "flex-start", gap: 8,
-              padding: "8px 10px", marginBottom: 6,
-              border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.bg,
-            }}>
-              <span style={{ minWidth: 22, color: C.muted, fontWeight: 700, fontSize: 12, paddingTop: 1 }}>{i + 1}.</span>
+            <div key={i} className="ui-frow" style={{height:"auto",padding:"10px 6px 10px 12px",alignItems:"flex-start"}}>
+              <span className="ui-count">{i+1}</span>
               <span style={{ flex: 1, fontSize: 13, wordBreak: "break-word" }}>{r}</span>
               {!readonly && (
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  <RuleBtn onClick={() => moveRule(i, -1)} disabled={i === 0} title="Move up">↑</RuleBtn>
-                  <RuleBtn onClick={() => moveRule(i, 1)} disabled={i === rules.length - 1} title="Move down">↓</RuleBtn>
-                  <RuleBtn onClick={() => removeRule(i)} danger title="Remove">×</RuleBtn>
+                  <RuleBtn onClick={() => moveRule(i, -1)} disabled={i === 0} title="Move up"><ArrowUp/></RuleBtn>
+                  <RuleBtn onClick={() => moveRule(i, 1)} disabled={i === rules.length - 1} title="Move down"><ArrowDown/></RuleBtn>
+                  <RuleBtn onClick={() => removeRule(i)} danger title="Remove"><X/></RuleBtn>
                 </div>
               )}
             </div>
@@ -133,14 +131,9 @@ function RuleBtn({ onClick, disabled, danger, children, title }: { onClick: () =
       onClick={onClick}
       disabled={disabled}
       title={title}
-      style={{
-        width: 24, height: 24, borderRadius: 4,
-        border: `1px solid ${danger ? C.danger + "60" : C.border}`,
-        background: "none", cursor: disabled ? "not-allowed" : "pointer",
-        color: disabled ? C.muted : danger ? C.danger : C.text,
-        fontSize: 13, lineHeight: 1, padding: 0,
-        opacity: disabled ? 0.4 : 1,
-      }}
+      aria-label={title}
+      className={`ui-iconbtn ui-iconbtn--sm ${danger ? "is-danger" : ""}`}
+
     >{children}</button>
   );
 }

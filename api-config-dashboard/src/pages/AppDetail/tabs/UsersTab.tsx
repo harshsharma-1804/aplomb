@@ -1,7 +1,8 @@
+import { KeyRound, Power, Trash2 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../../api/client";
 import type { AppUser, AppSessionSummary, IdentityProvider, ListResult } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Confirm, Badge, Modal, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Confirm, Badge, Modal, C, RowMenu } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 /**
@@ -71,43 +72,26 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
                 : "users appear here automatically after their first identity-provider login."}
             </p>
           ) : (
-            <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 70px 90px auto", gap: "0 10px", padding: "4px 8px", marginBottom: 4 }}>
-                {["USERNAME", "EMAIL", "SUB (IDENTITY)", "METHOD", "VERIFIED", "LAST LOGIN", "2FA", "STATUS", ""].map(h => (
-                  <span key={h} style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</span>
-                ))}
-              </div>
-              {users.map(u => (
-                <div key={u.id}
-                  onClick={() => setProfileUser(u)}
-                  title="View profile"
-                  style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 80px 90px 1fr 70px 90px auto", gap: "0 10px", alignItems: "center", padding: "8px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: u.is_active ? C.surface : C.bg, cursor: "pointer" }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = C.primary)}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
-                >
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: u.is_active ? C.text : C.muted }}>{u.display_name || u.username}</div>
-                    <code style={{ fontSize: 11, color: C.muted }}>@{u.username}</code>
-                  </div>
-                  <span style={{ fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</span>
-                  <code style={{ fontSize: 12, color: C.primary }}>{u.sub}</code>
-                  <Badge text={u.auth_method === "identity" ? "🌐 IdP" : "🔑 gw"} />
-                  <Badge text={u.email_verified ? "verified" : "unverified"} />
-                  <span style={{ fontSize: 11, color: C.muted }}>{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "—"}</span>
-                  <TwoFaBadge user={u} />
-                  <Badge text={u.is_locked ? "🔒 locked" : u.is_active ? "active" : "disabled"} />
-                  {!readonly && (
-                    <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
-                      {u.auth_method !== "identity" && <Btn size="sm" variant="ghost" onClick={() => setResetUser(u)}>Reset PW</Btn>}
-                      <Btn size="sm" variant="ghost" onClick={async () => {
-                        try { await api.put(`/__config/apps/${appId}/users/${u.id}`, { is_active: !u.is_active }); load(); }
-                        catch (e) { alert(String(e)); }
-                      }}>{u.is_active ? "Disable" : "Enable"}</Btn>
-                      <button onClick={() => setDeleteUser(u)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="app-users-table-wrap">
+              <table className="ui-table app-users-table">
+                <colgroup>{[19,20,16,9,9,10,5,8,4].map((width,i)=><col key={i} style={{width:`${width}%`}}/>)}</colgroup>
+                <thead><tr>{["Username","Email","Sub (identity)","Method","Verified","Last login","2FA","Status","Actions"].map(h=><th key={h}>{h}</th>)}</tr></thead>
+                <tbody>{users.map(u=><tr key={u.id} className="is-clickable" onClick={()=>setProfileUser(u)}>
+                  <td><button className="app-user-profile-link" onClick={e=>{e.stopPropagation();setProfileUser(u);}}><strong>{u.display_name || u.username}</strong><code>@{u.username}</code></button></td>
+                  <td title={u.email}><span className="app-user-ellipsis">{u.email || "—"}</span></td>
+                  <td title={u.sub}><code className="app-user-ellipsis">{u.sub || "—"}</code></td>
+                  <td><Badge text={u.auth_method==="identity" ? "IdP" : "Gateway"}/></td>
+                  <td><Badge text={u.email_verified ? "verified" : "unverified"}/></td>
+                  <td className="ui-muted">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "—"}</td>
+                  <td><TwoFaBadge user={u}/></td>
+                  <td><Badge text={u.is_locked ? "locked" : u.is_active ? "active" : "disabled"}/></td>
+                  <td className="ui-cell-actions" onClick={e=>e.stopPropagation()}>{!readonly && <RowMenu items={[
+                    ...(u.auth_method!=="identity" ? [{label:"Reset password",icon:<KeyRound/>,onClick:()=>setResetUser(u)}] : []),
+                    {label:u.is_active ? "Disable" : "Enable",icon:<Power/>,onClick:async()=>{try{await api.put(`/__config/apps/${appId}/users/${u.id}`,{is_active:!u.is_active});load();}catch{ /* API errors use the shared toast. */ }}},
+                    {label:"Delete",icon:<Trash2/>,danger:true,onClick:()=>setDeleteUser(u)},
+                  ]}/>}</td>
+                </tr>)}</tbody>
+              </table>
             </div>
           )}
         </div>
@@ -131,7 +115,7 @@ export function UsersTab({ appId, app }: { appId: string; app: { base_path: stri
           message={`Delete user "${deleteUser.username}"? Their active sessions on this app will be revoked immediately.`}
           onConfirm={async () => {
             try { await api.del(`/__config/apps/${appId}/users/${deleteUser.id}`); setDeleteUser(null); load(); }
-            catch (e) { alert(String(e)); }
+            catch (e) { /* The API client reports the failure through the shared toast. */ }
           }}
           onCancel={() => setDeleteUser(null)}
         />
@@ -281,8 +265,8 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
       <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px", margin: "14px 0 4px" }}>Activity</div>
       <Row label="Last login" value={fmt(detail.last_login_at)} />
       {detail.is_locked && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#fff8e1", borderRadius: C.radius, border: "1px solid #fcd34d", margin: "8px 0" }}>
-          <span style={{ fontSize: 12, color: "#92400e", flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", margin: "8px 0" }}>
+          <span style={{ fontSize: 12, color: "var(--warning)", flex: 1 }}>
             🔒 Account locked until {detail.locked_until ? new Date(detail.locked_until).toLocaleString() : "—"} ({detail.failed_login_attempts} failed attempts)
           </span>
           {!readonly && (
@@ -347,7 +331,7 @@ function AddUserModal({ appId, onClose, onCreated }: { appId: string; onClose: (
     <Modal_ title="Add App User" onClose={onClose}>
       <form onSubmit={submit}>
         {error && <ErrorBanner message={error} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+        <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
           <Field label="Username"><input style={inputStyle} value={form.username} onChange={set("username")} required autoFocus /></Field>
           <Field label="Display name"><input style={inputStyle} value={form.display_name} onChange={set("display_name")} placeholder="optional" /></Field>
         </div>

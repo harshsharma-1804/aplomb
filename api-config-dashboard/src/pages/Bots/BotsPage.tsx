@@ -1,12 +1,15 @@
+import { Bot, Plus, Search, Upload, RefreshCw, Pencil, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import type { AiBot, AiProvider, ListResult } from "../../api/types";
-import { Card, SectionHead, Table, Btn, Badge, Field, inputStyle, Spinner, ErrorBanner, Confirm, C } from "../../components";
+import { Card, SectionHead, Table, Btn, Badge, Field, inputStyle, Spinner, ErrorBanner, Confirm, Stat, Modal, C, RowMenu } from "../../components";
 import { useSession } from "../../auth/SessionContext";
 import { ImportBotModal } from "./ImportBotModal";
 
 export function BotsPage() {
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [query, setQuery] = useState("");
   const [bots, setBots] = useState<AiBot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -30,21 +33,21 @@ export function BotsPage() {
 
   async function handleDelete(bot: AiBot) {
     try { await api.del(`/__config/admin/ai/bots/${bot._id}`); setDeleteTarget(null); load(); }
-    catch (e) { alert(String(e)); }
+    catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   const cols = [
     {
       key: "name", label: "Bot",
       render: (_: unknown, row: Record<string, unknown>) => (
-        <div>
+        <div className="app-app-name"><span className="ui-tile"><Bot size={17} /></span><div>
           <div style={{ fontWeight: 600, fontSize: 13 }}>{String(row["name"])}</div>
           <div style={{ fontSize: 11, color: C.muted }}>
             {(row["allowed_app_ids"] as string[])?.length ?? 0} apps ·{" "}
             {(row["allowed_provider_ids"] as string[])?.length ?? 0} providers ·{" "}
             {(row["rules"] as string[])?.length ?? 0} rules
           </div>
-        </div>
+        </div></div>
       ),
     },
     { key: "is_active", label: "Status", render: (v: unknown) => <Badge text={v ? "active" : "disabled"} /> },
@@ -53,21 +56,17 @@ export function BotsPage() {
       render: (v: unknown) => v ? new Date(String(v)).toLocaleString() : <span style={{ color: C.muted }}>never</span>,
     },
     {
-      key: "_id", label: "Actions",
+      key: "_id", label: "",
       render: (_: unknown, row: Record<string, unknown>) => (
-        <div style={{ display: "flex", gap: 6 }}>
-          <Btn size="sm" variant="outline" onClick={e => { e.stopPropagation(); navigate(`/bots/${row["_id"]}`); }}>Configure</Btn>
-          {can("manage:providers") && (
-            <Btn size="sm" variant="danger" onClick={e => { e.stopPropagation(); setDeleteTarget(row as unknown as AiBot); }}>Delete</Btn>
-          )}
-        </div>
+        <RowMenu items={[{label:"Configure",icon:<Pencil/>,onClick:()=>navigate(`/bots/${row._id}`)},...(can("manage:providers") ? [{label:"Delete",icon:<Trash2/>,danger:true,onClick:()=>setDeleteTarget(row as unknown as AiBot)}] : [])]}/>
+
       ),
     },
   ];
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, flexShrink: 0 }}>
+    <div className="app-page" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="ui-pagehead" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexShrink: 0 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Bot Registry</h1>
           <p style={{ margin: "2px 0 0", color: C.muted, fontSize: 13 }}>
@@ -76,8 +75,8 @@ export function BotsPage() {
         </div>
         {can("manage:providers") && (
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="outline" onClick={() => setShowImport(true)}>Import Bot ↑</Btn>
-            <Btn onClick={() => setShowCreate(true)}>+ Register Bot</Btn>
+            <Btn variant="secondary" onClick={() => setShowImport(true)}><Upload />Import</Btn>
+            <Btn onClick={() => setShowCreate(true)}><Plus />New Bot</Btn>
           </div>
         )}
       </div>
@@ -89,7 +88,7 @@ export function BotsPage() {
         />
       )}
 
-      {error && <ErrorBanner message={error} />}
+      <div className="ui-page__body">{error && <ErrorBanner message={error} />}
 
       {newKey && (
         <div style={{ marginBottom: 16, padding: 14, border: "1px solid var(--success)", background: "var(--success-background)", borderRadius: C.radius }}>
@@ -105,21 +104,19 @@ export function BotsPage() {
         </div>
       )}
 
-      <Card style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <SectionHead
-          title={`${bots.length} bot${bots.length !== 1 ? "s" : ""}`}
-          action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>}
-        />
+      <div className="ui-row app-apps-toolbar" style={{marginBottom:20}}><div className="ui-seg">{["all","active","disabled"].map(t=><button type="button" key={t} className={`ui-seg__item ${statusFilter===t ? "is-active" : ""}`} aria-pressed={statusFilter===t} onClick={()=>setStatusFilter(t)}><span style={{textTransform:"capitalize"}}>{t}</span><span className="ui-count">{t==="all" ? bots.length : bots.filter(b=>t==="active" ? b.is_active : !b.is_active).length}</span></button>)}</div><div className="ui-grow"/><div className="ui-search" style={{width:260}}><Search/><input className="ui-input" aria-label="Search bots" placeholder="Filter by name" value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="ui-iconbtn ui-iconbtn--bordered" aria-label="Refresh bots" onClick={load}><RefreshCw/></button></div>
+      <Card>
         {loading
           ? <Spinner />
           : <Table
               cols={cols as Parameters<typeof Table>[0]["cols"]}
-              rows={bots as unknown as Record<string, unknown>[]}
+              rows={bots.filter(b => (statusFilter==="all" || (statusFilter==="active" ? b.is_active : !b.is_active)) && b.name.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string, unknown>[]}
               onRowClick={row => navigate(`/bots/${row["_id"]}`)}
             />
         }
       </Card>
 
+      </div>
       {showCreate && (
         <RegisterBotModal
           onClose={() => setShowCreate(false)}
@@ -154,9 +151,7 @@ function RegisterBotModal({ onClose, onCreated }: { onClose: () => void; onCreat
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: C.overlay, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-      <div style={{ background: C.surface, borderRadius: C.radius, width: 420, padding: 24, boxShadow: C.shadowModal, border: `1px solid ${C.border}` }}>
-        <h2 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700 }}>Register Bot</h2>
+    <Modal title="New Bot" onClose={onClose} width={460}>
         {error && <ErrorBanner message={error} />}
         <form onSubmit={submit}>
           <Field label="Bot Name" hint="e.g. member-portal-bot, claims-assistant">
@@ -164,10 +159,9 @@ function RegisterBotModal({ onClose, onCreated }: { onClose: () => void; onCreat
           </Field>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
             <Btn variant="ghost" type="button" onClick={onClose}>Cancel</Btn>
-            <Btn type="submit" disabled={saving}>{saving ? "Registering…" : "Register"}</Btn>
+            <Btn type="submit" disabled={saving}>{saving ? "Creating…" : "Create bot"}</Btn>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

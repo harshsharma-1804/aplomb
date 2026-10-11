@@ -29,7 +29,7 @@ export function SessionsTab({ appId }: { appId: string }) {
       await api.del(`/__config/apps/${appId}/sessions/${id}`);
       setRevokeTarget(null);
       load();
-    } catch (e) { alert(String(e)); }
+    } catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   function relTime(iso: string): string {

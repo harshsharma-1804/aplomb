@@ -1,3 +1,6 @@
+import { Plus } from "lucide-react";
+import { PageHeaderActions } from "../../components/PageSave";
+import { CollectionHead } from "../../components/CollectionHead";
 import { useState, useEffect } from "react";
 import { api } from "../../api/client";
 import type { AdminUser, ListResult } from "../../api/types";
@@ -7,6 +10,7 @@ import { useSession } from "../../auth/SessionContext";
 export function UsersPage() {
   const { user: me } = useSession();
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [query,setQuery]=useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -22,7 +26,7 @@ export function UsersPage() {
 
   async function handleDeactivate(u: AdminUser) {
     try { await api.del(`/__config/admin/users/${u._id}`); setDeactivateTarget(null); load(); }
-    catch (e) { alert(String(e)); }
+    catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   const cols = [
@@ -31,7 +35,7 @@ export function UsersPage() {
     { key: "role", label: "Role", render: (v: unknown) => <Badge text={String(v)} /> },
     { key: "is_active", label: "Status", render: (v: unknown) => <Badge text={v ? "active" : "inactive"} /> },
     { key: "last_login_at", label: "Last Login", render: (v: unknown) => v ? new Date(String(v)).toLocaleString() : "Never" },
-    { key: "_id", label: "Actions", render: (_: unknown, row: Record<string, unknown>) => {
+    { key: "_id", label: "", render: (_: unknown, row: Record<string, unknown>) => {
       const isSelf = row["_id"] === (me as any)?._id || row["username"] === me?.username;
       return (
         <div style={{ display: "flex", gap: 6 }}>
@@ -45,17 +49,11 @@ export function UsersPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Admin Users</h1>
-          <p style={{ margin: "2px 0 0", color: C.muted, fontSize: 13 }}>Manage who can access the Config Dashboard.</p>
-        </div>
-        <Btn onClick={() => setShowCreate(true)}>+ Add Admin</Btn>
-      </div>
+      <PageHeaderActions><Btn onClick={()=>setShowCreate(true)}><Plus/>Add admin</Btn></PageHeaderActions>
       {error && <ErrorBanner message={error} />}
       <Card>
-        <SectionHead title={`${users.length} user${users.length !== 1 ? "s" : ""}`} action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>} />
-        {loading ? <Spinner /> : <Table cols={cols as Parameters<typeof Table>[0]["cols"]} rows={users as unknown as Record<string, unknown>[]} />}
+        <CollectionHead count={users.length} noun="admins" query={query} onQuery={setQuery} onRefresh={load}/>
+        {loading ? <Spinner /> : <Table cols={cols as Parameters<typeof Table>[0]["cols"]} rows={users.filter(p=>`${p.username} ${p.email} ${p.role}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string, unknown>[]} />}
       </Card>
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); load(); }} />}
       {resetTarget && <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} />}

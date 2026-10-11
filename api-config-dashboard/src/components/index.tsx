@@ -1,258 +1,121 @@
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AlertCircle, Check, ChevronDown, ChevronUp, Info, LoaderCircle, Ellipsis, Copy, X, Trash2 } from "lucide-react";
 
 export const C = {
   bg: "var(--surface-muted)", canvas: "var(--canvas)", surface: "var(--surface)", surfaceMuted: "var(--surface-muted)",
   border: "var(--border)", borderStrong: "var(--input-border)",
   primary: "var(--primary)", primaryHover: "var(--primary-hover)", primaryText: "var(--primary-text)",
-  danger: "var(--danger)", success: "var(--success)", warning: "var(--warning)",
-  text: "var(--text)", muted: "var(--muted)",
-  sidebar: "var(--sidebar)", sidebarHover: "var(--sidebar-hover)",
-  sidebarText: "var(--sidebar-text)", sidebarTextMuted: "var(--sidebar-text-muted)",
-  selection: "var(--selection)",
-  dangerBg: "var(--danger-background)", successBg: "var(--success-background)", warningBg: "var(--warning-background)",
-  codeBg: "var(--code-bg)", codeText: "var(--code-text)",
-  overlay: "var(--overlay)", shadow: "var(--shadow)", shadowModal: "var(--shadow-modal)",
+  danger: "var(--danger)", success: "var(--success)", warning: "var(--warning)", text: "var(--text)", muted: "var(--muted)",
+  sidebar: "var(--sidebar)", sidebarHover: "var(--sidebar-hover)", sidebarText: "var(--sidebar-text)", sidebarTextMuted: "var(--sidebar-text-muted)",
+  selection: "var(--selection)", dangerBg: "var(--danger-background)", successBg: "var(--success-background)", warningBg: "var(--warning-background)",
+  codeBg: "var(--code-bg)", codeText: "var(--code-text)", overlay: "var(--overlay)", shadow: "var(--shadow)", shadowModal: "var(--shadow-modal)",
   radiusSm: "var(--radius-sm)", radius: "var(--radius)", radiusPanel: "var(--radius-panel)", radiusFeature: "var(--radius-feature)",
 };
-
-// ── Button ────────────────────────────────────────────────────────────────────
-interface BtnProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "danger" | "ghost" | "outline" | "success";
-  size?: "sm" | "md";
+interface BtnProps extends React.ButtonHTMLAttributes<HTMLButtonElement> { variant?: "primary" | "danger" | "ghost" | "outline" | "secondary" | "success"; size?: "sm" | "md"; pageSave?: boolean; }
+export function Btn({ variant = "primary", size = "md", className = "", children, pageSave, ...rest }: BtnProps) {
+  const cls = variant === "ghost" ? "quiet" : variant === "secondary" ? "" : variant;
+  return <button type="button" data-page-save={pageSave || undefined} className={`ui-btn ${cls ? `ui-btn--${cls}` : ""} ${size === "sm" ? "ui-btn--sm" : ""} ${className}`} {...rest}>{children}</button>;
 }
-export function Btn({ variant = "primary", size = "md", style, children, ...rest }: BtnProps) {
-  const base: React.CSSProperties = {
-    display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid transparent",
-    borderRadius: C.radius, cursor: "pointer", fontWeight: 500, lineHeight: 1, transition: "background .15s",
-    padding: size === "sm" ? "5px 10px" : "8px 14px", fontSize: size === "sm" ? 12 : 13,
-  };
-  const vars: Record<string, React.CSSProperties> = {
-    primary: { background: C.primary, color: C.primaryText },
-    danger:  { background: C.danger, color: C.primaryText },
-    success: { background: C.success, color: C.primaryText },
-    outline: { background: "transparent", color: C.primary, borderColor: C.primary },
-    ghost:   { background: "transparent", color: C.muted, borderColor: C.border },
-  };
-  return <button style={{ ...base, ...vars[variant], ...style }} {...rest}>{children}</button>;
-}
-
-// ── Badge ─────────────────────────────────────────────────────────────────────
-const statusColor: Record<string, [string, string]> = {
-  active: [C.success, C.successBg], approved: [C.success, C.successBg],
-  admin: [C.primary, C.selection], sub_admin: [C.primary, C.selection],
-  denied: [C.danger, C.dangerBg], deprecated: [C.danger, C.dangerBg],
-  pending: [C.warning, C.warningBg], draft: [C.warning, C.warningBg],
-  inactive: [C.muted, C.surfaceMuted], viewer: [C.muted, C.surfaceMuted],
+const tones: Record<string, string> = {
+  active: "success", approved: "success", ok: "success", admin: "accent", sub_admin: "accent", denied: "danger", deprecated: "danger",
+  pending: "warning", draft: "warning", disabled: "warning", inactive: "warning", "auth off":"warning",
 };
 export function Badge({ text }: { text: string }) {
-  const [color, bg] = statusColor[text.toLowerCase()] ?? [C.muted, C.surfaceMuted];
-  return (
-    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 600, color, background: bg, textTransform: "uppercase", letterSpacing: ".4px" }}>
-      {text}
-    </span>
-  );
+  return <span className={`ui-badge ${tones[text.toLowerCase()] ? `ui-badge--${tones[text.toLowerCase()]}` : ""}`}>{tones[text.toLowerCase()] && <i className="ui-dot" />}{tones[text.toLowerCase()] ? text.replace(/_/g," ").replace(/^./,c=>c.toUpperCase()) : text.replace(/_/g," ")}</span>;
 }
-
-// ── Card ──────────────────────────────────────────────────────────────────────
 export function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: C.radiusPanel, boxShadow: C.shadow, ...style }}>{children}</div>;
+  return <div className="ui-card app-card" style={style}>{children}</div>;
 }
-
-// ── SectionHead ───────────────────────────────────────────────────────────────
 export function SectionHead({ title, action }: { title: string; action?: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
-      <span style={{ fontWeight: 600, fontSize: 13 }}>{title}</span>
-      {action}
-    </div>
-  );
+  return <div className="ui-card__head"><h2 className="ui-card__title">{title}</h2><div className="ui-row ui-row--wrap">{action}</div></div>;
 }
-
-// ── Table ─────────────────────────────────────────────────────────────────────
 export function Table({ cols, rows, onRowClick }: {
   cols: { key: string; label: string; render?: (v: unknown, row: Record<string, unknown>) => React.ReactNode }[];
-  rows: Record<string, unknown>[];
-  onRowClick?: (row: Record<string, unknown>) => void;
+  rows: Record<string, unknown>[]; onRowClick?: (row: Record<string, unknown>) => void;
 }) {
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-        <thead>
-          <tr style={{ background: C.surfaceMuted }}>
-            {cols.map(c => <th key={c.key} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.muted, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{c.label}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0
-            ? <tr><td colSpan={cols.length} style={{ padding: "24px 12px", textAlign: "center", color: C.muted }}>No records</td></tr>
-            : rows.map((row, i) => (
-              <tr key={i} onClick={() => onRowClick?.(row)}
-                style={{ borderBottom: `1px solid ${C.border}`, cursor: onRowClick ? "pointer" : undefined }}
-                onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = C.selection; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ""; }}>
-                {cols.map(c => (
-                  <td key={c.key} style={{ padding: "8px 12px", color: C.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {c.render ? c.render(row[c.key], row) : String(row[c.key] ?? "—")}
-                  </td>
-                ))}
-              </tr>
-            ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <div className="app-table-wrap"><table className="ui-table"><thead><tr>{cols.map(c => <th key={`${c.key}-${cols.indexOf(c)}`} scope="col">{c.label}</th>)}</tr></thead><tbody>
+    {rows.length === 0 ? <tr><td colSpan={cols.length}><div className="app-empty">No records to display</div></td></tr> : rows.map((row, i) => <tr key={String(row._id ?? i)}>
+      {cols.map((c, index) => <td key={`${c.key}-${index}`} className={!c.label || c.label.toLowerCase()==="actions" ? "ui-cell-actions" : undefined}>{index === 0 && onRowClick ? <button type="button" className="app-table-link" onClick={() => onRowClick(row)}>{c.render ? c.render(row[c.key], row) : String(row[c.key] ?? "—")}</button> : c.render ? c.render(row[c.key], row) : String(row[c.key] ?? "—")}</td>)}
+    </tr>)}
+  </tbody></table></div>;
 }
-
-// ── Modal ─────────────────────────────────────────────────────────────────────
 export function Modal({ title, onClose, children, width = 520 }: { title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
-  return (
-    <div style={{ position: "fixed", inset: 0, background: C.overlay, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: C.surface, borderRadius: C.radiusPanel, boxShadow: C.shadowModal, width, maxWidth: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>{title}</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.muted }}>×</button>
-        </div>
-        <div style={{ overflowY: "auto", padding: 16, flex: 1 }}>{children}</div>
-      </div>
-    </div>
-  );
+  const id = useId(); const ref = useRef<HTMLDivElement>(null); const close = useRef(onClose); close.current = onClose;
+  const opener = useRef(document.activeElement as HTMLElement | null);
+  useEffect(() => {
+    const prior = opener.current;
+    const controls = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]') ?? []).filter(el => el.getClientRects().length);
+    (controls().find(el => el.tagName === "INPUT") ?? controls()[0] ?? ref.current)?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close.current(); }
+      if (e.key !== "Tab") return;
+      const all = controls(); const first = all[0]; const last = all[all.length - 1];
+      if (!first) { e.preventDefault(); return; }
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    ref.current?.addEventListener("keydown", handler);
+    const node = ref.current;
+    return () => { node?.removeEventListener("keydown", handler); prior?.focus(); };
+  }, []);
+  return createPortal(<div className="ui-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}><div ref={ref} className="ui-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} style={{ width }}>
+    <div className="ui-modal__head"><h2 className="ui-modal__title" id={id}>{title}</h2><button type="button" className="ui-iconbtn" onClick={onClose} aria-label="Close dialog"><X /></button></div>
+    <div className="ui-modal__body">{children}</div>
+  </div></div>, document.body);
 }
-
-// ── Confirm ───────────────────────────────────────────────────────────────────
 export function Confirm({ message, onConfirm, onCancel, danger = false }: { message: string; onConfirm: () => void; onCancel: () => void; danger?: boolean }) {
-  return (
-    <Modal title="Confirm" onClose={onCancel}>
-      <p style={{ fontSize: 13, marginBottom: 16 }}>{message}</p>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
-        <Btn variant={danger ? "danger" : "primary"} onClick={onConfirm}>Confirm</Btn>
-      </div>
-    </Modal>
-  );
+  return <Modal title={danger ? "Confirm deletion" : "Confirm changes"} onClose={onCancel}><p className="app-confirm-message">{message}</p><div className="ui-row app-actions-end"><Btn variant="ghost" onClick={onCancel}>Cancel</Btn><Btn variant={danger ? "danger" : "primary"} onClick={onConfirm}>{danger ? "Delete" : "Confirm"}</Btn></div></Modal>;
 }
-
-// ── Field ─────────────────────────────────────────────────────────────────────
 export function Field({ label, children, hint }: { label: React.ReactNode; children: React.ReactNode; hint?: string }) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <label style={{ display: "flex", alignItems: "center", fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".4px" }}>{label}</label>
-      {children}
-      {hint && <p style={{ margin: "3px 0 0", fontSize: 11, color: C.muted }}>{hint}</p>}
-    </div>
-  );
+  const uid = useId(); let content = children; let id: string | undefined;
+  if (React.isValidElement(children) && ["input", "textarea", "select"].includes(String(children.type))) {
+    id = children.props.id ?? uid;
+    content = React.cloneElement(children as React.ReactElement, { id, "aria-describedby": hint ? `${uid}-hint` : children.props["aria-describedby"] });
+  }
+  return <div className="ui-field"><label className="ui-label" htmlFor={id}>{label}</label>{content}{hint && <p className="ui-hint" id={`${uid}-hint`}>{hint}</p>}</div>;
 }
-
-export const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "7px 10px", border: `1px solid ${C.borderStrong}`, borderRadius: C.radius,
-  fontSize: 13, color: C.text, background: C.surface, boxSizing: "border-box",
-};
-
-// ── Toggle ────────────────────────────────────────────────────────────────────
+export const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 11px", border: `1px solid ${C.borderStrong}`, borderRadius: C.radius, fontSize: 13, color: C.text, background: "var(--field)", boxSizing: "border-box", minHeight: 36 };
 export function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      style={{
-        width: 36, height: 20, borderRadius: 999, border: "none", cursor: disabled ? "default" : "pointer",
-        background: checked ? C.primary : C.border, position: "relative", flexShrink: 0,
-        transition: "background .15s", padding: 0, opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <span style={{
-        position: "absolute", top: 2, left: checked ? 18 : 2, width: 16, height: 16, borderRadius: "50%",
-        background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.25)", transition: "left .15s",
-      }} />
-    </button>
-  );
+  return <button type="button" role="switch" className="ui-toggle" aria-checked={checked} aria-label={label ?? "Toggle setting"} disabled={disabled} onClick={() => onChange(!checked)} />;
 }
-
-// ── InfoTip ───────────────────────────────────────────────────────────────────
 export function InfoTip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span
-      style={{ position: "relative", display: "inline-flex", marginLeft: 6 }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <span
-        role="note"
-        aria-label={text}
-        tabIndex={0}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        style={{
-          cursor: "help", width: 16, height: 16, borderRadius: 999, flexShrink: 0,
-          border: `1px solid ${C.borderStrong}`, color: C.muted, background: "transparent",
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          fontSize: 10, fontWeight: 700, fontStyle: "italic", fontFamily: "Georgia, serif",
-          textTransform: "none", letterSpacing: 0,
-        }}
-      >i</span>
-      {open && (
-        <span style={{
-          position: "absolute", bottom: "calc(100% + 8px)", left: 0, width: 280, zIndex: 1100,
-          padding: "9px 11px", background: C.surface, border: `1px solid ${C.border}`,
-          borderRadius: C.radius, boxShadow: C.shadowModal, fontSize: 12, fontWeight: 400,
-          color: C.text, lineHeight: 1.5, textTransform: "none", letterSpacing: 0,
-          whiteSpace: "normal",
-        }}>{text}</span>
-      )}
-    </span>
-  );
+  const [open, setOpen] = useState(false); const id = useId();
+  return <span className="app-infotip" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}><button type="button" className="ui-iconbtn ui-iconbtn--sm" aria-label="More information" aria-describedby={open ? id : undefined} onClick={() => setOpen(o => !o)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}><Info size={14} /></button>{open && <span role="tooltip" className="app-tooltip" id={id}>{text}</span>}</span>;
 }
-
-// ── Spinner / Error ───────────────────────────────────────────────────────────
-export function Spinner() {
-  return <div style={{ textAlign: "center", padding: "32px 0", color: C.muted, fontSize: 13 }}>Loading…</div>;
-}
-
+export function Spinner() { return <div className="app-loading" role="status"><LoaderCircle className="app-spin" size={19} />Loading…</div>; }
 export function ErrorBanner({ message }: { message: string }) {
-  return <div style={{ background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: C.radius, padding: "10px 14px", color: C.danger, fontSize: 13, marginBottom: 12 }}>{message}</div>;
+  useEffect(()=>{if(message)window.dispatchEvent(new CustomEvent("dashboard:toast",{detail:{message:message.replace(/^Error: /,""),tone:"danger",detail:""}}));},[message]);
+  return null;
 }
-
-// ── Tabs ──────────────────────────────────────────────────────────────────────
+export function DeleteIcon({label="Delete",...props}:React.ButtonHTMLAttributes<HTMLButtonElement> & {label?:string}) {
+  return <button {...props} type="button" className="ui-iconbtn ui-iconbtn--danger" aria-label={label} title={label}><Trash2 size={16}/></button>;
+}
 export function Tabs({ tabs, active, onChange }: { tabs: { key: string; label: string }[]; active: string; onChange: (k: string) => void }) {
-  return (
-    <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 16, overflowX: "auto" }}>
-      {tabs.map(t => (
-        <button key={t.key} onClick={() => onChange(t.key)} style={{
-          padding: "8px 14px", background: "none", border: "none", cursor: "pointer",
-          fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-          color: active === t.key ? C.primary : C.muted,
-          borderBottom: active === t.key ? `2px solid ${C.primary}` : "2px solid transparent",
-          marginBottom: -2,
-        }}>{t.label}</button>
-      ))}
-    </div>
-  );
+  return <div className="ui-tabs app-tabs" role="tablist" aria-label="Sections">{tabs.map((t, i) => <button type="button" key={t.key} role="tab" aria-selected={active === t.key} tabIndex={active === t.key ? 0 : -1} className={`ui-tab ${active === t.key ? "is-active" : ""}`} onClick={() => onChange(t.key)} onKeyDown={e => {
+    const next = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    if (next >= 0) { e.preventDefault(); onChange(tabs[next].key); (e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus(); }
+  }}>{t.label}</button>)}</div>;
 }
-
-// ── JsonViewer ────────────────────────────────────────────────────────────────
 export function JsonViewer({ data }: { data: unknown }) {
   const [open, setOpen] = useState(false);
-  return (
-    <div style={{ marginTop: 10 }}>
-      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: C.radius, cursor: "pointer", fontSize: 11, color: C.muted, padding: "3px 8px" }}>
-        {open ? "Hide" : "Show"} raw JSON
-      </button>
-      {open && <pre style={{ marginTop: 8, padding: 12, background: C.codeBg, color: C.codeText, borderRadius: C.radius, fontSize: 11, overflowX: "auto", maxHeight: 320 }}>{JSON.stringify(data, null, 2)}</pre>}
-    </div>
-  );
+  return <div style={{ marginTop: 10 }}><Btn size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? <ChevronUp /> : <ChevronDown />}{open ? "Hide" : "Show"} raw JSON</Btn>{open && <pre className="app-code">{JSON.stringify(data, null, 2)}</pre>}</div>;
+}
+export function MethodBadge({ method }: { method: string }) { return <span className="ui-method" data-method={method}>{method}</span>; }
+export function Stat({ label, value, note }: { label: React.ReactNode; value: React.ReactNode; note?: string }) {
+  return <div className="ui-stat"><div className="ui-stat__label">{label}</div><div className="ui-stat__value ui-num">{value}</div>{note && <div className="ui-stat__note">{note}</div>}</div>;
 }
 
-// ── MethodBadge ───────────────────────────────────────────────────────────────
-const methodColor: Record<string, [string, string]> = {
-  GET: [C.success, C.successBg], POST: [C.primary, C.selection], PUT: [C.warning, C.warningBg],
-  DELETE: [C.danger, C.dangerBg], PATCH: [C.primary, C.selection],
-};
-export function MethodBadge({ method }: { method: string }) {
-  const [color, bg] = methodColor[method] ?? [C.muted, C.surfaceMuted];
-  return <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: C.radiusSm, fontSize: 11, fontWeight: 700, color, background: bg, fontFamily: "monospace" }}>{method}</span>;
+export function RowMenu({ items }: { items: {label:string;icon:React.ReactNode;danger?:boolean;onClick:()=>void}[] }) {
+  const [open,setOpen]=useState(false); const ref=useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(!open)return; const handler=(e:MouseEvent)=>{if(!ref.current?.contains(e.target as Node))setOpen(false);};document.addEventListener("mousedown",handler);return()=>document.removeEventListener("mousedown",handler);},[open]);
+  return <div ref={ref} className="app-rowmenu"><button className="ui-iconbtn" aria-label="Actions" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(o=>!o)}><Ellipsis /></button>{open && <div className="ui-menu" role="menu" style={{right:0,top:34}} onKeyDown={e=>{if(e.key==="Escape"){setOpen(false);ref.current?.querySelector("button")?.focus();}}}>{items.map(item=><div key={item.label}>{item.danger && <div className="ui-menu__sep" />}<button className={`ui-menu__item ${item.danger ? "ui-menu__item--danger" : ""}`} role="menuitem" onClick={()=>{setOpen(false);item.onClick();}}>{item.icon}{item.label}</button></div>)}</div>}</div>;
+}
+
+export function Code({ value, title="JSON" }: {value:unknown;title?:string}) {
+  const text=typeof value==="string" ? value : JSON.stringify(value,null,2) ?? "";
+  const [copied,setCopied]=useState(false);
+  const parts:React.ReactNode[]=[]; const re=/("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|([{}[\],])/g;
+  let end=0; for(const m of text.matchAll(re)){const i=m.index!;parts.push(text.slice(end,i));const cls=m[1] ? (m[2] ? "tok-key" : "tok-str") : m[3] ? "tok-lit" : m[4] ? "tok-num" : "tok-punc";parts.push(<span key={i} className={cls}>{m[1] ?? m[0]}</span>);if(m[2])parts.push(<span key={`${i}-colon`} className="tok-punc">{m[2]}</span>);end=i+m[0].length;}parts.push(text.slice(end));
+  return <div className="ui-code"><div className="ui-code__bar"><span>{title}</span><button className="ui-iconbtn ui-iconbtn--sm" aria-label={copied ? "Copied" : "Copy code"} onClick={async()=>{try{await navigator.clipboard.writeText(text);setCopied(true);}catch{setCopied(false);}}}>{copied ? <Check /> : <Copy />}</button></div><pre>{parts}</pre></div>;
 }

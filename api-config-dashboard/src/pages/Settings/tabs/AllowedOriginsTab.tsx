@@ -1,6 +1,9 @@
+import { Plus, Trash2 } from "lucide-react";
+import { PageHeaderActions, notifyToast } from "../../../components/PageSave";
+import { CollectionHead } from "../../../components/CollectionHead";
 import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confirm, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, Spinner, Confirm, C, Modal, Table } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 interface CorsOriginEntry {
@@ -13,6 +16,7 @@ interface CorsOriginEntry {
 export function AllowedOriginsTab() {
   const { can } = useSession();
   const [entries, setEntries] = useState<CorsOriginEntry[]>([]);
+  const [query,setQuery]=useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -49,34 +53,28 @@ export function AllowedOriginsTab() {
       await api.del(`/__config/admin/cors-origins/${entry.id}`);
       setDeleteTarget(null);
       load();
-    } catch (e) { alert(String(e)); }
+    } catch (e) { setError(String(e)); }
   }
 
   const isWildcard = origin.trim() === "*";
   const isValid = origin.trim() === "*" || /^https?:\/\/.+/.test(origin.trim());
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {error && <ErrorBanner message={error} />}
-
-      <Card>
-        <SectionHead
-          title={`Allowed Origins — Runtime API (${entries.length})`}
-          action={can("manage:users") ? <Btn size="sm" onClick={() => setShowAdd(s => !s)}>{showAdd ? "Cancel" : "+ Add Origin"}</Btn> : undefined}
-        />
-
-        {/* Explainer */}
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: "var(--selection)", fontSize: 12, color: "var(--primary)" }}>
-          <strong>What this controls:</strong> which browser origins (websites) are allowed to call your runtime API endpoints via CORS.
-          Your dashboard (<code>localhost:5000</code>) is always allowed for config routes regardless of this list.
-          Add <code>https://myapp.com</code> here so your frontend can call your orchestrator endpoints.
-          Use <code>*</code> to allow all origins (not recommended for production).
-        </div>
-
-        {showAdd && (
-          <form onSubmit={addOrigin} style={{ padding: 16, borderBottom: `1px solid ${C.border}`, background: "var(--surface-muted)" }}>
+  return <>
+    {can("manage:users") && <PageHeaderActions><Btn onClick={()=>setShowAdd(true)}><Plus/>Add origin</Btn></PageHeaderActions>}
+    {error && <ErrorBanner message={error}/>}
+    <Card><CollectionHead count={entries.length} noun="origins" query={query} onQuery={setQuery} onRefresh={load}/>
+      {loading ? <Spinner/> : <Table cols={[
+        {key:"origin",label:"Origin",render:v=><strong className="ui-mono">{String(v)}</strong>},
+        {key:"_type",label:"Type",render:(_,r)=><span className="ui-badge">{String(r.origin).includes("*") ? "Wildcard" : "Exact"}</span>},
+        {key:"description",label:"Description",render:v=><span className="ui-muted">{String(v || "—")}</span>},
+        {key:"created_at",label:"Added",render:v=><span className="ui-muted ui-num">{new Date(String(v)).toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})}</span>},
+        {key:"_actions",label:"",render:(_,r)=>can("manage:users") && <button className="ui-iconbtn" aria-label={`Delete ${r.origin}`} onClick={()=>setDeleteTarget(r as unknown as typeof entries[number])}><Trash2/></button>}
+      ]} rows={entries.filter(e=>`${e.origin} ${e.description}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string,unknown>[]}/>}
+      <div className="ui-card__foot">Browser origins allowed to call the runtime API. Server-to-server calls are unaffected.</div>
+    </Card>
+    {showAdd && <Modal title="Add origin" onClose={()=>!adding && setShowAdd(false)}>          <form onSubmit={addOrigin}>
             {addError && <ErrorBanner message={addError} />}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+            <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field
                 label="Origin"
                 hint={
@@ -98,67 +96,10 @@ export function AllowedOriginsTab() {
                 <input style={inputStyle} value={description} onChange={e => setDescription(e.target.value)} placeholder="Main customer portal" />
               </Field>
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <Btn size="sm" type="submit" disabled={adding || !isValid}>{adding ? "Adding…" : "Add"}</Btn>
+            <div className="ui-modal__foot"><Btn variant="secondary" disabled={adding} onClick={()=>setShowAdd(false)}>Cancel</Btn>
+              <Btn size="sm" type="submit" disabled={adding || !isValid}>{adding ? "Adding…" : "Add origin"}</Btn>
             </div>
-          </form>
-        )}
-
-        <div style={{ padding: 16 }}>
-          {loading ? <Spinner /> : entries.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "24px 0", color: C.muted, fontSize: 13 }}>
-              <div style={{ fontSize: 24, marginBottom: 8 }}>🔒</div>
-              No origins configured. All cross-origin requests to runtime endpoints will be blocked by browsers.<br />
-              <span style={{ fontSize: 12 }}>Server-to-server calls (no browser) are unaffected by CORS.</span>
-            </div>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: C.bg }}>
-                  {["Origin", "Type", "Description", "Added", ""].map(h => (
-                    <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.muted, fontSize: 11, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map(entry => (
-                  <tr key={entry.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "10px 12px" }}>
-                      <code style={{ fontSize: 13, color: entry.origin === "*" ? C.danger : C.primary, fontWeight: 600 }}>{entry.origin}</code>
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 99, fontWeight: 600, background: entry.origin === "*" ? "var(--warning-background)" : "var(--success-background)", color: entry.origin === "*" ? "var(--warning)" : "var(--success)" }}>
-                        {entry.origin === "*" ? "wildcard (all)" : "exact"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "10px 12px", color: C.muted, fontSize: 12 }}>{entry.description || "—"}</td>
-                    <td style={{ padding: "10px 12px", color: C.muted, fontSize: 12 }}>{new Date(entry.created_at).toLocaleDateString()}</td>
-                    <td style={{ padding: "10px 12px" }}>
-                      {can("manage:users") && (
-                        <button onClick={() => setDeleteTarget(entry)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, background: C.bg, fontSize: 12, color: C.muted }}>
-          <strong>OIDC callbacks:</strong> OIDC providers POST tokens server-to-server — they are not browser CORS requests and are unaffected by this list. &nbsp;
-          <strong>OPTIONS preflight:</strong> Browser preflight requests are always answered without requiring auth so your OIDC-protected endpoints work correctly.
-        </div>
-      </Card>
-
-      {deleteTarget && (
-        <Confirm
-          danger
-          message={`Remove origin "${deleteTarget.origin}"? Browser requests from this origin to runtime endpoints will be blocked.`}
-          onConfirm={() => deleteOrigin(deleteTarget)}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-    </div>
-  );
+          </form></Modal>}
+    {deleteTarget && <Confirm danger message={`Remove "${deleteTarget.origin}"? Browser requests from this origin will be blocked.`} onConfirm={()=>deleteOrigin(deleteTarget)} onCancel={()=>setDeleteTarget(null)}/>}
+  </>;
 }

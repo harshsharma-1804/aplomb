@@ -1,8 +1,9 @@
+import { usePageSave, useGuardedAction } from "../../../components/PageSave";
 import { useState, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import { api } from "../../../api/client";
 import type { AppScript, ScriptLanguage } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C, Confirm } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C, Confirm, DeleteIcon } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 interface Props { appId: string; }
@@ -49,6 +50,7 @@ export async function handler(ctx: Ctx): Promise<HandlerResponse> {
 };
 
 export function ScriptsTab({ appId }: Props) {
+  const guard=useGuardedAction();
   const { can } = useSession();
   const readonly = !can("edit:endpoints");
 
@@ -148,6 +150,8 @@ export function ScriptsTab({ appId }: Props) {
     setSaveError("");
   }
 
+  usePageSave({filename,language,source,description},save,{enabled:!readonly,ready:!!selected,resetKey:selected?._id,disabled:saving});
+
   async function save() {
     if (!selected) return;
     setSaving(true); setSaveError(""); setSaveOk(false);
@@ -161,7 +165,7 @@ export function ScriptsTab({ appId }: Props) {
       setScripts(prev => prev.map(s => s._id === withFolder._id ? withFolder : s));
       setSelected(withFolder);
       setSaveOk(true);
-    } catch (e) { setSaveError(String(e)); }
+    } catch (e) { setSaveError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
@@ -200,7 +204,7 @@ export function ScriptsTab({ appId }: Props) {
         if (next.length > 0) selectScript(next[0]!);
         else { setSelected(null); setSource(""); setFilename(""); }
       }
-    } catch (e) { alert(String(e)); }
+    } catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   const monacoLang = language === "typescript" ? "typescript" : "javascript";
@@ -209,7 +213,7 @@ export function ScriptsTab({ appId }: Props) {
     <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "100%" }}>
       {error && <ErrorBanner message={error} />}
 
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 0, flex: 1, minHeight: 0 }}>
+      <div className="app-scripts-grid" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 0, flex: 1, minHeight: 0 }}>
 
         {/* ── File sidebar ─────────────────────────────────────────────── */}
         <div style={{ borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", background: C.bg, minHeight: 0 }}>
@@ -295,7 +299,7 @@ export function ScriptsTab({ appId }: Props) {
             {showAdd && (
               <div style={{ padding: 12, borderBottom: `1px solid ${C.border}`, background: C.surface }}>
                 {addInFolder && <div style={{ fontSize: 10, color: C.primary, marginBottom: 6, fontWeight: 600 }}>📁 {addInFolder}</div>}
-                {addError && <div style={{ fontSize: 11, color: C.danger, marginBottom: 6 }}>{addError}</div>}
+                {addError && <ErrorBanner message={addError}/>}
                 <input
                   style={{ ...inputStyle, fontSize: 12, marginBottom: 6 }}
                   placeholder="filename (e.g. enrichClaim)"
@@ -421,7 +425,7 @@ export function ScriptsTab({ appId }: Props) {
                             draggable
                             onDragStart={() => setDragScriptId(s._id)}
                             onDragEnd={() => { setDragScriptId(null); setDragOverTarget(null); }}
-                            onClick={() => selectScript(s)}
+                            onClick={() => {if(s._id!==selected?._id)guard(()=>selectScript(s));}}
                             style={{
                               padding: "8px 10px 8px 26px", cursor: "pointer",
                               borderBottom: `1px solid ${C.border}`,
@@ -430,7 +434,7 @@ export function ScriptsTab({ appId }: Props) {
                             }}>
                             {langBadge(s)}
                             <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text, fontFamily: "monospace" }}>{s.filename}</span>
-                            {!readonly && <button onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>}
+                            {!readonly && <DeleteIcon onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }} label="Remove item" />}
                           </div>
                         ))}
                         {!isCollapsed && folderScripts.length === 0 && (
@@ -448,7 +452,7 @@ export function ScriptsTab({ appId }: Props) {
                       draggable
                       onDragStart={() => setDragScriptId(s._id)}
                       onDragEnd={() => { setDragScriptId(null); setDragOverTarget(null); }}
-                      onClick={() => selectScript(s)}
+                      onClick={() => {if(s._id!==selected?._id)guard(()=>selectScript(s));}}
                       style={{
                         padding: "9px 12px", cursor: "pointer", borderBottom: `1px solid ${C.border}`,
                         background: selected?._id === s._id ? C.selection : dragScriptId === s._id ? "var(--surface-muted)" : "transparent",
@@ -456,7 +460,7 @@ export function ScriptsTab({ appId }: Props) {
                       }}>
                       {langBadge(s)}
                       <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text, fontFamily: "monospace" }}>{s.filename}</span>
-                      {!readonly && <button onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>}
+                      {!readonly && <DeleteIcon onClick={e => { e.stopPropagation(); setDeleteTarget(s); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 14, padding: "0 2px", flexShrink: 0 }} label="Remove item" />}
                     </div>
                   ))}
                 </>
@@ -471,7 +475,7 @@ export function ScriptsTab({ appId }: Props) {
             Select or create a script file to start editing.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div className="app-script-pane" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 
             {/* Toolbar */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
@@ -487,7 +491,7 @@ export function ScriptsTab({ appId }: Props) {
                 <option value="typescript">TypeScript</option>
               </select>
               <input
-                style={{ ...inputStyle, flex: 1, fontSize: 12 }}
+                style={{ ...inputStyle, flex: 1, minWidth: 0, fontSize: 12 }}
                 value={description}
                 onChange={e => { setDescription(e.target.value); setSaveOk(false); }}
                 disabled={readonly}
@@ -495,9 +499,9 @@ export function ScriptsTab({ appId }: Props) {
               />
               {!readonly && (
                 <>
-                  <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
+                  <div data-page-save-target style={{ flexShrink: 0 }} />
                   {saveOk && <span style={{ fontSize: 12, color: C.success }}>✓ Saved</span>}
-                  {saveError && <span style={{ fontSize: 12, color: C.danger }}>{saveError}</span>}
+                  {saveError && <ErrorBanner message={saveError}/>}
                 </>
               )}
             </div>

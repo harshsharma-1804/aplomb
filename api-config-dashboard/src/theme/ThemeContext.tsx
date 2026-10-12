@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 export type ThemeChoice = "light" | "dark" | "system";
+export type ColorPalette = "current" | "coastal" | "monochrome" | "orchid";
 export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "orchestrator-theme";
@@ -17,16 +18,20 @@ function initialChoice(): ThemeChoice {
   } catch {
     // private mode etc.
   }
-  return "system";
+  return "dark";
 }
 
 const ThemeContext = createContext<{
+  palette: ColorPalette;
+  setPalette: (palette: ColorPalette) => void;
   choice: ThemeChoice;
   theme: ResolvedTheme;
   setChoice: (c: ThemeChoice) => void;
-}>({ choice: "system", theme: "light", setChoice: () => {} });
+}>({ palette:"current",setPalette:()=>{},choice: "system", theme: "light", setChoice: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [palette,setPalette]=useState<ColorPalette>(()=>{try {const p=localStorage.getItem("orchestrator-palette");return p==="coastal" || p==="monochrome" || p==="orchid" ? p : "current";}catch{return "current";}});
+  useEffect(()=>{document.documentElement.setAttribute("data-palette",palette);try{localStorage.setItem("orchestrator-palette",palette);}catch{}},[palette]);
   const [choice, setChoice] = useState<ThemeChoice>(initialChoice);
   const [theme, setTheme] = useState<ResolvedTheme>(() =>
     choice === "system" ? systemTheme() : choice as ResolvedTheme,
@@ -50,7 +55,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [choice]);
 
-  return <ThemeContext.Provider value={{ choice, theme, setChoice }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ choice, theme, setChoice, palette, setPalette }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

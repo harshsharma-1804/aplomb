@@ -1,3 +1,4 @@
+import { usePageSave } from "../../../components/PageSave";
 import { useState } from "react";
 import { api } from "../../../api/client";
 import type { Endpoint, SchemaField } from "../../../api/types";
@@ -16,6 +17,8 @@ export function RequestSchemaTab({ appId, endpoint, onSaved }: Props) {
   const [contentType, setContentType] = useState<"application/json" | "application/x-www-form-urlencoded">(endpoint.request?.content_type ?? "application/json");
   const [validation, setValidation] = useState<"strict" | "permissive">(endpoint.request?.validation ?? "strict");
   const [maxBytes, setMaxBytes] = useState(String(endpoint.request?.max_body_bytes ?? 262144));
+
+  usePageSave({schema,contentType,validation,maxBytes},save,{enabled:can("edit:endpoints") && !["GET","HEAD","DELETE"].includes(endpoint.method),disabled:saving});
 
   const isReadOnly = ["GET","HEAD","DELETE"].includes(endpoint.method);
 
@@ -36,7 +39,7 @@ export function RequestSchemaTab({ appId, endpoint, onSaved }: Props) {
         request: { content_type: contentType, validation, max_body_bytes: Number(maxBytes), input_schema: schema },
       });
       onSaved({ ...ep, request: { content_type: contentType as any, validation: validation as any, max_body_bytes: Number(maxBytes), input_schema: schema } });
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
@@ -46,7 +49,7 @@ export function RequestSchemaTab({ appId, endpoint, onSaved }: Props) {
 
       <Card>
         <SectionHead title="Request Contract" />
-        <div style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 16px" }}>
+        <div className="ui-card__body ui-formgrid">
           <Field label="Content-Type (frontend sends)">
             <select style={inputStyle} value={contentType} onChange={e => setContentType(e.target.value as "application/json" | "application/x-www-form-urlencoded")} disabled={!can("edit:endpoints")}>
               <option value="application/json">application/json</option>
@@ -66,12 +69,12 @@ export function RequestSchemaTab({ appId, endpoint, onSaved }: Props) {
       </Card>
 
       <Card>
-        <SectionHead title="Input Schema" action={can("edit:endpoints") ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Schema"}</Btn> : undefined} />
+        <SectionHead title="Input Schema" action={can("edit:endpoints") ? <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Schema"}</Btn> : undefined} />
         <div style={{ padding: 16 }}>
           <SchemaFieldTree fields={schema} onChange={setSchema} readOnly={!can("edit:endpoints")} />
         </div>
-        <SchemaBodyPreview schema={schema} label="REQUEST BODY" />
       </Card>
+      <SchemaBodyPreview schema={schema} label="REQUEST BODY" />
     </div>
   );
 }

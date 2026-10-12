@@ -1,0 +1,5 @@
+# Use with the running deployment's ORIGINAL compose file. Its configuration
+# and existing SQLite bind mount are retained. --no-build prevents backend rebuild.
+services:
+  orchestrator-unified:
+    image: orchestrator-unified:redesign

@@ -1,8 +1,9 @@
+import { Boxes, Copy, Plus, Search, Upload, RefreshCw, Pencil, Trash2 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import type { App, ListResult } from "../../api/types";
-import { Card, SectionHead, Table, Btn, Badge, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, C } from "../../components";
+import { Card, SectionHead, Table, Btn, Badge, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, Stat, RowMenu, C } from "../../components";
 import { useSession } from "../../auth/SessionContext";
 import { ImportAppModal } from "./ImportAppModal";
 
@@ -14,6 +15,7 @@ export function AppsPage() {
   const [showImport, setShowImport] = useState(false);
   const [cloneSource, setCloneSource] = useState<App | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<App | null>(null);
+  const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const navigate = useNavigate();
   const { can } = useSession();
@@ -21,51 +23,41 @@ export function AppsPage() {
   async function load() {
     setLoading(true); setError("");
     try {
-      const params = statusFilter !== "all" ? `?status=${statusFilter}` : "";
+      const params = "";
       const d = await api.get<ListResult<App>>(`/__config/apps${params}`);
       setApps(d.results);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, [statusFilter]);
+  useEffect(() => { load(); }, []);
 
   async function handleDelete(app: App) {
     try { await api.del(`/__config/apps/${app._id}`); setDeleteTarget(null); load(); }
-    catch (e) { alert(String(e)); }
+    catch (e) { /* The API client reports the failure through the shared toast. */ }
   }
 
   const cols = [
-    { key: "name", label: "Name" },
+    { key:"name",label:"App",render:(v:unknown)=><div className="ui-row" style={{gap:12}}><span className="ui-tile">{String(v).split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase()}</span><span style={{fontWeight:600}}>{String(v)}</span></div> },
     {
       key: "base_path", label: "Base Path",
       render: (v: unknown) => (
-        <code style={{ fontSize: 12, background: C.bg, padding: "1px 6px", borderRadius: 3 }}>{String(v)}</code>
+        <span className="ui-path">{String(v)}</span>
       ),
     },
     { key: "status", label: "Status", render: (v: unknown) => <Badge text={String(v)} /> },
     { key: "created_at", label: "Created", render: (v: unknown) => new Date(String(v)).toLocaleDateString() },
-    {
-      key: "_id", label: "Actions",
-      render: (_: unknown, row: Record<string, unknown>) => (
-        <div style={{ display: "flex", gap: 6 }}>
-          <Btn size="sm" variant="outline" onClick={e => { e.stopPropagation(); navigate(`/apps/${row["_id"]}`); }}>Edit</Btn>
-          {can("manage:apps") && (
-            <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); setCloneSource(row as unknown as App); }}>Clone</Btn>
-          )}
-          {can("manage:apps") && (
-            <Btn size="sm" variant="danger" onClick={e => { e.stopPropagation(); setDeleteTarget(row as unknown as App); }}>Delete</Btn>
-          )}
-        </div>
-      ),
-    },
+    {key:"_id",label:"",render:(_:unknown,row:Record<string,unknown>)=><RowMenu items={[
+      {label:"Edit",icon:<Pencil />,onClick:()=>navigate(`/apps/${row._id}`)},
+      ...(can("manage:apps") ? [{label:"Clone",icon:<Copy />,onClick:()=>setCloneSource(row as unknown as App)},{label:"Delete",icon:<Trash2 />,danger:true,onClick:()=>setDeleteTarget(row as unknown as App)}] : []),
+    ]} />},
   ];
 
   const tabs = ["all", "active", "draft", "deprecated"];
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+    <div className="app-page">
+      <div className="ui-pagehead" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>App Registry</h1>
           <p style={{ margin: "2px 0 0", color: C.muted, fontSize: 13 }}>
@@ -73,39 +65,26 @@ export function AppsPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {can("manage:apps") && <Btn variant="outline" onClick={() => setShowImport(true)}>Import App ↑</Btn>}
-          {can("manage:apps") && <Btn onClick={() => setShowCreate(true)}>+ Create App</Btn>}
+          {can("manage:apps") && <Btn variant="secondary" onClick={() => setShowImport(true)}><Upload />Import</Btn>}
+          {can("manage:apps") && <Btn onClick={() => setShowCreate(true)}><Plus />New app</Btn>}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
-        {tabs.map(t => (
-          <button key={t} onClick={() => setStatusFilter(t)} style={{
-            padding: "7px 14px", background: "none", border: "none", cursor: "pointer",
-            fontSize: 12, fontWeight: 600, textTransform: "capitalize",
-            color: statusFilter === t ? C.primary : C.muted,
-            borderBottom: statusFilter === t ? `2px solid ${C.primary}` : "2px solid transparent",
-            marginBottom: -1,
-          }}>{t}</button>
-        ))}
-      </div>
+      <div className="ui-page__body"><div className="ui-row app-apps-toolbar" style={{marginBottom:20}}><div className="ui-seg">{tabs.map(t=><button type="button" key={t} className={`ui-seg__item ${statusFilter===t ? "is-active" : ""}`} aria-pressed={statusFilter===t} onClick={()=>setStatusFilter(t)}><span style={{textTransform:"capitalize"}}>{t}</span><span className="ui-count">{t==="all" ? apps.length : apps.filter(a=>a.status===t).length}</span></button>)}</div><div className="ui-grow" /><div className="ui-search" style={{width:260}}><Search /><input className="ui-input" aria-label="Search applications" placeholder="Filter by name or path" value={query} onChange={e=>setQuery(e.target.value)} /></div><button className="ui-iconbtn ui-iconbtn--bordered" aria-label="Refresh" onClick={load}><RefreshCw /></button></div>
 
       {error && <ErrorBanner message={error} />}
 
       <Card>
-        <SectionHead
-          title={`${apps.length} app${apps.length !== 1 ? "s" : ""}`}
-          action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>}
-        />
         {loading
           ? <Spinner />
           : <Table
               cols={cols as Parameters<typeof Table>[0]["cols"]}
-              rows={apps as unknown as Record<string, unknown>[]}
+              rows={apps.filter(a => (statusFilter === "all" || a.status === statusFilter) && `${a.name} ${a.base_path}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string, unknown>[]}
               onRowClick={row => navigate(`/apps/${row["_id"]}`)}
             />}
       </Card>
 
+      </div>
       {showCreate && (
         <CreateAppModal
           onClose={() => setShowCreate(false)}

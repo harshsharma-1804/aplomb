@@ -1,10 +1,11 @@
+import { usePageSave } from "../../../components/PageSave";
 import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
 import type {
   App, Endpoint, QueryParam, PathParam, StaticHeader, ForwardedHeader,
   AppScript, ScriptMode, UpstreamType, MongoOperation, AppDbConnection,
 } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C, DeleteIcon } from "../../../components";
 import { useSession } from "../../../auth/SessionContext";
 
 interface Props { appId: string; endpoint: Endpoint; app: App | null; onSaved: (ep: Endpoint) => void; }
@@ -76,7 +77,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
       });
       onSaved(ep);
       setScriptSaveOk(true);
-    } catch (e) { setScriptError(String(e)); }
+    } catch (e) { setScriptError(String(e)); throw e; }
     finally { setScriptSaving(false); }
   }
 
@@ -174,7 +175,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
         path_params: pathParams,
       });
       onSaved(ep);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
@@ -186,13 +187,39 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
   function removePathParam(i: number) { setPathParams(p => p.filter((_, idx) => idx !== i)); }
   function updatePathParam(i: number, k: keyof PathParam, v: string | boolean) { setPathParams(p => p.map((row, idx) => idx === i ? { ...row, [k]: v } : row)); }
 
+  usePageSave({upstreamType,url,method,authType,forwardCookies,bodyContentType,bodyPassthrough,nestedEncoding,arrayEncoding,boolEncoding,nullEncoding,staticHeaders,forwardedHeaders,forwardAllHeaders,dbConnectionId,dbUrl,dbCollection,dbOperation,dbResultLimit,dbQueryTemplate,dbQueryMode,queryParams,pathParams},save,{enabled:can("edit:endpoints"),disabled:saving});
+  usePageSave({scriptMode,scriptFileId},saveScriptConfig,{enabled:can("edit:endpoints"),disabled:scriptSaving});
+
   const readonly = !can("edit:endpoints");
   const scriptActive = scriptMode !== "none";
-  const saveBtn = !readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn> : undefined;
+  const saveBtn = !readonly ? <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn> : undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {error && <ErrorBanner message={error} />}
+
+      {/* ── Provider Type Selector ───────────────────────────────────── */}
+      <Card>
+        <SectionHead title="Provider Type" action={saveBtn} />
+        <div style={{ padding: 16 }}>
+          <div className="ui-seg">
+            {UPSTREAM_TYPES.map(t => (
+              <button key={t.value}
+                onClick={() => { if (!readonly) setUpstreamType(t.value); }}
+                className={`ui-seg__item ${upstreamType===t.value ? "is-active" : ""}`} disabled={readonly}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 11, color: C.muted, margin: 0 }}>
+            {upstreamType === "http"       && "Standard HTTP/REST — configure a URL, method, auth, and headers below."}
+            {upstreamType === "graphql"    && "GraphQL over HTTP — always POSTs with { query, variables } from the request body. Configure the endpoint URL and auth below."}
+            {upstreamType === "mongodb"    && "Direct MongoDB query — configure a connection URL, collection, operation, and query template below."}
+            {upstreamType === "postgresql" && "Direct PostgreSQL query — configure a connection URL, query mode, and SQL template below."}
+            {upstreamType === "mysql"      && "Direct MySQL/MariaDB query — configure a connection URL and SQL template below."}
+          </p>
+        </div>
+      </Card>
 
       {/* ── Script Configuration ─────────────────────────────────────── */}
       <Card>
@@ -202,22 +229,16 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {scriptSaveOk && <span style={{ fontSize: 12, color: C.success }}>✓ Saved</span>}
               {scriptError  && <span style={{ fontSize: 12, color: C.danger }}>{scriptError}</span>}
-              <Btn size="sm" onClick={saveScriptConfig} disabled={scriptSaving}>{scriptSaving ? "Saving…" : "Save"}</Btn>
+              <Btn size="sm" pageSave onClick={saveScriptConfig} disabled={scriptSaving}>{scriptSaving ? "Saving…" : "Save"}</Btn>
             </div>
           ) : undefined}
         />
         <div style={{ padding: 16 }}>
           <Field label="Script Mode" hint={SCRIPT_MODE_HINTS[scriptMode]}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <div className="ui-seg">
               {(Object.keys(SCRIPT_MODE_LABELS) as ScriptMode[]).map(m => (
                 <button key={m} onClick={() => { if (!readonly) { setScriptMode(m); setScriptSaveOk(false); } }}
-                  style={{
-                    padding: "5px 12px", fontSize: 12, borderRadius: C.radius, cursor: readonly ? "default" : "pointer",
-                    fontWeight: 500, border: "1px solid",
-                    borderColor: scriptMode === m ? C.primary : C.border,
-                    background:  scriptMode === m ? C.selection : C.surface,
-                    color:       scriptMode === m ? C.primary : C.muted,
-                  }}>
+                  className={`ui-seg__item ${scriptMode===m ? "is-active" : ""}`} disabled={readonly}>
                   {SCRIPT_MODE_LABELS[m]}
                 </button>
               ))}
@@ -259,35 +280,6 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
         </div>
       </Card>
 
-      {/* ── Provider Type Selector ───────────────────────────────────── */}
-      <Card>
-        <SectionHead title="Provider Type" action={saveBtn} />
-        <div style={{ padding: 16 }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-            {UPSTREAM_TYPES.map(t => (
-              <button key={t.value}
-                onClick={() => { if (!readonly) setUpstreamType(t.value); }}
-                style={{
-                  padding: "6px 14px", fontSize: 12, borderRadius: C.radius,
-                  cursor: readonly ? "default" : "pointer", fontWeight: 500, border: "1px solid",
-                  borderColor: upstreamType === t.value ? C.primary : C.border,
-                  background:  upstreamType === t.value ? C.selection : C.surface,
-                  color:       upstreamType === t.value ? C.primary : C.muted,
-                }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <p style={{ fontSize: 11, color: C.muted, margin: 0 }}>
-            {upstreamType === "http"       && "Standard HTTP/REST — configure a URL, method, auth, and headers below."}
-            {upstreamType === "graphql"    && "GraphQL over HTTP — always POSTs with { query, variables } from the request body. Configure the endpoint URL and auth below."}
-            {upstreamType === "mongodb"    && "Direct MongoDB query — configure a connection URL, collection, operation, and query template below."}
-            {upstreamType === "postgresql" && "Direct PostgreSQL query — configure a connection URL, query mode, and SQL template below."}
-            {upstreamType === "mysql"      && "Direct MySQL/MariaDB query — configure a connection URL and SQL template below."}
-          </p>
-        </div>
-      </Card>
-
       {/* ── HTTP / REST Connection Card ──────────────────────────────── */}
       {(upstreamType === "http" || upstreamType === "graphql") && (
         <Card>
@@ -316,7 +308,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                 </Field>
               )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+            <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field label="Auth Type">
                 <select style={inputStyle} value={authType} onChange={e => setAuthType(e.target.value as any)} disabled={readonly}>
                   <option value="none">None</option>
@@ -346,7 +338,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
         <Card>
           <SectionHead title="Request Body (Outbound)" />
           <div style={{ padding: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+            <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
               <Field label="Upstream Body Content-Type">
                 <select style={inputStyle} value={bodyContentType} onChange={e => setBodyContentType(e.target.value as any)} disabled={readonly}>
                   <option value="application/json">application/json</option>
@@ -363,7 +355,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
             {showFormEncoding && (
               <div style={{ marginTop: 8, padding: 12, background: C.bg, borderRadius: C.radius, border: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8 }}>FORM ENCODING CONVENTIONS</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0 12px" }}>
+                <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0 12px" }}>
                   <Field label="Nested Objects">
                     <select style={inputStyle} value={nestedEncoding} onChange={e => setNestedEncoding(e.target.value as any)} disabled={readonly}>
                       <option value="bracket">bracket: a[b]=v</option>
@@ -492,7 +484,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
             {/* MongoDB operation fields */}
             {upstreamType === "mongodb" && (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px", marginTop: 12 }}>
+                <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px", marginTop: 12 }}>
                   <Field label="Collection">
                     <input style={inputStyle} value={dbCollection} onChange={e => setDbCollection(e.target.value)} placeholder="collection name" disabled={readonly} />
                   </Field>
@@ -616,7 +608,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
               <label style={{ display: "flex", gap: 4, fontSize: 12, alignItems: "center" }}>
                 <input type="checkbox" checked={pp.required} onChange={e => updatePathParam(i, "required", e.target.checked)} disabled={readonly} />required
               </label>
-              {!readonly && <button onClick={() => removePathParam(i)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }}>×</button>}
+              {!readonly && <DeleteIcon onClick={() => removePathParam(i)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }} label="Remove item" />}
             </div>
           ))}
         </div>
@@ -640,7 +632,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                 <input type="checkbox" checked={qp.pass_through} onChange={e => updateQueryParam(i, "pass_through", e.target.checked)} disabled={readonly} />pass
               </label>
               <input style={{ ...inputStyle, width: 80 }} value={qp.default_value ?? ""} onChange={e => updateQueryParam(i, "default_value", e.target.value)} placeholder="default" disabled={readonly} />
-              {!readonly && <button onClick={() => removeQueryParam(i)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }}>×</button>}
+              {!readonly && <DeleteIcon onClick={() => removeQueryParam(i)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }} label="Remove item" />}
             </div>
           ))}
         </div>
@@ -669,8 +661,8 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                   {!readonly && app?.app_env?.length ? <EnvPicker envVars={app.app_env} onSelect={key => setStaticHeaders(h => h.map((x, j) => j === i ? { ...x, value: x.value + `{{${key}}}` } : x))} /> : null}
                 </div>
                 {!readonly && (
-                  <button onClick={() => setStaticHeaders(h => h.filter((_, j) => j !== i))}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
+                  <DeleteIcon onClick={() => setStaticHeaders(h => h.filter((_, j) => j !== i))}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }} label="Remove item" />
                 )}
               </div>
             ))}
@@ -725,8 +717,8 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
                   <span style={{ color: fh.required ? C.danger : C.muted }}>required</span>
                 </label>
                 {!readonly && (
-                  <button onClick={() => setForwardedHeaders(h => h.filter((_, j) => j !== i))}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
+                  <DeleteIcon onClick={() => setForwardedHeaders(h => h.filter((_, j) => j !== i))}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }} label="Remove item" />
                 )}
               </div>
             ))}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { App, AiBot, ExportEnvMode } from "../../api/types";
 import { api } from "../../api/client";
-import { Modal, Btn, C } from "../../components";
+import { Modal, Btn, C, ErrorBanner } from "../../components";
 
 interface Props {
   app: App;
@@ -85,11 +85,7 @@ export function ExportAppModal({ app, onClose }: Props) {
     <Modal title={`Export "${app.name}"`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-        {error && (
-          <div style={{ padding: "8px 12px", background: "var(--danger-background)", border: `1px solid var(--danger)`, borderRadius: C.radius, color: "var(--danger)", fontSize: 13 }}>
-            {error}
-          </div>
-        )}
+        {error && <ErrorBanner message={error}/>}
 
         {/* ── What to include ─────────────────────────────────────────── */}
         <section>

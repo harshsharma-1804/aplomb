@@ -1,10 +1,14 @@
+import { Plus } from "lucide-react";
+import { PageHeaderActions } from "../../components/PageSave";
+import { CollectionHead } from "../../components/CollectionHead";
 import { useState, useEffect } from "react";
 import { api } from "../../api/client";
 import type { Secret, ListResult } from "../../api/types";
-import { Card, SectionHead, Table, Btn, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, C } from "../../components";
+import { Card, SectionHead, Table, Btn, Modal, Field, inputStyle, Spinner, ErrorBanner, Confirm, C, DeleteIcon } from "../../components";
 
 export function SecretsPage() {
   const [secrets, setSecrets] = useState<Secret[]>([]);
+  const [query,setQuery]=useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -24,27 +28,21 @@ export function SecretsPage() {
     { key: "value", label: "Value", render: () => <span style={{ color: C.muted, fontFamily: "monospace" }}>••••••••</span> },
     { key: "created_at", label: "Created", render: (v: unknown) => new Date(String(v)).toLocaleDateString() },
     { key: "rotated_at", label: "Last Rotated", render: (v: unknown) => v ? new Date(String(v)).toLocaleDateString() : "Never" },
-    { key: "_id", label: "Actions", render: (_: unknown, row: Record<string, unknown>) => (
+    { key: "_id", label: "", render: (_: unknown, row: Record<string, unknown>) => (
       <div style={{ display: "flex", gap: 6 }}>
         <Btn size="sm" variant="ghost" onClick={() => setRotateTarget(row as unknown as Secret)}>Rotate</Btn>
-        <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(row as unknown as Secret)}>Delete</Btn>
+        <DeleteIcon onClick={() => setDeleteTarget(row as unknown as Secret)} label={`Delete secret ${row.name}`} />
       </div>
     )},
   ];
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Secrets</h1>
-          <p style={{ margin: "2px 0 0", color: C.muted, fontSize: 13 }}>Upstream API keys and Bearer tokens — encrypted at rest, never returned in plaintext.</p>
-        </div>
-        <Btn onClick={() => setShowCreate(true)}>+ Add Secret</Btn>
-      </div>
+      <PageHeaderActions><Btn onClick={()=>setShowCreate(true)}><Plus/>Add secret</Btn></PageHeaderActions>
       {error && <ErrorBanner message={error} />}
       <Card>
-        <SectionHead title={`${secrets.length} secret${secrets.length !== 1 ? "s" : ""}`} action={<Btn size="sm" variant="ghost" onClick={load}>Refresh</Btn>} />
-        {loading ? <Spinner /> : <Table cols={cols as Parameters<typeof Table>[0]["cols"]} rows={secrets as unknown as Record<string, unknown>[]} />}
+        <CollectionHead count={secrets.length} noun="secrets" query={query} onQuery={setQuery} onRefresh={load}/>
+        {loading ? <Spinner /> : <Table cols={cols as Parameters<typeof Table>[0]["cols"]} rows={secrets.filter(p=>`${p.name} ${p.description}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string, unknown>[]} />}
       </Card>
       {showCreate && <SecretFormModal title="Add Secret" onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); load(); }} />}
       {rotateTarget && <SecretFormModal title={`Rotate — ${rotateTarget.name}`} secretId={rotateTarget._id} onClose={() => setRotateTarget(null)} onSaved={() => { setRotateTarget(null); load(); }} />}

@@ -1,3 +1,4 @@
+import { usePageSave } from "../../../components/PageSave";
 import { useState, useEffect } from "react";
 import { api } from "../../../api/client";
 import type { Organization } from "../../../api/types";
@@ -28,36 +29,13 @@ export function OrganizationTab() {
       setOrg(updated); setName(updated.name); setSlug(updated.slug);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
+  usePageSave({name,slug},save,{enabled:can("manage:users"),ready:!loading && !!org,disabled:saving || !name.trim() || !slug.trim()});
+
   if (loading) return <Spinner />;
 
-  return (
-    <Card>
-      <SectionHead
-        title="Organization"
-        action={can("manage:users") ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn> : undefined}
-      />
-      <div style={{ padding: 16 }}>
-        {error && <ErrorBanner message={error} />}
-        {saved && <div style={{ padding: "8px 12px", background: "var(--success-background)", borderRadius: C.radius, color: "var(--success)", fontSize: 12, marginBottom: 12 }}>✓ Saved successfully</div>}
-
-        <Field label="Organization Name" hint="Displayed in the dashboard header and response headers">
-          <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} disabled={!can("manage:users")} />
-        </Field>
-        <Field label="Slug" hint="Used in URLs and system references. Lowercase, no spaces.">
-          <input style={inputStyle} value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} disabled={!can("manage:users")} />
-        </Field>
-
-        {org && (
-          <div style={{ marginTop: 16, padding: "10px 12px", background: C.bg, borderRadius: C.radius, border: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
-            <div>Organization ID: <code style={{ color: C.text }}>{org._id}</code></div>
-            <div style={{ marginTop: 4 }}>Created: {new Date(org.created_at).toLocaleString()}</div>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
+  return <Card><div className="ui-card__body">{error && <ErrorBanner message={error}/>}<div className="ui-formgrid"><Field label="Organization name" hint="Displayed in the dashboard header and response headers"><input className="ui-input" value={name} onChange={e=>setName(e.target.value)} disabled={!can("manage:users")}/></Field><Field label="Slug" hint="Used in URLs and system references. Lowercase, no spaces."><input className="ui-input ui-input--mono" value={slug} onChange={e=>setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,"-"))} disabled={!can("manage:users")}/></Field></div>{org && <dl className="ui-kv" style={{marginTop:6}}><dt>Organization ID</dt><dd><span className="ui-path">{org._id}</span></dd><dt>Created</dt><dd className="ui-num">{new Date(org.created_at).toLocaleString()}</dd></dl>}</div></Card>;
 }

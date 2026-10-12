@@ -1,6 +1,7 @@
+import { Laptop, Workflow, Server, Play } from "lucide-react";
 import { useState } from "react";
 import type { App, Endpoint } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C, Code, MethodBadge, Badge, DeleteIcon } from "../../../components";
 
 interface Props { appId: string; endpoint: Endpoint; app: App | null; }
 
@@ -153,75 +154,18 @@ export function TestTab({ appId, endpoint, app }: Props) {
       <Card>
         <SectionHead
           title="Test Request"
-          action={<Btn size="sm" onClick={run} disabled={running}>{running ? "Running…" : "▶ Run Test"}</Btn>}
+          action={<Btn size="sm" onClick={run} disabled={running}>{running ? "Running…" : <><Play size={16} /> Run test</>}</Btn>}
         />
         <div style={{ padding: 16 }}>
 
-          {/* ── Request preview ── */}
-          <div style={{ marginBottom: 16, padding: 12, background: "var(--selection)", borderRadius: C.radius, border: `1px solid var(--border)` }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--primary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Request Preview</div>
-
-            {/* Frontend URL (always the same) */}
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What your client calls:</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
-                <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{endpoint.method}</span>
-                <span style={{ color: C.text }}>localhost:5000{frontendUrlPreview}</span>
-              </div>
-            </div>
-
-            {/* DB: show connection + query preview */}
-            {isDbType && (
-              <div>
-                <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>What orchestrator executes in the database:</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: 16 }}>{DB_TYPE_ICONS[upstreamType] ?? "🗄"}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>{DB_TYPE_LABELS[upstreamType] ?? upstreamType}</span>
-                  {(endpoint.upstream as any)?.db_connection_id
-                    ? <span style={{ fontSize: 11, color: C.muted }}>via named connection</span>
-                    : <span style={{ fontSize: 11, color: C.muted, fontFamily: "monospace" }}>{substituteParams((endpoint.upstream as any)?.db_url ?? "(no URL set)")}</span>
-                  }
-                </div>
-                {upstreamType === "mongodb" && (
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
-                    <code style={{ marginRight: 10 }}>collection: {(endpoint.upstream as any)?.db_collection || "(not set)"}</code>
-                    <code>operation: {(endpoint.upstream as any)?.db_operation || "find"}</code>
-                  </div>
-                )}
-                {(endpoint.upstream as any)?.db_query_template && (
-                  <div>
-                    <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Query template (with current values substituted):</div>
-                    <pre style={{ margin: 0, padding: "6px 10px", background: "var(--code-bg)", color: "var(--code-text)", borderRadius: C.radius, fontSize: 11, overflowX: "auto", whiteSpace: "pre-wrap" }}>
-                      {substituteQueryTemplate()}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* GraphQL: show endpoint + note about body */}
-            {isGql && (
-              <div>
-                <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What orchestrator POSTs to:</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
-                  <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>POST</span>
-                  <span style={{ color: C.muted }}>{upstreamUrlPreview || <em>Set GraphQL URL in Upstream tab</em>}</span>
-                </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Body from the "GraphQL Query" field below → forwarded as <code>{`{ query, variables }`}</code></div>
-              </div>
-            )}
-
-            {/* HTTP: show method + upstream URL */}
-            {!isDbType && !isGql && (
-              <div>
-                <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>What orchestrator calls upstream:</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
-                  <span style={{ background: C.selection, color: C.primary, padding: "1px 6px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>{(endpoint.upstream as any)?.method ?? endpoint.method}</span>
-                  <span style={{ color: C.muted, wordBreak: "break-all" }}>{upstreamUrlPreview || <em>Set upstream URL in the Upstream tab first</em>}</span>
-                </div>
-              </div>
-            )}
+          <div className="ui-flow" style={{marginBottom:20}}>
+            <div className="ui-flow__node"><div className="ui-flow__label"><Laptop /> Client</div><MethodBadge method={endpoint.method} /><div className="ui-mono" style={{marginTop:8,overflowWrap:"anywhere"}}>{frontendUrlPreview}</div></div>
+            <div className="ui-flow__edge" />
+            <div className="ui-flow__node is-hub"><div className="ui-flow__label"><Workflow /> Orchestrator</div><div className="ui-row" style={{flexWrap:"wrap",gap:6}}><Badge text="Validate" /><Badge text={endpoint.script_mode === "script_full" ? "Script" : "Map"} /></div></div>
+            <div className="ui-flow__edge" />
+            <div className="ui-flow__node"><div className="ui-flow__label"><Server /> Upstream</div><MethodBadge method={isGql ? "POST" : endpoint.upstream?.method ?? endpoint.method} /><div className="ui-mono" style={{marginTop:8,overflowWrap:"anywhere"}}>{endpoint.script_mode === "script_full" ? "Handled by script" : isDbType ? DB_TYPE_LABELS[upstreamType] ?? upstreamType : upstreamUrlPreview || "Configure an upstream URL"}</div></div>
           </div>
+          {isDbType && endpoint.upstream?.db_query_template && <div style={{marginBottom:20}}><Code value={substituteQueryTemplate()} title="Resolved query" /></div>}
 
           {/* ── Path params ── */}
           {hasPathParams && (
@@ -267,7 +211,7 @@ export function TestTab({ appId, endpoint, app }: Props) {
               <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0 8px", marginBottom: 6 }}>
                 <input style={inputStyle} value={qo.k} onChange={e => setQueryOverrides(p => p.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} placeholder="param name" />
                 <input style={inputStyle} value={qo.v} onChange={e => setQueryOverrides(p => p.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} placeholder="value" />
-                <button onClick={() => setQueryOverrides(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }}>×</button>
+                <DeleteIcon onClick={() => setQueryOverrides(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }} label="Remove item" />
               </div>
             ))}
           </div>
@@ -291,7 +235,7 @@ export function TestTab({ appId, endpoint, app }: Props) {
                 <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0 8px", marginBottom: 6 }}>
                   <input style={inputStyle} value={h.k} onChange={e => setTestHeaders(p => p.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} placeholder="Header-Name" />
                   <input style={inputStyle} value={h.v} onChange={e => setTestHeaders(p => p.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} placeholder="value" />
-                  <button onClick={() => setTestHeaders(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }}>×</button>
+                  <DeleteIcon onClick={() => setTestHeaders(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger }} label="Remove item" />
                 </div>
               ))}
             </div>
@@ -345,36 +289,24 @@ export function TestTab({ appId, endpoint, app }: Props) {
                 : `Results — upstream returned HTTP ${result.upstreamStatus ?? "?"}`
             }
           />
-          <div style={{ padding: "0 16px 4px 16px", display: "flex", gap: 0, borderBottom: `1px solid ${C.border}` }}>
-            {panels.map(p => (
-              <button key={p.key} onClick={() => setActivePanel(p.key as any)} style={{
-                padding: "8px 12px", background: "none", border: "none", cursor: "pointer",
-                fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-                color: activePanel === p.key ? C.primary : C.muted,
-                borderBottom: activePanel === p.key ? `2px solid ${C.primary}` : "2px solid transparent",
-                marginBottom: -1,
-              }}>{p.label}</button>
-            ))}
+          <div className="ui-tabs" role="tablist" aria-label="Test results">
+            {panels.map(p => <button role="tab" aria-selected={activePanel===p.key} key={p.key} className={`ui-tab ${activePanel===p.key ? "is-active" : ""}`} onClick={()=>setActivePanel(p.key as any)}>{p.label}</button>)}
           </div>
           <div style={{ padding: 16 }}>
-            {result.transformError && (
-              <div style={{ padding: "8px 12px", background: "var(--danger-background)", borderRadius: C.radius, fontSize: 12, color: C.danger, marginBottom: 12 }}>
-                Transform error: {result.transformError}
-              </div>
-            )}
+            {result.transformError && <ErrorBanner message={`Transform error: ${result.transformError}`}/>}
 
             {activePanel === "upstream_request" && (
               isDbUpstreamReq(result.upstreamRequest)
                 ? <DbRequestPanel req={result.upstreamRequest} />
                 : isScriptUpstreamReq(result.upstreamRequest)
-                  ? <pre style={codeStyle}>{JSON.stringify(result.upstreamRequest, null, 2)}</pre>
+                  ? <Code value={JSON.stringify(result.upstreamRequest, null, 2)} title="Script request" />
                   : <HttpRequestPanel req={result.upstreamRequest as HttpUpstreamRequest} />
             )}
             {activePanel === "upstream_response" && (
-              <pre style={codeStyle}>{JSON.stringify(result.upstream, null, 2) ?? "No data"}</pre>
+              <Code value={JSON.stringify(result.upstream, null, 2) ?? "No data"} title="Upstream response" />
             )}
             {activePanel === "transformed" && (
-              <pre style={codeStyle}>{JSON.stringify(result.transformed, null, 2) ?? "No data"}</pre>
+              <Code value={JSON.stringify(result.transformed, null, 2) ?? "No data"} title="Transformed response" />
             )}
             {activePanel === "validation" && (
               <ValidationPanel validation={result.validation} />
@@ -401,7 +333,7 @@ function DbRequestPanel({ req }: { req: DbUpstreamRequest }) {
   const label = DB_TYPE_LABELS[req.db_type] ?? req.db_type;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--code-bg)", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surfaceMuted, color:C.text, borderRadius: C.radius, border: `1px solid ${C.border}` }}>
         <span style={{ fontSize: 22 }}>{icon}</span>
         <div>
           <div style={{ fontWeight: 700, fontSize: 13 }}>{label}</div>

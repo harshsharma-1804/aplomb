@@ -1,7 +1,8 @@
+import { usePageSave } from "../../../components/PageSave";
 import { useState } from "react";
 import { api } from "../../../api/client";
 import type { Endpoint, SchemaField } from "../../../api/types";
-import { Card, SectionHead, Btn, ErrorBanner, C } from "../../../components";
+import { Card, SectionHead, Btn, ErrorBanner, C, Toggle } from "../../../components";
 import { SchemaBodyPreview } from "./SchemaBodyPreview";
 import { useSession } from "../../../auth/SessionContext";
 import { SchemaFieldTree } from "./SchemaFieldTree";
@@ -16,25 +17,19 @@ export function ResponseSchemaTab({ appId, endpoint, onSaved }: Props) {
   const [savingMode, setSavingMode] = useState(false);
   const [error, setError]           = useState("");
 
+  usePageSave({schema,arrayMode},save,{enabled:can("edit:endpoints"),disabled:saving});
+
   async function save() {
     setSaving(true); setError("");
     try {
-      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}/output-schema`, schema);
+      let ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}/output-schema`, schema);
+      if(arrayMode!==Boolean(endpoint.output_array_mode))ep=await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}`,{output_array_mode:arrayMode});
       onSaved(ep);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
-  async function toggleArrayMode(next: boolean) {
-    if (!can("edit:endpoints")) return;
-    setSavingMode(true); setError("");
-    try {
-      const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}/array-mode`, next);
-      setArrayMode(next);
-      onSaved(ep);
-    } catch (e) { setError(String(e)); }
-    finally { setSavingMode(false); }
-  }
+  function toggleArrayMode(next:boolean){if(can("edit:endpoints"))setArrayMode(next);}
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -44,14 +39,8 @@ export function ResponseSchemaTab({ appId, endpoint, onSaved }: Props) {
       <Card>
         <SectionHead title="Response Shape" />
         <div style={{ padding: "12px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: can("edit:endpoints") ? "pointer" : "default" }}>
-            <input
-              type="checkbox"
-              checked={arrayMode}
-              disabled={!can("edit:endpoints") || savingMode}
-              onChange={e => toggleArrayMode(e.target.checked)}
-              style={{ width: 16, height: 16, accentColor: C.primary, cursor: "pointer" }}
-            />
+          <div className="ui-row" style={{alignItems:"flex-start",gap:12}}>
+            <Toggle checked={arrayMode} disabled={!can("edit:endpoints") || savingMode} onChange={toggleArrayMode} label="Upstream returns a root-level array" />
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>Upstream returns a root-level array</div>
               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
@@ -60,7 +49,7 @@ export function ResponseSchemaTab({ appId, endpoint, onSaved }: Props) {
                 Also fixes the Sample tab — paths will show as <code>$.id</code> instead of <code>$.0.id</code>.
               </div>
             </div>
-          </label>
+          </div>
           {savingMode && <span style={{ fontSize: 11, color: C.muted, marginLeft: "auto" }}>Saving…</span>}
         </div>
         {arrayMode && (
@@ -74,13 +63,13 @@ export function ResponseSchemaTab({ appId, endpoint, onSaved }: Props) {
       <Card>
         <SectionHead
           title="Output Schema — what the frontend receives"
-          action={can("edit:endpoints") ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Schema"}</Btn> : undefined}
+          action={can("edit:endpoints") ? <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Schema"}</Btn> : undefined}
         />
         <div style={{ padding: 16 }}>
           <SchemaFieldTree fields={schema} onChange={setSchema} readOnly={!can("edit:endpoints")} />
         </div>
-        <SchemaBodyPreview schema={schema} label={arrayMode ? "RESPONSE BODY (array item shape)" : "RESPONSE BODY"} />
       </Card>
+      <SchemaBodyPreview schema={schema} label={arrayMode ? "RESPONSE BODY (array item shape)" : "RESPONSE BODY"} />
     </div>
   );
 }

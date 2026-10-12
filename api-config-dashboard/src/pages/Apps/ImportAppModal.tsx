@@ -297,7 +297,7 @@ export function ImportAppModal({ onClose, onImported }: Props) {
                         <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{bk.name}</div>
                         <code style={{ background: C.bg, border: `1px solid ${C.border}`, padding: "4px 8px", borderRadius: 4, fontSize: 12, wordBreak: "break-all", display: "block" }}>{bk.api_key}</code>
                       </div>
-                      <Btn size="sm" variant="outline" onClick={() => { navigator.clipboard?.writeText(bk.api_key); }}>Copy</Btn>
+                      <Btn size="sm" variant="secondary" onClick={() => { navigator.clipboard?.writeText(bk.api_key); }}>Copy</Btn>
                     </div>
                   ))}
                   <div style={{ fontSize: 12, color: C.muted }}>

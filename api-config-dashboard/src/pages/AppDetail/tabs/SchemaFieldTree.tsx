@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight, Pencil, X, Plus } from "lucide-react";
 import { useState } from "react";
 import type { SchemaField } from "../../../api/types";
 import { Btn, Field, inputStyle, C } from "../../../components";
@@ -57,7 +58,7 @@ export function SchemaFieldTree({ fields, onChange, readOnly = false, depth = 0,
   const showItemType = newField.type === "array";
 
   return (
-    <div style={{ paddingLeft: depth > 0 ? 12 : 0, borderLeft: depth > 0 ? `2px solid ${C.border}` : "none", marginLeft: depth > 0 ? 8 : 0 }}>
+    <div className={depth > 0 ? "ui-frows__children" : "ui-frows"}>
       {fields.map(f => (
         <FieldRow
           key={f.id}
@@ -75,7 +76,7 @@ export function SchemaFieldTree({ fields, onChange, readOnly = false, depth = 0,
         <div style={{ marginTop: 6 }}>
           {!showAdd ? (
             <Btn size="sm" variant="ghost" onClick={() => setShowAdd(true)}>
-              + Add Field{parentPath ? ` to ${parentPath}` : ""}
+              <Plus size={14} />Add field{parentPath ? ` to ${parentPath}` : ""}
             </Btn>
           ) : (
             <div style={{ padding: 12, background: "var(--surface-muted)", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
@@ -246,20 +247,16 @@ function FieldRow({ field, depth, parentPath, readOnly, onRemove, onUpdate, onCh
 
   return (
     <div style={{ marginBottom: 5 }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6, padding: "5px 8px",
-        background: depth === 0 ? C.bg : C.surface,
-        borderRadius: C.radius, border: `1px solid ${C.border}`,
-      }}>
+      <div className="ui-frow">
         {(hasChildren || isPrimitiveArray) ? (
           <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: C.muted, padding: 0, width: 14, flexShrink: 0 }}>
-            {open ? "▼" : "▶"}
+            {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
         ) : <span style={{ width: 14, flexShrink: 0 }} />}
 
-        <code style={{ fontSize: 11, color: C.primary, fontWeight: 600, flexShrink: 0 }}>{field.field_path}</code>
+        <code className="ui-frow__name">{field.field_path}</code>
 
-        <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 99, background: typeColor + "18", color: typeColor, flexShrink: 0 }}>
+        <span className="ui-type">
           {isPrimitiveArray ? `array of ${field.item_type}` : field.type}
         </span>
 
@@ -274,8 +271,8 @@ function FieldRow({ field, depth, parentPath, readOnly, onRemove, onUpdate, onCh
 
         {!readOnly && (
           <>
-            <button onClick={startEdit} title="Edit this field" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 13, padding: "0 2px", flexShrink: 0 }}>✎</button>
-            <button onClick={onRemove} title="Remove this field" style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>
+            <button className="ui-iconbtn ui-iconbtn--sm" onClick={startEdit} aria-label="Edit field"><Pencil /></button>
+            <button className="ui-iconbtn ui-iconbtn--sm ui-iconbtn--danger" onClick={onRemove} aria-label="Remove field"><X /></button>
           </>
         )}
       </div>

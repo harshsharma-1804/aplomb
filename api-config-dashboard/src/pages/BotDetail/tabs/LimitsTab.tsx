@@ -1,8 +1,9 @@
+import { usePageSave } from "../../../components/PageSave";
 import { useState } from "react";
 // ScopeArgNameInput also uses useState — same import
 import { api } from "../../../api/client";
 import type { AiBot, BotLimits, ScopeGuardConfig } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, ErrorBanner, C, DeleteIcon } from "../../../components";
 
 interface Props { bot: AiBot; onUpdated: (b: AiBot) => void; readonly: boolean; }
 
@@ -12,6 +13,8 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
   const [error, setError]   = useState("");
   const [saved, setSaved]   = useState(false);
   const [newTopic, setNewTopic] = useState("");
+
+  usePageSave(limits as Record<string,unknown>,save,{enabled:!readonly,disabled:saving});
 
   function setL<K extends keyof BotLimits>(key: K, val: BotLimits[K]) {
     setLimits(prev => ({ ...prev, [key]: val }));
@@ -40,11 +43,11 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       const d = await api.put<AiBot>(`/__config/admin/ai/bots/${bot._id}`, { limits });
       onUpdated(d);
       setSaved(true);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
-  const SaveBtn = () => !readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : null;
+  const SaveBtn = () => !readonly ? <Btn size="sm" pageSave onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -154,9 +157,9 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
             <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.bg, fontSize: 13 }}>
               <span>{t}</span>
               {!readonly && (
-                <button onClick={() => removeTopic(i)} style={{ width: 22, height: 22, borderRadius: 4, border: `1px solid ${C.border}`, background: C.surface, color: C.muted, cursor: "pointer", fontSize: 13 }}
+                <DeleteIcon onClick={() => removeTopic(i)} style={{ width: 22, height: 22, borderRadius: 4, border: `1px solid ${C.border}`, background: C.surface, color: C.muted, cursor: "pointer", fontSize: 13 }}
                   onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = C.danger; (e.currentTarget as HTMLButtonElement).style.borderColor = C.danger; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = C.muted; (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; }}>×</button>
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = C.muted; (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; }} label="Remove item" />
               )}
             </div>
           ))}
@@ -203,8 +206,8 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
                     <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.selection, border: `1px solid ${C.border}`, borderRadius: 99, padding: "2px 10px", fontSize: 12, fontWeight: 600, color: C.primary }}>
                       {name}
                       {!readonly && (
-                        <button onClick={() => setL("scope_guard", { ...limits.scope_guard!, id_arg_names: (limits.scope_guard!.id_arg_names ?? []).filter((_, j) => j !== i) })}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+                        <DeleteIcon onClick={() => setL("scope_guard", { ...limits.scope_guard!, id_arg_names: (limits.scope_guard!.id_arg_names ?? []).filter((_, j) => j !== i) })}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: C.primary, fontSize: 13, lineHeight: 1, padding: 0 }} label="Remove item" />
                       )}
                     </span>
                   ))}

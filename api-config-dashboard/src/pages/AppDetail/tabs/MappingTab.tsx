@@ -1,3 +1,5 @@
+import { ArrowLeft, Info } from "lucide-react";
+import { usePageSave } from "../../../components/PageSave";
 import { useState } from "react";
 import { api } from "../../../api/client";
 import type { Endpoint, FieldMapping, SchemaField } from "../../../api/types";
@@ -72,102 +74,13 @@ function MappingRow({ field, mapping, onChange, samplePaths, readOnly }: {
   const isContainer = field.type === "object";
   const isArrayContainer = field.type === "array" && (!field.item_type || field.item_type === "object");
 
-  return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "minmax(0,1fr) 90px minmax(0,1fr)",
-      gap: "0 8px",
-      alignItems: "center",
-      marginBottom: 4,
-      padding: "5px 8px",
-      paddingLeft: 8 + field.depth * 16,
-      borderRadius: C.radius,
-      border: `1px solid ${!isContainer && !isMapped ? C.danger + "44" : C.border}`,
-      background: isContainer ? "var(--selection)" : isArrayContainer ? C.selection : (isMapped ? C.bg : "var(--danger-background)"),
-      opacity: isContainer ? 0.85 : 1,
-    }}>
-      {/* Field path */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-        {field.depth > 0 && (
-          <span style={{ color: C.border, fontSize: 11, flexShrink: 0 }}>
-            {"└".padStart(field.depth, " ")}
-          </span>
-        )}
-        <code style={{ fontSize: 11, color: C.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {field.fullPath}
-        </code>
-        <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 5px", borderRadius: 99, background: typeColor + "18", color: typeColor, flexShrink: 0 }}>
-          {field.type === "array" && field.item_type && field.item_type !== "object"
-            ? `array of ${field.item_type}`
-            : field.type}
-        </span>
-      </div>
+  return <div className={`ui-map__row ${isContainer ? "is-parent" : ""}`}>
+    <span className="ui-row" style={{paddingLeft:field.depth*18}}><span className="ui-frow__name">{field.fullPath}</span><span className="ui-type">{field.type==="array" && field.item_type ? `array of ${field.item_type}` : field.type}</span></span>
+    {isContainer ? <span/> : <ArrowLeft/>}
+    {isContainer ? <span className="ui-faint" style={{fontSize:12}}>object</span> : <select className="ui-select ui-select--sm" aria-label={`${field.fullPath} type`} value={isArrayContainer ? "array" : current.mapping_type} disabled={readOnly || isArrayContainer} onChange={e=>onChange({...current,mapping_type:e.target.value as FieldMapping["mapping_type"]})}><option value="direct">direct</option><option value="static">static</option><option value="array">array</option></select>}
+    {isContainer ? <span className="ui-faint" style={{fontSize:12}}>Child fields are mapped individually below</span> : <div><input className="ui-input ui-input--sm ui-input--mono" aria-label={`${field.fullPath} ${current.mapping_type==="static" ? "value" : "path"}`} value={current.mapping_type==="static" ? current.static_value ?? "" : current.upstream_path ?? ""} disabled={readOnly} placeholder={isArrayContainer ? "Optional array path — inferred from children" : current.mapping_type==="static" ? "Static value" : "$.claim_number"} list={current.mapping_type==="static" ? undefined : `paths-${field.id}`} onChange={e=>onChange(current.mapping_type==="static" ? {...current,static_value:e.target.value} : {...current,upstream_path:e.target.value,...(isArrayContainer ? {mapping_type:"array" as const} : {})})}/><datalist id={`paths-${field.id}`}>{samplePaths.map(p=><option key={p} value={p}/>)}</datalist></div>}
+  </div>;
 
-      {/* Mapping type */}
-      {isContainer ? (
-        <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic", textAlign: "center" }}>object</div>
-      ) : isArrayContainer ? (
-        <div style={{ fontSize: 10, color: "var(--primary)", fontStyle: "italic", textAlign: "center" }}>array</div>
-      ) : (
-        <select
-          value={current.mapping_type}
-          onChange={e => onChange({ ...current, mapping_type: e.target.value as FieldMapping["mapping_type"] })}
-          disabled={readOnly}
-          style={{ fontSize: 11, padding: "3px 4px", border: `1px solid ${C.border}`, borderRadius: C.radius, background: C.surface }}
-        >
-          <option value="direct">direct</option>
-          <option value="static">static</option>
-          <option value="array">array</option>
-        </select>
-      )}
-
-      {/* Upstream path */}
-      {isContainer ? (
-        <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
-          child fields mapped individually below ↓
-        </div>
-      ) : isArrayContainer ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <input
-            value={current.upstream_path ?? ""}
-            onChange={e => onChange({ ...current, upstream_path: e.target.value, mapping_type: "array" })}
-            disabled={readOnly}
-            placeholder="$.member.addresses  (optional — leave empty to infer from child mappings)"
-            list={`paths-${field.id}`}
-            style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${current.upstream_path ? "var(--primary)" : C.border}`, borderRadius: C.radius, width: "100%" }}
-          />
-          <datalist id={`paths-${field.id}`}>
-            {samplePaths.map(p => <option key={p} value={p} />)}
-          </datalist>
-          <span style={{ fontSize: 10, color: C.muted }}>
-            {current.upstream_path ? "explicit array path set" : "auto-inferred from child mappings ↓"}
-          </span>
-        </div>
-      ) : current.mapping_type === "static" ? (
-        <input
-          value={current.static_value ?? ""}
-          onChange={e => onChange({ ...current, static_value: e.target.value })}
-          disabled={readOnly}
-          placeholder="static value"
-          style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius, width: "100%" }}
-        />
-      ) : (
-        <>
-          <input
-            value={current.upstream_path ?? ""}
-            onChange={e => onChange({ ...current, upstream_path: e.target.value })}
-            disabled={readOnly}
-            placeholder={field.type === "array" ? "$.results (resolves array)" : "$.claim_number"}
-            list={`paths-${field.id}`}
-            style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${C.border}`, borderRadius: C.radius, width: "100%" }}
-          />
-          <datalist id={`paths-${field.id}`}>
-            {samplePaths.map(p => <option key={p} value={p} />)}
-          </datalist>
-        </>
-      )}
-    </div>
-  );
 }
 
 // ── Main MappingTab ───────────────────────────────────────────────────────────
@@ -194,12 +107,14 @@ export function MappingTab({ appId, endpoint, onSaved }: Props) {
     });
   }
 
+  usePageSave({fieldMappings},save,{enabled:can("edit:endpoints"),disabled:saving});
+
   async function save() {
     setSaving(true); setError("");
     try {
       const ep = await api.put<Endpoint>(`/__config/apps/${appId}/endpoints/${endpoint._id}/mappings`, fieldMappings);
       onSaved(ep);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
 
@@ -211,20 +126,9 @@ export function MappingTab({ appId, endpoint, onSaved }: Props) {
       {error && <ErrorBanner message={error} />}
 
       <Card>
-        <SectionHead
-          title={`Response Mapping — ${mappableFields.length} mappable fields, ${unmapped} unmapped`}
-          action={!readOnly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Mappings"}</Btn> : undefined}
-        />
-        <div style={{ padding: 12 }}>
-          {/* Column headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 1fr", gap: "0 8px", marginBottom: 8, padding: "4px 8px" }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>OUTPUT FIELD (your schema)</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>TYPE</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>
-              UPSTREAM PATH{samplePaths.length > 0 && <span style={{ fontWeight: 400 }}> — type to autocomplete from sample</span>}
-            </span>
-          </div>
-
+        <div className="ui-card__head"><h2 className="ui-card__title ui-row">Response mapping <span className={`ui-badge ${unmapped ? "ui-badge--warning" : "ui-badge--success"}`}><i className="ui-dot"/>{mappableFields.length-unmapped} of {mappableFields.length} mapped</span></h2></div>
+        <div>
+          <div className="ui-map__head"><span>Output field</span><span/><span>Type</span><span>Upstream path</span></div>
           {flatSchema.length === 0 ? (
             <p style={{ fontSize: 12, color: C.muted, padding: "8px 0" }}>
               Define the Response Schema first, then come back here to map each field to its upstream path.
@@ -247,11 +151,11 @@ export function MappingTab({ appId, endpoint, onSaved }: Props) {
       {["POST","PUT","PATCH"].includes(endpoint.method) && (
         <Card>
           <SectionHead title="Request Body Mapping — Upstream ← Your Input" />
-          <div style={{ padding: 12 }}>
-            <div style={{ padding: 10, background: "var(--selection)", borderRadius: C.radius, fontSize: 12, color: "var(--primary)", marginBottom: 8 }}>
+          <div className="ui-card__body">
+            <div className="ui-callout"><Info/><span>
               <strong>Direction is reversed here.</strong> Each row maps an <em>upstream field</em> to a source from <em>your input</em>.
-              Configure these in the <strong>Upstream tab → body_mappings</strong>.
-            </div>
+              Configure these in the <strong>Upstream step → body_mappings</strong>.
+            </span></div>
           </div>
         </Card>
       )}

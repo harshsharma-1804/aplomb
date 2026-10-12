@@ -1,8 +1,12 @@
+import { PageHeaderActions, notifyToast, usePageSave } from "../../../components/PageSave";
+import { ArrowLeft, ArrowRight, SlidersHorizontal, ShieldCheck, Braces, Database, History, GitCompareArrows, Plus, Search, RefreshCw, Trash2, Pencil, Lock, KeyRound, Info, TriangleAlert, Copy, Check } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../api/client";
 import type { App, AppEnvVar, ListResult, IdentityProvider, Secret, AppDbConnection, DbConnectionType, DbConnOptions } from "../../../api/types";
-import { Card, SectionHead, Btn, Field, inputStyle, Badge, Confirm, C, Toggle, InfoTip } from "../../../components";
+import { Card, SectionHead, Btn, Field, inputStyle, Badge, Confirm, C, Toggle, InfoTip, Modal, ErrorBanner, Table, DeleteIcon } from "../../../components";
+import { GeneralAppSettings } from "./GeneralAppSettings";
+import { HistorySection } from "./HistorySection";
 import { useSession } from "../../../auth/SessionContext";
 
 interface Props {
@@ -11,23 +15,32 @@ interface Props {
   onAppUpdated: (updated: App) => void;
   onDeleteApp: () => void;
   onCloneApp: () => void;
+  section?: string;
+  onRestored?:()=>void;
 }
 
-export function SettingsTab({ app, appId, onAppUpdated, onDeleteApp, onCloneApp }: Props) {
-  const { can } = useSession();
+export const APP_SETTINGS_SECTIONS = [
+  { key:"general",label:"General",icon:SlidersHorizontal,description:"Name and base path, status, AI and MCP exposure, frontend key, clone and delete." },
+  { key:"auth",label:"Runtime Authentication",icon:ShieldCheck,description:"Who can call this app, how sessions behave, and login throttling." },
+  { key:"env",label:"Environment Variables",icon:Braces,description:"Values you can reference in any upstream config as {{KEY}}." },
+  { key:"db",label:"Database Connections",icon:Database,description:"Named connections for MongoDB, PostgreSQL, and MySQL upstreams." },
+  { key:"history",label:"History",icon:History,description:"A snapshot of the app after every change, with roll back." },
+  { key:"compare",label:"Compare",icon:GitCompareArrows,description:"See what changed between two snapshots of this app." },
+];
+export function SettingsTab({ app, appId, onAppUpdated, onDeleteApp, onCloneApp, section, onRestored }: Props) {
+  const { can } = useSession(); const navigate=useNavigate();
   const readonly = !can("manage:apps");
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <GeneralSection    app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
-      <AuthSection       app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
-      <AiExposeSection   app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
-      <FrontendKeySection app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
-      <DbConnectionsSection appId={appId} readonly={readonly} />
-      <EnvSection        app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />
-      <QuickActionsSection app={app} appId={appId} onSaved={onAppUpdated} onDelete={onDeleteApp} onClone={onCloneApp} readonly={readonly} />
-    </div>
-  );
+  const [counts,setCounts]=useState<{db?:number;history?:number}>({});
+  useEffect(()=>{if(section)return;let active=true;Promise.all([api.get<{count?:number;results:unknown[]}>(`/__config/apps/${appId}/db-connections`),api.get<{count?:number;results:unknown[]}>(`/__config/apps/${appId}/history`)]).then(([db,history])=>{if(active)setCounts({db:db.count ?? db.results.length,history:history.count ?? history.results.length});}).catch(()=>{});return()=>{active=false;};},[appId,section]);
+  const selected=APP_SETTINGS_SECTIONS.find(s=>s.key===section);
+  if (!selected) return <><div className="ui-pagehead" style={{alignItems:"flex-start"}}><div className="ui-row" style={{gap:12,alignItems:"flex-start"}}><button className="ui-iconbtn ui-iconbtn--bordered" aria-label="Back" onClick={()=>navigate(`/apps/${appId}`)}><ArrowLeft /></button><div><h1>App settings</h1><p>{app.name} <span className="ui-path">{app.base_path}</span></p></div></div></div><div className="ui-page__body"><div className="ui-cardgrid app-settings-hub">{APP_SETTINGS_SECTIONS.filter(s=>!readonly || !["history","compare"].includes(s.key)).map(s=><button type="button" className="ui-navcard" key={s.key} onClick={()=>navigate(`/apps/${appId}/settings/${s.key}`)}><span className="ui-tile"><s.icon /></span><ArrowRight className="ui-navcard__arrow" size={16} /><span><span className="ui-navcard__title">{s.label}</span><span className="ui-navcard__desc">{s.description}</span></span><span className="ui-navcard__meta">{s.key==="general" ? <><Badge text={app.mode ?? "prod"} /><Badge text={app.status} /></> : s.key==="auth" ? <Badge text={app.auth_required===false ? "Auth off" : "Auth on"} /> : s.key==="env" ? <><span className="ui-count">{(app.app_env ?? []).length}</span>variables</> : s.key==="db" ? <><span className="ui-count">{counts.db ?? "—"}</span>{counts.db===1 ? "connection" : "connections"}</> : s.key==="history" ? <><span className="ui-count">{counts.history ?? "—"}</span>snapshots</> : s.key==="compare" ? "Pick any two snapshots" : null}</span></button>)}</div></div></>;
+  if (section === "general") return <GeneralAppSettings key={appId} app={app} appId={appId} onSaved={onAppUpdated} onDelete={onDeleteApp} onClone={onCloneApp} readonly={readonly} frontendKey={<FrontendKeySection app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />} />;
+  return <div className="app-settings-detail"><div className="ui-pagehead"><div className="ui-row" style={{alignItems:"flex-start"}}><button className="ui-iconbtn ui-iconbtn--bordered" aria-label="Back to app settings" onClick={()=>navigate(`/apps/${appId}/settings`)}><ArrowLeft /></button><div><h1>{selected.label}</h1><p className="ui-muted">{selected.description}</p></div></div></div><div className="ui-page__body"><div className="ui-stack">
+    {["history","compare"].includes(section ?? "") && <HistorySection appId={appId} compare={section==="compare"} onRestored={()=>{onRestored?.();navigate(`/apps/${appId}`);}} />}
+    {section==="auth" && <AuthSection app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />}
+    {section==="env" && <EnvSection app={app} appId={appId} onSaved={onAppUpdated} readonly={readonly} />}
+    {section==="db" && <DbConnectionsSection appId={appId} readonly={readonly} />}
+  </div></div></div>;
 }
 
 // ── Section 1: General ────────────────────────────────────────────────────────
@@ -75,10 +88,10 @@ function GeneralSection({ app, appId, onSaved, readonly }: { app: App; appId: st
 
   return (
     <Card>
-      <SectionHead title="General" action={!readonly ? <Btn size="sm" onClick={save} disabled={saving || pathTaken || checking}>{saving ? "Saving…" : "Save"}</Btn> : undefined} />
+      <SectionHead title="General" action={!readonly ? <Btn size="sm" pageSave onClick={save} disabled={saving || pathTaken || checking}>{saving ? "Saving…" : "Save"}</Btn> : undefined} />
       <div style={{ padding: 16 }}>
         {error && <ErrorBanner message={error} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
           <Field label="App Name">
             <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} disabled={readonly} />
           </Field>
@@ -158,7 +171,7 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
         allowed_provider_ids: identityInPlay ? allowedIds : [],
       });
       // 2. Session auth config (only when session mode is in play)
-      if (sessionAuthOn) {
+      {
         const cfg = await api.put<{ auth_mode: App["auth_mode"]; session_method: App["session_method"]; session_config: App["session_config"] }>(
           `/__config/apps/${appId}/session-auth`,
           {
@@ -186,9 +199,11 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
       }
       onSaved(updated);
       setSaved(true);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); throw e; }
     finally { setSaving(false); }
   }
+
+  usePageSave({authRequired,authMode,sessionMethod,allowedIds,cookieName,ttlIdle,maxAge,maxSessions,uaEnforce,postLoginRedirect,redirectAllowlist,linkIdentity,requireVerify,twofaAvailable,rateLimitMax,rateLimitWin,lockoutMax,lockoutDur},save,{enabled:!readonly,disabled:saving});
 
   const authMethodTip = authMode === "bearer"
     ? "End clients send a verified identity-provider (OIDC) token on every request. Choose which providers are accepted below."
@@ -226,143 +241,32 @@ function AuthSection({ app, appId, onSaved, readonly }: { app: App; appId: strin
     );
   }
 
-  return (
-    <Card>
-      <SectionHead title="Runtime Authentication" action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : saved ? "Saved ✓" : "Save"}</Btn> : undefined} />
-      <div style={{ padding: 16 }}>
-        {error && <ErrorBanner message={error} />}
+  return <div className="ui-stack">
+    {error && <ErrorBanner message={error} />}
+    <Card><div className="ui-card__body">
+      <div className="ui-row" style={{alignItems:"flex-start",gap:12}}><Toggle checked={authRequired} disabled={readonly} label="Require authentication" onChange={setAuthRequired}/><div><strong>Require authentication</strong><p className="ui-muted" style={{fontSize:12.5,marginTop:2}}>Turn on to reject requests that carry no valid token or session.</p></div></div>
+      {!authRequired && <div className="ui-callout ui-callout--warning" style={{marginTop:14}}><TriangleAlert/><span><strong>Auth bypass is on.</strong> Requests without a token or session are accepted.</span></div>}
+    </div></Card>
+    {authRequired && <Card><SectionHead title="Method"/><div className="ui-card__body"><div className="ui-formgrid">
+      <Field label="Authentication method"><select className="ui-select" value={authMode} disabled={readonly || !authRequired} onChange={e=>setAuthMode(e.target.value as App["auth_mode"])}><option value="bearer">Bearer (OIDC token)</option><option value="session">Session cookie</option><option value="both">Both</option></select></Field>
+      {sessionAuthOn && <Field label="Session login"><select className="ui-select" value={sessionMethod} disabled={readonly || !authRequired} onChange={e=>setSessionMethod(e.target.value as App["session_method"])}><option value="gateway">Gateway auth (app users)</option><option value="identity">Identity Provider (SSO)</option><option value="both">Both</option></select></Field>}
+    </div></div></Card>}
+    {sessionAuthOn && <Card><SectionHead title="Sessions"/><div className="ui-card__body"><div className="ui-formgrid">
+      <Field label="Idle timeout (min)"><input className="ui-input ui-num" type="number" min={5} max={1440} value={ttlIdle} disabled={readonly || !sessionAuthOn} onChange={e=>setTtlIdle(Number(e.target.value))}/></Field>
+      <Field label="Absolute cap (h)"><input className="ui-input ui-num" type="number" min={1} max={168} value={maxAge/60} disabled={readonly || !sessionAuthOn} onChange={e=>setMaxAge(Number(e.target.value)*60)}/></Field>
+      <Field label="Max sessions per user"><input className="ui-input ui-num" type="number" min={1} max={20} value={maxSessions} disabled={readonly || !sessionAuthOn} onChange={e=>setMaxSessions(Number(e.target.value))}/></Field>
+      <Field label="Device fingerprint"><select className="ui-select" value={uaEnforce} disabled={readonly || !sessionAuthOn} onChange={e=>setUaEnforce(e.target.value as "off"|"flag"|"enforce")}><option value="off">Off</option><option value="flag">Flag only</option><option value="enforce">Enforce UA</option></select></Field>
+    </div><Field label="Session cookie name" hint="Leave empty for the default. Must be unique across apps."><input className="ui-input ui-input--mono" value={cookieName} placeholder="orc_sid_…" disabled={readonly || !sessionAuthOn} onChange={e=>setCookieName(e.target.value)}/></Field></div></Card>}
+    {sessionAuthOn && ["gateway","both"].includes(sessionMethod) && <Card><SectionHead title="Login throttling"/><div className="ui-card__body"><div className="ui-formgrid">
+      <Field label="Max failed attempts"><input className="ui-input ui-num" type="number" min={3} max={100} value={rateLimitMax} disabled={readonly || !sessionAuthOn} onChange={e=>setRateLimitMax(Number(e.target.value))}/></Field>
+      <Field label="Window (minutes)"><input className="ui-input ui-num" type="number" min={1} max={60} value={rateLimitWin} disabled={readonly || !sessionAuthOn} onChange={e=>setRateLimitWin(Number(e.target.value))}/></Field>
+      <Field label="Max consecutive failures"><input className="ui-input ui-num" type="number" min={0} max={100} value={lockoutMax} disabled={readonly || !sessionAuthOn} onChange={e=>setLockoutMax(Number(e.target.value))}/></Field>
+      <Field label="Lockout duration (minutes)"><input className="ui-input ui-num" type="number" min={1} max={1440} value={lockoutDur} disabled={readonly || !sessionAuthOn} onChange={e=>setLockoutDur(Number(e.target.value))}/></Field>
+    </div></div></Card>}
+    {authRequired && identityInPlay && <Card><SectionHead title="Identity providers"/><div className="ui-card__body"><ProviderChecklist/>{sessionAuthOn && ["identity","both"].includes(sessionMethod) && <IdentityLoginConfig app={app} readonly={readonly} providers={providers} allowedIds={allowedIds} postLoginRedirect={postLoginRedirect} setPostLoginRedirect={setPostLoginRedirect} redirectAllowlist={redirectAllowlist} setRedirectAllowlist={setRedirectAllowlist} newRedirect={newRedirect} setNewRedirect={setNewRedirect} linkIdentity={linkIdentity} setLinkIdentity={setLinkIdentity}/>}</div></Card>}
+    {sessionAuthOn && ["gateway","both"].includes(sessionMethod) && <Card><SectionHead title="Two-factor authentication"/><div className="ui-card__body"><div className="ui-row" style={{alignItems:"flex-start",gap:12}}><Toggle checked={twofaAvailable} disabled={readonly} label="Allow users to self-enroll in two-factor authentication" onChange={setTwofaAvailable}/><div><strong>Allow users to self-enroll in two-factor authentication</strong><p className="ui-muted">Users can enroll from their first login. Require it per user in the Users page.</p></div></div></div></Card>}
+  </div>;
 
-        {/* ── Master toggle ──────────────────────────────────────────────── */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <Toggle checked={authRequired} onChange={v => { setAuthRequired(v); setSaved(false); }} disabled={readonly} label="Require authentication" />
-          <span style={{ fontWeight: 600, fontSize: 13 }}>Require authentication</span>
-          <InfoTip text="Every caller must authenticate using the method below. Turning this off makes the app accept unauthenticated traffic — dev/demo only, never for production." />
-        </div>
-
-        {!authRequired && (
-          <div style={{ padding: "10px 14px", background: "var(--warning-background)", borderRadius: C.radius, border: "1px solid var(--warning)", fontSize: 12, color: "var(--warning)", marginBottom: 16 }}>
-            ⚠ <strong>Auth bypass is ON.</strong> Requests without a token or session are accepted.
-          </div>
-        )}
-
-        {/* ── Required Auth → method selectors ───────────────────────────── */}
-        {authRequired && (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: sessionAuthOn ? "1fr 1fr" : "1fr", gap: "0 16px", marginBottom: 4 }}>
-              <Field label={<span>Authentication Method<InfoTip text={authMethodTip} /></span>}>
-                <select
-                  style={inputStyle}
-                  value={authMode}
-                  disabled={readonly}
-                  onChange={e => { setAuthMode(e.target.value as App["auth_mode"]); setSaved(false); }}
-                >
-                  <option value="bearer">Bearer (OIDC token)</option>
-                  <option value="session">Session cookie</option>
-                  <option value="both">Both</option>
-                </select>
-              </Field>
-
-              {sessionAuthOn && (
-                <Field label={<span>Session Login<InfoTip text={sessionMethodTip} /></span>}>
-                  <select
-                    style={inputStyle}
-                    value={sessionMethod}
-                    disabled={readonly}
-                    onChange={e => { setSessionMethod(e.target.value as App["session_method"]); setSaved(false); }}
-                  >
-                    <option value="gateway">Gateway auth (app users)</option>
-                    <option value="identity">Identity Provider (SSO)</option>
-                    <option value="both">Both</option>
-                  </select>
-                </Field>
-              )}
-            </div>
-
-            {/* Bearer → providers */}
-            {authMode === "bearer" && <ProviderChecklist />}
-
-            {/* Session / Both → session login config */}
-            {sessionAuthOn && (
-              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 4 }}>
-                {["gateway", "both"].includes(sessionMethod) && (
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 14, cursor: readonly ? "default" : "pointer" }}>
-                    <input type="checkbox" checked={twofaAvailable} onChange={e => { setTwofaAvailable(e.target.checked); setSaved(false); }} disabled={readonly} />
-                    Allow users to self-enroll in two-factor authentication
-                    <InfoTip text="Users can enroll in two-factor auth (authenticator app or email codes) from their first login; you can require it per user in the Users tab." />
-                  </label>
-                )}
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0 12px", marginBottom: 4 }}>
-                  <Field label={<span>Idle timeout (min)<InfoTip text="Sessions die after this many minutes of inactivity — no later than the absolute cap. IP changes are never punished; IP is metadata only." /></span>}>
-                    <input type="number" min={5} max={1440} style={inputStyle} value={ttlIdle} onChange={e => { setTtlIdle(parseInt(e.target.value) || 30); setSaved(false); }} disabled={readonly} />
-                  </Field>
-                  <Field label="Absolute cap (h)">
-                    <input type="number" min={1} max={168} style={inputStyle} value={Math.round(maxAge / 60)} onChange={e => { setMaxAge((parseInt(e.target.value) || 8) * 60); setSaved(false); }} disabled={readonly} />
-                  </Field>
-                  <Field label="Max sessions/user">
-                    <input type="number" min={1} max={20} style={inputStyle} value={maxSessions} onChange={e => { setMaxSessions(parseInt(e.target.value) || 5); setSaved(false); }} disabled={readonly} />
-                  </Field>
-                  <Field label="Device fingerprint">
-                    <select style={inputStyle} value={uaEnforce} onChange={e => { setUaEnforce(e.target.value as "off" | "flag" | "enforce"); setSaved(false); }} disabled={readonly}>
-                      <option value="off">Off</option>
-                      <option value="flag">Flag only</option>
-                      <option value="enforce">Enforce UA</option>
-                    </select>
-                  </Field>
-                </div>
-
-                 <Field label={<span>Session cookie name<InfoTip text="Leave empty for the default (orc_sid_ + base path). Must be unique across apps and cannot be the admin login cookie." /></span>}>
-                   <input style={inputStyle} value={cookieName} onChange={e => { setCookieName(e.target.value); setSaved(false); }} placeholder={`orc_sid_${app.base_path.split("/").filter(Boolean).join("_") || "app"}`} disabled={readonly} />
-                 </Field>
-
-                 <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 8px" }} />
-                 <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Login rate limiting (per IP)</div>
-                 <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
-                   After this many failed attempts from one IP, further logins are blocked for the window duration and return <code>429</code>.
-                 </p>
-                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
-                   <Field label="Max failed attempts" hint="Min 3 · Max 100">
-                     <input type="number" min={3} max={100} style={inputStyle} value={rateLimitMax} onChange={e => { setRateLimitMax(parseInt(e.target.value) || 10); setSaved(false); }} disabled={readonly} />
-                   </Field>
-                   <Field label="Window (minutes)" hint="Min 1 · Max 60">
-                     <input type="number" min={1} max={60} style={inputStyle} value={rateLimitWin} onChange={e => { setRateLimitWin(parseInt(e.target.value) || 15); setSaved(false); }} disabled={readonly} />
-                   </Field>
-                 </div>
-
-                 <div style={{ borderTop: `1px dashed ${C.border}`, margin: "12px 0 8px" }} />
-                 <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Username lockout</div>
-                 <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
-                   Blocks an account after too many consecutive failures, regardless of IP. Set to <strong>0</strong> to disable. Admins can unlock from the Users tab.
-                 </p>
-                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
-                   <Field label="Max consecutive failures" hint="0 = disabled · account is locked after this many wrong passwords">
-                     <input type="number" min={0} max={100} style={inputStyle} value={lockoutMax} onChange={e => { setLockoutMax(parseInt(e.target.value) ?? 5); setSaved(false); }} disabled={readonly} />
-                   </Field>
-                   <Field label="Lockout duration (minutes)" hint="Max 1440 (24 h)">
-                     <input type="number" min={1} max={1440} style={inputStyle} value={lockoutDur} onChange={e => { setLockoutDur(parseInt(e.target.value) || 30); setSaved(false); }} disabled={readonly} />
-                   </Field>
-                 </div>
-
-                {["identity", "both"].includes(sessionMethod) && (
-                  <>
-                    <ProviderChecklist />
-                    <IdentityLoginConfig
-                      app={app} readonly={readonly}
-                      providers={providers} allowedIds={allowedIds}
-                      postLoginRedirect={postLoginRedirect} setPostLoginRedirect={(v) => { setPostLoginRedirect(v); setSaved(false); }}
-                      redirectAllowlist={redirectAllowlist} setRedirectAllowlist={(v) => { setRedirectAllowlist(v); setSaved(false); }}
-                      newRedirect={newRedirect} setNewRedirect={setNewRedirect}
-                      linkIdentity={linkIdentity} setLinkIdentity={(v) => { setLinkIdentity(v); setSaved(false); }}
-                    />
-                  </>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </Card>
-  );
 }
 
 // ── Brokered identity login config (OAuth redirect, IdentityProviderLoginSpecs-3.md)
@@ -425,7 +329,7 @@ function IdentityLoginConfig({ app, readonly, providers, allowedIds, postLoginRe
       {redirectAllowlist.map(entry => (
         <div key={entry} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <code style={{ fontSize: 11, flex: 1 }}>{entry}</code>
-          {!readonly && <Btn size="sm" variant="danger" onClick={() => setRedirectAllowlist(redirectAllowlist.filter(x => x !== entry))}>Remove</Btn>}
+          {!readonly && <DeleteIcon onClick={() => setRedirectAllowlist(redirectAllowlist.filter(x => x !== entry))} label="Remove" />}
         </div>
       ))}
       {!readonly && (
@@ -496,120 +400,25 @@ function AiExposeSection({ app, appId, onSaved, readonly }: { app: App; appId: s
 }
 
 function EnvSection({ app, appId, onSaved, readonly }: { app: App; appId: string; onSaved: (a: App) => void; readonly: boolean }) {
-  const [vars, setVars]       = useState<AppEnvVar[]>(app.app_env ?? []);
-  const [secrets, setSecrets] = useState<Secret[]>([]);
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [newKey, setNewKey]   = useState("");
-  const [newType, setNewType] = useState<"plain" | "secret">("plain");
-  const [newPlain, setNewPlain] = useState("");
-  const [newSecretId, setNewSecretId] = useState("");
-
-  useEffect(() => {
-    api.get<ListResult<Secret>>("/__config/admin/secrets")
-      .then(d => setSecrets(d.results))
-      .catch(() => {});
-  }, []);
-
-  function addVar() {
-    if (!newKey.trim()) return;
-    const entry: AppEnvVar = newType === "plain"
-      ? { key: newKey.trim(), value_type: "plain", plain_value: newPlain }
-      : { key: newKey.trim(), value_type: "secret", secret_id: newSecretId || null };
-    setVars(v => [...v.filter(x => x.key !== entry.key), entry]);
-    setNewKey(""); setNewPlain(""); setNewSecretId(""); setShowAdd(false);
-  }
-
-  function removeVar(key: string) { setVars(v => v.filter(x => x.key !== key)); }
-
-  async function save() {
-    setSaving(true); setError("");
-    try {
-      const updated = await api.put<App>(`/__config/apps/${appId}`, { app_env: vars });
-      onSaved(updated);
-    } catch (e) { setError(String(e)); }
-    finally { setSaving(false); }
-  }
-
-  const secretName = (id: string) => secrets.find(s => s._id === id)?.name ?? id;
-
-  return (
-    <Card>
-      <SectionHead
-        title="Environment Variables"
-        action={!readonly ? <Btn size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn> : undefined}
-      />
-      <div style={{ padding: 16 }}>
-        {error && <ErrorBanner message={error} />}
-        <p style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
-          App-scoped variables available to all endpoints in this app.
-          Reference as <code style={{ background: C.bg, padding: "1px 5px", borderRadius: 3 }}>{"{{KEY}}"}</code> in upstream URLs and static header values.
-        </p>
-
-        {vars.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "140px 70px 1fr auto", gap: "0 8px", padding: "4px 8px", marginBottom: 4 }}>
-              {["KEY","TYPE","VALUE",""].map(h => <span key={h} style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px" }}>{h}</span>)}
-            </div>
-            {vars.map(v => (
-              <div key={v.key} style={{ display: "grid", gridTemplateColumns: "140px 70px 1fr auto", gap: "0 8px", alignItems: "center", padding: "6px 8px", borderRadius: C.radius, border: `1px solid ${C.border}`, marginBottom: 4, background: C.bg }}>
-                <code style={{ fontSize: 12, color: C.primary, fontWeight: 600 }}>{v.key}</code>
-                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 99, background: v.value_type === "secret" ? "var(--danger)18" : "var(--success)18", color: v.value_type === "secret" ? C.danger : C.success, fontWeight: 600 }}>
-                  {v.value_type}
-                </span>
-                <span style={{ fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {v.value_type === "plain" ? (v.plain_value ?? "") : `•••••••• (${secretName(v.secret_id ?? "")})`}
-                </span>
-                {!readonly && (
-                  <button onClick={() => removeVar(v.key)} style={{ background: "none", border: "none", cursor: "pointer", color: C.danger, fontSize: 16 }}>×</button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!readonly && !showAdd && (
-          <Btn size="sm" variant="ghost" onClick={() => setShowAdd(true)}>+ Add Variable</Btn>
-        )}
-
-        {showAdd && (
-          <div style={{ padding: 12, background: "var(--surface-muted)", borderRadius: C.radius, border: `1px solid ${C.border}`, marginTop: 8 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: "0 12px" }}>
-              <Field label="Key">
-                <input style={inputStyle} value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="BASE_API_URL" autoFocus onKeyDown={e => e.key === "Enter" && addVar()} />
-              </Field>
-              <Field label="Value Type">
-                <select style={inputStyle} value={newType} onChange={e => setNewType(e.target.value as "plain" | "secret")}>
-                  <option value="plain">Plain text</option>
-                  <option value="secret">Secret ref</option>
-                </select>
-              </Field>
-            </div>
-            {newType === "plain" ? (
-              <Field label="Value">
-                <input style={inputStyle} value={newPlain} onChange={e => setNewPlain(e.target.value)} placeholder="http://host.docker.internal:3001" onKeyDown={e => e.key === "Enter" && addVar()} />
-              </Field>
-            ) : (
-              <Field label="Secret" hint="Select from the global secrets store">
-                <select style={inputStyle} value={newSecretId} onChange={e => setNewSecretId(e.target.value)}>
-                  <option value="">— select a secret —</option>
-                  {secrets.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
-                </select>
-              </Field>
-            )}
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <Btn size="sm" onClick={addVar} disabled={!newKey.trim() || (newType === "secret" && !newSecretId)}>Add</Btn>
-              <Btn size="sm" variant="ghost" onClick={() => { setShowAdd(false); setNewKey(""); setNewPlain(""); setNewSecretId(""); }}>Cancel</Btn>
-            </div>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
+  const [secrets,setSecrets]=useState<Secret[]>([]),[query,setQuery]=useState("");
+  const [showAdd,setShowAdd]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState("");
+  const [newKey,setNewKey]=useState(""),[newType,setNewType]=useState<"plain"|"secret">("plain"),[newPlain,setNewPlain]=useState(""),[newSecretId,setNewSecretId]=useState("");
+  const [removing,setRemoving]=useState<AppEnvVar|null>(null);
+  useEffect(()=>{api.get<ListResult<Secret>>("/__config/admin/secrets").then(d=>setSecrets(d.results)).catch(e=>setError(String(e)));},[]);
+  const vars=app.app_env ?? [];
+  async function persist(next:AppEnvVar[],message:string){setSaving(true);setError("");try{onSaved(await api.put<App>(`/__config/apps/${appId}`,{app_env:next}));notifyToast(message,"success",app.name);return true;}catch(e){setError(String(e));return false;}finally{setSaving(false);}}
+  async function refresh(){try{onSaved(await api.get<App>(`/__config/apps/${appId}`));}catch(e){setError(String(e));}}
+  async function add(){if(!newKey.trim() || (newType==="secret" && !newSecretId))return;const entry:AppEnvVar=newType==="plain" ? {key:newKey.trim(),value_type:"plain",plain_value:newPlain} : {key:newKey.trim(),value_type:"secret",secret_id:newSecretId};if(await persist([...vars,entry],"Variable added")){setShowAdd(false);setNewKey("");setNewPlain("");setNewSecretId("");}}
+  const duplicate=vars.some(v=>v.key===newKey.trim());
+  return <>
+    {!readonly && <PageHeaderActions><Btn onClick={()=>{setError("");setShowAdd(true);}}><Plus/>Add variable</Btn></PageHeaderActions>}
+    {error && !showAdd && <ErrorBanner message={error}/>}
+    <Card><div className="ui-card__head"><h2 className="ui-card__title ui-row"><span className="ui-count">{vars.length}</span>{vars.length===1 ? "variable" : "variables"}</h2><div className="ui-row"><div className="ui-search" style={{width:240}}><Search/><input className="ui-input ui-input--sm" aria-label="Filter variables" placeholder="Filter variables" value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="ui-iconbtn ui-iconbtn--bordered" aria-label="Refresh variables" onClick={refresh}><RefreshCw/></button></div></div>
+    <Table cols={[{key:"key",label:"Key",render:v=><strong className="ui-mono">{String(v)}</strong>},{key:"value_type",label:"Type",render:v=><span className={`ui-badge ${v==="secret" ? "ui-badge--accent" : ""}`}>{v==="secret" ? "Secret ref" : "Plain text"}</span>},{key:"plain_value",label:"Value",render:(v,r)=>r.value_type==="secret" ? <span className="ui-row ui-mono ui-muted"><Lock size={14}/>{secrets.find(s=>s._id===r.secret_id)?.name ?? "Secret reference"}</span> : <span className="ui-mono ui-muted">{String(v ?? "")}</span>},{key:"_actions",label:"",render:(_,r)=>!readonly && <button className="ui-iconbtn" aria-label={`Delete variable ${r.key}`} disabled={saving} onClick={()=>setRemoving(r as unknown as AppEnvVar)}><Trash2/></button>}]} rows={vars.filter(v=>`${v.key} ${v.value_type}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string,unknown>[]}/></Card>
+    {showAdd && <Modal title="Add variable" onClose={()=>!saving && setShowAdd(false)}><form onSubmit={e=>{e.preventDefault();add();}}>{error && <ErrorBanner message={error}/>}<div className="ui-formgrid"><Field label="Key"><input className="ui-input ui-input--mono" placeholder="BASE_API_URL" value={newKey} onChange={e=>setNewKey(e.target.value)} required/></Field><Field label="Value type"><select className="ui-select" value={newType} onChange={e=>setNewType(e.target.value as "plain"|"secret")}><option value="plain">Plain text</option><option value="secret">Secret ref</option></select></Field></div>{duplicate && <ErrorBanner message="A variable with this key already exists."/>}{newType==="plain" ? <Field label="Value"><input className="ui-input ui-input--mono" placeholder="http://host.docker.internal:3001" value={newPlain} onChange={e=>setNewPlain(e.target.value)}/></Field> : <Field label="Secret"><select className="ui-select" required value={newSecretId} onChange={e=>setNewSecretId(e.target.value)}><option value="">Select a secret…</option>{secrets.map(s=><option key={s._id} value={s._id}>{s.name}</option>)}</select></Field>}<div className="ui-modal__foot"><Btn variant="secondary" disabled={saving} onClick={()=>setShowAdd(false)}>Cancel</Btn><Btn type="submit" disabled={saving || duplicate || !newKey.trim() || (newType==="secret" && !newSecretId)}>{saving ? "Adding…" : "Add variable"}</Btn></div></form></Modal>}
+    {removing && <Confirm danger message={`Remove variable "${removing.key}"? Upstreams that reference it will need updating.`} onCancel={()=>setRemoving(null)} onConfirm={async()=>{if(await persist(vars.filter(v=>v.key!==removing.key),"Variable removed"))setRemoving(null);}}/>}
+  </>;
 }
-
-// ── Section 4: Quick Actions ──────────────────────────────────────────────────
 
 function FrontendKeySection({ app, appId, onSaved, readonly }: { app: App; appId: string; onSaved: (a: App) => void; readonly: boolean }) {
   const [newKey, setNewKey] = useState<string | null>(null);
@@ -642,46 +451,13 @@ function FrontendKeySection({ app, appId, onSaved, readonly }: { app: App; appId
     try { await navigator.clipboard.writeText(newKey); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard unavailable */ }
   }
 
-  return (
-    <Card>
-      <SectionHead title="Frontend Key" />
-      <div style={{ padding: 16 }}>
-        <p style={{ fontSize: 12, color: C.muted, margin: "0 0 12px" }}>
-          A pre-shared secret that authorises relay servers (e.g. your Next.js backend) to submit login requests
-          on behalf of users. When set, every <code>/login</code>, <code>/signup</code>, <code>/auth/login/*</code>
-          and 2FA request must carry <code>X-Frontend-Key: &lt;key&gt;</code>.
-          Prevents any unauthorised relay from authenticating users on this app —
-          including those bypassing CORS via server-to-server calls.
-        </p>
-        {error && <ErrorBanner message={error} />}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: C.radius, border: `1px solid ${C.border}`, background: C.bg, marginBottom: 12 }}>
-          <span style={{ fontSize: 13, flex: 1 }}>
-            {app.frontend_key_set ? "🔐 Frontend key is active" : "⚪ No frontend key — all relays accepted"}
-          </span>
-          {!readonly && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn size="sm" onClick={generate} disabled={busy}>{busy ? "Generating…" : app.frontend_key_set ? "Rotate key" : "Generate key"}</Btn>
-              {app.frontend_key_set && <Btn size="sm" variant="danger" onClick={revoke} disabled={busy}>Revoke</Btn>}
-            </div>
-          )}
-        </div>
-        {newKey && (
-          <div style={{ padding: "12px 14px", borderRadius: C.radius, border: "1px solid #9ae6b4", background: "#f0fff4" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#276749", marginBottom: 6 }}>
-              ⚠ Copy this key now — it will not be shown again
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <code style={{ fontSize: 12, flex: 1, wordBreak: "break-all", color: "#276749" }}>{newKey}</code>
-              <Btn size="sm" variant="ghost" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</Btn>
-            </div>
-            <p style={{ fontSize: 11, color: "#276749", margin: "8px 0 0" }}>
-              Set this as <code>APP_FRONTEND_KEY=&lt;key&gt;</code> in your relay server's env and send it as <code>X-Frontend-Key</code> on every login request.
-            </p>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
+  return <Card><SectionHead title="Frontend key"/><div className="ui-card__body">
+    {error && <ErrorBanner message={error}/>}
+    <div className="ui-row"><div className="ui-grow"><strong>{app.frontend_key_set ? "Frontend key is active" : "No frontend key"}</strong><p className="ui-muted" style={{fontSize:12.5}}>{app.frontend_key_set ? "Relay servers must provide the X-Frontend-Key header." : "All relays are accepted until you generate one."}</p></div>{!readonly && <div className="ui-row"><Btn variant="secondary" size="sm" onClick={generate} disabled={busy}><KeyRound/>{busy ? "Generating…" : app.frontend_key_set ? "Rotate key" : "Generate key"}</Btn>{app.frontend_key_set && <Btn variant="danger" size="sm" onClick={revoke} disabled={busy}>Revoke</Btn>}</div>}</div>
+    <div className="ui-callout ui-callout--neutral" style={{marginTop:14}}><Info/><span>A pre-shared secret that authorises relay servers to submit login requests. When set, every <code>/login</code>, <code>/signup</code>, <code>/auth/login/*</code> and 2FA request must carry the <code>X-Frontend-Key</code> header. The key is shown once, when generated.</span></div>
+    {newKey && <div className="ui-callout ui-callout--success" style={{marginTop:14}}><KeyRound/><div className="ui-grow"><strong>Copy this key now — it will not be shown again</strong><div className="ui-row" style={{marginTop:8}}><code style={{wordBreak:"break-all"}}>{newKey}</code><Btn variant="secondary" size="sm" onClick={copy}>{copied ? <Check/> : <Copy/>}{copied ? "Copied" : "Copy"}</Btn></div></div></div>}
+  </div></Card>;
+
 }
 
 // ── DB Connections Section ────────────────────────────────────────────────────
@@ -712,6 +488,7 @@ function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: bo
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState("");
   const [deleteId, setDeleteId]       = useState<string | null>(null);
+  const [query,setQuery]=useState("");
   const [showPw, setShowPw]           = useState(false);
 
   useEffect(() => {
@@ -753,6 +530,7 @@ function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: bo
         const c = await api.put<AppDbConnection>(`/__config/apps/${appId}/db-connections/${editing}`, form);
         setConnections(cs => cs.map(x => x.id === editing ? c : x));
       }
+      notifyToast(editing==="new" ? "Connection added" : "Connection updated");
       setEditing(null);
     } catch (e: any) { setError(String(e)); }
     finally { setSaving(false); }
@@ -761,86 +539,23 @@ function DbConnectionsSection({ appId, readonly }: { appId: string; readonly: bo
   async function deleteConn(id: string) {
     try {
       await api.del(`/__config/apps/${appId}/db-connections/${id}`);
-      setConnections(cs => cs.filter(c => c.id !== id));
+      setConnections(cs => cs.filter(c => c.id !== id));notifyToast("Connection removed");
     } catch (e: any) { setError(String(e)); }
     finally { setDeleteId(null); }
   }
 
   const secretName = (id: string | null) => id ? (secrets.find(s => s._id === id)?.name ?? id) : "—";
 
-  return (
-    <Card>
-      <SectionHead
-        title="Database Connections"
-        action={!readonly ? <Btn size="sm" variant="ghost" onClick={openNew}>+ Add Connection</Btn> : undefined}
-      />
-      <div style={{ padding: 16 }}>
-        <p style={{ fontSize: 12, color: C.muted, margin: "0 0 12px" }}>
-          Named database connections for this app. Endpoints can reference a connection by name instead of entering a raw URL — credentials are resolved from the Secrets vault at runtime.
-        </p>
-
-        {loading && <p style={{ fontSize: 12, color: C.muted }}>Loading…</p>}
-
-        {/* Connection list */}
-        {!loading && connections.length === 0 && editing !== "new" && (
-          <p style={{ fontSize: 12, color: C.muted }}>No connections yet. Add one to use it in endpoint Upstream configuration.</p>
-        )}
-
-        {connections.map(c => (
-          <div key={c.id} style={{ marginBottom: 8 }}>
-            {editing === c.id ? (
-              <ConnForm
-                form={form} setForm={setForm} secrets={secrets}
-                showPw={showPw} setShowPw={setShowPw}
-                saving={saving} error={error}
-                onSave={saveConn} onCancel={cancelEdit}
-              />
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: C.radius, border: `1px solid ${C.border}`, background: C.bg }}>
-                <span style={{ fontSize: 18 }}>{DB_TYPE_ICONS[c.db_type]}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                    <span style={{ marginRight: 10 }}><strong>{DB_TYPE_LABELS[c.db_type]}</strong></span>
-                    <span style={{ marginRight: 10 }}>{c.host}/{c.database}</span>
-                    {c.username && <span style={{ marginRight: 10 }}>user: {c.username}</span>}
-                    {c.secret_id && <span style={{ marginRight: 10 }}>🔒 {secretName(c.secret_id)}</span>}
-                    {c.options?.ssl        && <span style={{ marginRight: 6, color: C.success, fontWeight: 600 }}>TLS</span>}
-                    {c.options?.force_ipv4 && <span style={{ color: C.primary, fontWeight: 600 }}>IPv4</span>}
-                  </div>
-                </div>
-                {!readonly && (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn size="sm" variant="ghost" onClick={() => openEdit(c)}>Edit</Btn>
-                    <Btn size="sm" variant="danger" onClick={() => setDeleteId(c.id)}>Delete</Btn>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-
-        {editing === "new" && (
-          <ConnForm
-            form={form} setForm={setForm} secrets={secrets}
-            showPw={showPw} setShowPw={setShowPw}
-            saving={saving} error={error}
-            onSave={saveConn} onCancel={cancelEdit}
-          />
-        )}
-
-        {error && !editing && <p style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</p>}
-      </div>
-
-      {deleteId && (
-        <Confirm
-          message={`Delete connection "${connections.find(c => c.id === deleteId)?.name}"? Endpoints using it will stop working.`}
-          onConfirm={() => deleteConn(deleteId)}
-          onCancel={() => setDeleteId(null)}
-        />
-      )}
+  async function refresh(){setLoading(true);try{setConnections((await api.get<{results:AppDbConnection[]}>(`/__config/apps/${appId}/db-connections`)).results);}catch(e){setError(String(e));}finally{setLoading(false);}}
+  return <>
+    {!readonly && <PageHeaderActions><Btn onClick={openNew}><Plus/>Add connection</Btn></PageHeaderActions>}
+    {error && !editing && <ErrorBanner message={error}/>}
+    <Card><div className="ui-card__head"><h2 className="ui-card__title ui-row"><span className="ui-count">{connections.length}</span>{connections.length===1 ? "connection" : "connections"}</h2><div className="ui-row"><div className="ui-search" style={{width:240}}><Search/><input className="ui-input ui-input--sm" aria-label="Filter connections" placeholder="Filter connections" value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="ui-iconbtn ui-iconbtn--bordered" aria-label="Refresh connections" onClick={refresh}><RefreshCw/></button></div></div>
+    {loading ? <div className="ui-card__body">Loading…</div> : <Table cols={[{key:"name",label:"Name",render:v=><strong className="ui-mono">{String(v)}</strong>},{key:"db_type",label:"Type",render:v=><span className="ui-badge">{DB_TYPE_LABELS[v as DbConnectionType]}</span>},{key:"host",label:"Host",render:v=><span className="ui-mono ui-muted">{String(v)}</span>},{key:"database",label:"Database",render:v=><span className="ui-mono">{String(v)}</span>},{key:"options",label:"Options",render:v=><span className="ui-row">{(v as DbConnOptions)?.ssl && <span className="ui-badge ui-badge--accent">SSL</span>}{(v as DbConnOptions)?.force_ipv4 && <span className="ui-badge">Force IPv4</span>}</span>},{key:"_actions",label:"",render:(_,r)=>!readonly && <span className="ui-row"><Btn variant="ghost" size="sm" onClick={()=>openEdit(r as unknown as AppDbConnection)}><Pencil/>Edit</Btn><button className="ui-iconbtn" aria-label={`Delete connection ${r.name}`} onClick={()=>setDeleteId(String(r.id))}><Trash2/></button></span>}]} rows={connections.filter(c=>`${c.name} ${c.host} ${c.database} ${c.db_type}`.toLowerCase().includes(query.toLowerCase())) as unknown as Record<string,unknown>[]}/>}
     </Card>
-  );
+    {editing && <Modal title={editing==="new" ? "Add connection" : "Edit connection"} width={620} onClose={()=>!saving && cancelEdit()}><ConnForm form={form} setForm={setForm} secrets={secrets} showPw={showPw} setShowPw={setShowPw} saving={saving} error={error} onSave={saveConn} onCancel={cancelEdit}/></Modal>}
+    {deleteId && <Confirm danger message={`Delete connection "${connections.find(c=>c.id===deleteId)?.name}"? Endpoints using it will stop working.`} onConfirm={()=>deleteConn(deleteId)} onCancel={()=>setDeleteId(null)}/>}
+  </>;
 }
 
 function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, onSave, onCancel }: {
@@ -863,9 +578,9 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
                                     "localhost:3306";
 
   return (
-    <div style={{ padding: 14, borderRadius: C.radius, border: `1px solid ${C.primary}`, background: C.selection, marginBottom: 8 }}>
-      {error && <p style={{ fontSize: 12, color: C.danger, margin: "0 0 10px" }}>{error}</p>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: "0 10px" }}>
+    <div>
+      {error && <ErrorBanner message={error}/>}
+      <div className="ui-formgrid">
         <Field label="Connection Name">
           <input style={inputStyle} value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. claims-db-prod" autoFocus />
         </Field>
@@ -877,7 +592,7 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
           </select>
         </Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
+      <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
         <Field label="Host" hint="host:port">
           <input style={inputStyle} value={form.host ?? ""} onChange={e => set("host", e.target.value)} placeholder={hostPlaceholder} />
         </Field>
@@ -885,7 +600,7 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
           <input style={inputStyle} value={form.database ?? ""} onChange={e => set("database", e.target.value)} placeholder="my_database" />
         </Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
+      <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
         <Field label="Username (optional)">
           <input style={inputStyle} value={form.username ?? ""} onChange={e => set("username", e.target.value || null)} placeholder="db_user" autoComplete="off" />
         </Field>
@@ -897,7 +612,7 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
         </Field>
       </div>
       {/* ── Connection options ── */}
-      <div style={{ marginTop: 10, padding: "10px 14px", background: "var(--code-bg)", borderRadius: C.radius, border: `1px solid ${C.border}` }}>
+      <div style={{ marginTop: 10, padding: "10px 14px", background: C.surfaceMuted, color:C.text, borderRadius: C.radius, border: `1px solid ${C.border}` }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: ".4px" }}>Connection Options</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
@@ -922,7 +637,7 @@ function ConnForm({ form, setForm, secrets, showPw, setShowPw, saving, error, on
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+      <div className="ui-modal__foot">
         <Btn size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
         <Btn size="sm" onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save Connection"}</Btn>
       </div>
@@ -941,7 +656,7 @@ function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly 
     try {
       const updated = await api.put<App>(`/__config/apps/${appId}`, body);
       onSaved(updated);
-    } catch (e) { alert(String(e)); }
+    } catch (e) { /* The API client reports the failure through the shared toast. */ }
     finally { setSaving(false); }
   }
 
@@ -963,7 +678,7 @@ function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly 
       <SectionHead title="Quick Actions" />
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <div className="app-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
           <Field label="Environment Mode" hint="Environment label — sent as X-Orchestrator-Mode response header; does not affect routing or auth">
             <select
               style={inputStyle}
@@ -1009,9 +724,9 @@ function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly 
             Actions
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="outline" size="sm" onClick={onClone}>⎘ Clone App</Btn>
+            <Btn variant="secondary" size="sm" onClick={onClone}>⎘ Clone App</Btn>
             {!readonly && (
-              <Btn variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>✕ Delete App</Btn>
+              <DeleteIcon onClick={() => setConfirmDelete(true)} label="Delete App" />
             )}
           </div>
         </div>
@@ -1027,8 +742,3 @@ function QuickActionsSection({ app, appId, onSaved, onDelete, onClone, readonly 
     </Card>
   );
 }
-
-function ErrorBanner({ message }: { message: string }) {
-  return <div style={{ background: "var(--danger-background)", border: `1px solid var(--danger)`, borderRadius: C.radius, padding: "10px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 12 }}>{message}</div>;
-}
-

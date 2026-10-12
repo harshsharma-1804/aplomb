@@ -12,6 +12,7 @@ async function request<T = unknown>(
   path: string,
   body?: unknown
 ): Promise<T> {
+  try {
   const res = await fetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
@@ -30,7 +31,11 @@ async function request<T = unknown>(
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  return await res.json() as T;
+  } catch(error) {
+    window.dispatchEvent(new CustomEvent("dashboard:toast",{detail:{message:String(error).replace(/^Error: /,""),tone:"danger",detail:"Request failed"}}));
+    throw error;
+  }
 }
 
 export const api = {

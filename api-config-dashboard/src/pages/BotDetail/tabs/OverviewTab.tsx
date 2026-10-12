@@ -9,7 +9,7 @@ export function OverviewTab({ bot, onUpdated, readonly }: Props) {
   const navigate = useNavigate(); const [toggling, setToggling] = useState(false); const [deleteConfirm, setDeleteConfirm] = useState(false); const [error, setError] = useState(''); const [copied, setCopied] = useState(false);
   async function toggleActive() { setToggling(true); setError(''); try { onUpdated(await api.put<AiBot>(`/__config/admin/ai/bots/${bot._id}`, { is_active: !bot.is_active })); } catch (e) { setError(String(e)); } finally { setToggling(false); } }
   async function handleDelete() { try { await api.del(`/__config/admin/ai/bots/${bot._id}`); navigate('/bots'); } catch (e) { setError(String(e)); setDeleteConfirm(false); } }
-  const mcpConfig = JSON.stringify({ mcpServers:{ orchestrator:{ url:`${window.location.origin}/mcp`, headers:{ 'X-Bot-Key':'<your-bot-key>' } } } },null,2);
+  const mcpConfig = JSON.stringify({ mcpServers:{ aplomb:{ url:`${window.location.origin}/mcp`, headers:{ 'X-Bot-Key':'<your-bot-key>' } } } },null,2);
   async function copy() { try { await navigator.clipboard.writeText(mcpConfig); setCopied(true); } catch { setError('Could not copy automatically. Select and copy the configuration below.'); } }
   return <div>
     {error && <ErrorBanner message={error} />}

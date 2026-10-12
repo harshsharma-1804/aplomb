@@ -98,7 +98,7 @@ export function AiTab() {
             )}
             {pNoAuth && (
               <div style={{ padding: "8px 12px", background: "var(--success-background)", border: "1px solid var(--success)", borderRadius: C.radius, fontSize: 12, color: "var(--success)" }}>
-                ✓ No API key required — the orchestrator will call this endpoint without an Authorization header. Suitable for Ollama, llama.cpp, and other local model servers.
+                ✓ No API key required — Aplomb will call this endpoint without an Authorization header. Suitable for Ollama, llama.cpp, and other local model servers.
               </div>
             )}
             <div className="ui-modal__foot"><Btn variant="secondary" disabled={pSaving} onClick={()=>setShowProviderForm(false)}>Cancel</Btn>

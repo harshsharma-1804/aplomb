@@ -175,7 +175,7 @@ export function LimitsTab({ bot, onUpdated, readonly }: Props) {
       <Card>
         <SectionHead title="User Scope Guard" action={<SaveBtn />} />
         <div style={{ padding: "10px 16px", background: "var(--selection)", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: "var(--primary)" }}>
-          <strong>Disabled by default</strong> — the upstream API is the real authority on data access (it will reject unauthorised requests regardless). Enable this if you want the orchestrator to also pre-block cross-user tool calls and log them as <code>scope_violation</code> in the audit trail.
+          <strong>Disabled by default</strong> — the upstream API is the real authority on data access (it will reject unauthorised requests regardless). Enable this if you want Aplomb to also pre-block cross-user tool calls and log them as <code>scope_violation</code> in the audit trail.
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
           <ToggleField

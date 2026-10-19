@@ -280,8 +280,18 @@ router.put("/:id/users/:userId", requirePermission("manage:apps"), (req, res) =>
   if (!users.find(u => u.id === userId)) { res.status(404).json({ error: "Not found", code: "NOT_FOUND" }); return; }
   const { display_name, email, sub, is_active } = req.body ?? {};
   try {
-    if (display_name !== undefined || email !== undefined || sub !== undefined) {
-      appUserRepo.update(db, userId, { display_name, email, sub });
+    // Sub edits: validate, then revoke sessions minted under the old sub —
+    // sessions are keyed by (app_id, sub), so they'd orphan otherwise.
+    // Safe for identity users too: IdP linkage is (app, provider, idp_sub), untouched.
+    if (sub !== undefined) {
+      const nextSub = String(sub).trim();
+      if (!nextSub) { res.status(400).json({ error: "Sub cannot be empty", code: "INVALID_SUB" }); return; }
+      const current = users.find(u => u.id === userId)!;
+      if (current.sub !== nextSub) appSessionRepo.revokeAllForAppUser(db, appId, current.sub);
+      appUserRepo.update(db, userId, { sub: nextSub });
+    }
+    if (display_name !== undefined || email !== undefined) {
+      appUserRepo.update(db, userId, { display_name, email });
     }
     if (is_active !== undefined) appUserRepo.setActive(db, userId, Boolean(is_active));
     res.json(appUserRepo.listByApp(db, appId).find(u => u.id === userId));

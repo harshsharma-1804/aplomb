@@ -19,6 +19,8 @@ Aplomb is a self-hosted dashboard for configuring and publishing API endpoints �
 2. Open **Member Portal Demo API** → any endpoint → walk the configuration steps: Request → Response → Upstream → Mapping.
 3. Open **Settings** on an app to see **Environment Variables** (`{{MOCK_SERVER_HOST}}`, `{{DEMO_ENDPOINT_PREFIX}}`…) that template into upstream URLs.
 4. Open the **Test** step on an endpoint and run a live request — the response you see is exactly what a frontend would receive, after all transformations.
+5. Visit **Tenant Settings** to see identity providers, the host allowlist, allowed origins, mail/SMTP routing, the AI & MCP providers, and the encrypted secrets vault.
+6. Open **Bot Registry** and inspect the member-portal bot — its app bindings, behaviour rules, and limits, then check the audit trail of its tool calls.
 
 ---
 
@@ -63,6 +65,40 @@ Editing config and running a request is all it takes — there is no build, no r
 *In this clip the `plan_name` field is re-pointed from `$.plans[*].plan_name` to `$.plans[*].plan_id`; the test response instantly shows the raw plan ID where the plan name used to be — then it is reverted the same way.*
 
 > The demo viewer account is read-only, so the GIF is recorded from an admin session instead of a live editing walkthrough.
+
+---
+
+## Features
+
+### Tenant Settings — one surface for the whole platform
+
+| Feature | What it does |
+|---|---|
+| **Organization** | Org name/slug plus the org-wide dashboard theme and palette every fresh browser adopts |
+| **Users** | Dashboard administrators — roles, password resets, 2FA enrollment |
+| **Identity Providers** | OIDC/OAuth single sign-on (Google, Okta, Azure AD…), multiple clients per issuer, per-app login routing |
+| **Host Allowlist** | The only hosts the gateway will ever call; private IP ranges are always blocked, wildcards supported |
+| **Allowed Origins** | CORS origins permitted to call published APIs from a browser |
+| **Mail / SMTP** | SMTP senders and routing rules — powers verification and OTP mails for member portals |
+| **AI & MCP** | LLM providers (OpenAI-compatible endpoints, LiteLLM proxies) with API keys stored as encrypted references |
+| **Secrets** | Central credential vault — every value AES-256-GCM encrypted at rest, injected by name into apps and bots, never returned in full to the UI |
+
+### Bot Registry — governed AI assistants over your APIs
+
+Bots are chat assistants your frontends embed; each authenticates with its own API key and can only act through the apps it is bound to.
+
+- **Bindings** — which apps a bot may use, with per-app read/write permissions. Endpoints marked *AI-exposed* automatically become MCP tools for the bot, with their request/response JSON Schemas converted into tool definitions — no separate tool code to write.
+- **Behaviour** — the bot's persona and standing instructions, plus domain-scope rules: a scope description, a topic blocklist, the out-of-scope refusal message, and the classification prompt used as a hard gate.
+- **Limits** — concrete guardrails per bot: max tool calls per turn, conversation-history window, requests per minute, and per-request timeout.
+- **Rules** — scope enforcement switches: whether the domain gate is on, and how blocked or out-of-scope requests are answered.
+
+**How a bot turn works**
+
+1. The frontend sends the message with the bot's API key and the verified user identity.
+2. Every message is first classified against the bot's domain scope — the topic blocklist is checked before anything else; blocked or out-of-scope messages get the configured refusal and never reach a tool.
+3. In-scope messages go to the LLM with the bound apps' endpoints exposed as tools. Tool calls are executed by the same gateway pipeline as any other request — auth, validation, mapping, scripts — so bots inherit every guardrail a human caller would.
+4. Identity is pinned in code, not by the model: session-derived values (e.g. the authenticated member ID) are injected server-side and the LLM cannot override them.
+5. Every tool call is audited, so each answer can be traced to the exact endpoints and parameters that produced it.
 
 ---
 

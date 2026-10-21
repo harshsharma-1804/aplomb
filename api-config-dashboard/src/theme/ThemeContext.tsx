@@ -54,6 +54,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     choice === "system" ? systemTheme() : choice as ResolvedTheme,
   );
 
+  // Org appearance applies even pre-auth (login page): fetch the public
+  // endpoint once on mount. syncFromOrg skips browsers with a personal pick.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/__config/public/appearance")
+      .then(r => (r.ok ? r.json() : null))
+      .then((a: OrgAppearance | null) => { if (!cancelled && a) syncFromOrg(a); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // User-facing setters — every explicit pick marks this browser as overridden,
   // so org defaults stop forcing values here on subsequent loads.
   const setPalette = (p: ColorPalette) => { markOverride(); setPaletteState(p); };

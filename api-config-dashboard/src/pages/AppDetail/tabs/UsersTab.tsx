@@ -140,6 +140,9 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
+  const [editingSub, setEditingSub] = useState(false);
+  const [subDraft, setSubDraft] = useState("");
+  const [savingSub, setSavingSub] = useState(false);
 
   useEffect(() => {
     api.get<AppUser>(`/__config/apps/${appId}/users/${user.id}`).then(setDetail).catch(() => {});
@@ -160,6 +163,19 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
 
   async function copy(label: string, value: string) {
     try { await navigator.clipboard.writeText(value); setCopied(label); setTimeout(() => setCopied(""), 1500); } catch { /* clipboard unavailable */ }
+  }
+
+  async function saveSub() {
+    const next = subDraft.trim();
+    if (!next || next === detail.sub) { setEditingSub(false); return; }
+    setSavingSub(true);
+    try {
+      const updated = await api.put<AppUser>(`/__config/apps/${appId}/users/${detail.id}`, { sub: next });
+      setDetail(updated);
+      setEditingSub(false);
+      onRevoked(); // sub change revokes active sessions — refresh parent list badge state
+    } catch (e) { setError(String(e)); }
+    finally { setSavingSub(false); }
   }
 
   const provider = providers.find(p => p._id === detail.identity_provider_id);
@@ -199,10 +215,39 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
 
       {/* ── Identity details ────────────────────────────────────────────────── */}
       <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 4 }}>Account</div>
+      <Row label="User ID" value={detail.id} mono copyable={detail.id} />
       <Row label="Username" value={`@${detail.username}`} mono copyable={detail.username} />
       <Row label="Display name" value={detail.display_name || "—"} />
       <Row label="Email" value={detail.email} copyable={detail.email} />
-      <Row label="Sub (identity)" value={detail.sub} mono copyable={detail.sub} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, width: 120, flexShrink: 0, textTransform: "uppercase", letterSpacing: ".3px" }}>Sub (identity)</span>
+        {editingSub ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <input
+              style={{ ...inputStyle, padding: "4px 8px", fontSize: 12, fontFamily: "monospace" }}
+              value={subDraft}
+              autoFocus
+              onChange={e => setSubDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") saveSub(); if (e.key === "Escape") setEditingSub(false); }}
+              placeholder="new sub — e.g. MED2026"
+              disabled={savingSub}
+            />
+            <Btn size="sm" onClick={saveSub} disabled={savingSub || !subDraft.trim()}>{savingSub ? "Saving…" : "Save"}</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => setEditingSub(false)} disabled={savingSub}>Cancel</Btn>
+          </div>
+        ) : (
+          <>
+            <span style={{ fontSize: 12.5, flex: 1, wordBreak: "break-all", fontFamily: "monospace" }}>{detail.sub}</span>
+            <Btn size="sm" variant="ghost" onClick={() => { setSubDraft(detail.sub); setEditingSub(true); }} disabled={readonly}>Edit</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => copy("Sub (identity)", detail.sub)}>{copied === "Sub (identity)" ? "Copied ✓" : "Copy"}</Btn>
+          </>
+        )}
+      </div>
+      {detail.auth_method === "identity" && (
+        <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+          Editing the sub does not break provider sign-in — the account stays linked via the provider sub below. Active sessions are revoked on change.
+        </p>
+      )}
       <Row label="Login method" value={detail.auth_method === "identity" ? "🌐 Identity provider" : "🔑 Gateway (username + password)"} />
       {detail.auth_method === "identity" && (
         <>
@@ -281,7 +326,6 @@ function UserProfileModal({ appId, user, providers, readonly, onClose, onRevoked
       )}
       <Row label="Created" value={fmt(detail.created_at)} />
       <Row label="Updated" value={fmt(detail.updated_at)} />
-      <Row label="User ID" value={detail.id} mono copyable={detail.id} />
 
       {/* ── Active sessions ─────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 6px" }}>

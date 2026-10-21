@@ -161,7 +161,7 @@ export function TestTab({ appId, endpoint, app }: Props) {
           <div className="ui-flow" style={{marginBottom:20}}>
             <div className="ui-flow__node"><div className="ui-flow__label"><Laptop /> Client</div><MethodBadge method={endpoint.method} /><div className="ui-mono" style={{marginTop:8,overflowWrap:"anywhere"}}>{frontendUrlPreview}</div></div>
             <div className="ui-flow__edge" />
-            <div className="ui-flow__node is-hub"><div className="ui-flow__label"><Workflow /> Orchestrator</div><div className="ui-row" style={{flexWrap:"wrap",gap:6}}><Badge text="Validate" /><Badge text={endpoint.script_mode === "script_full" ? "Script" : "Map"} /></div></div>
+            <div className="ui-flow__node is-hub"><div className="ui-flow__label"><Workflow /> Aplomb</div><div className="ui-row" style={{flexWrap:"wrap",gap:6}}><Badge text="Validate" /><Badge text={endpoint.script_mode === "script_full" ? "Script" : "Map"} /></div></div>
             <div className="ui-flow__edge" />
             <div className="ui-flow__node"><div className="ui-flow__label"><Server /> Upstream</div><MethodBadge method={isGql ? "POST" : endpoint.upstream?.method ?? endpoint.method} /><div className="ui-mono" style={{marginTop:8,overflowWrap:"anywhere"}}>{endpoint.script_mode === "script_full" ? "Handled by script" : isDbType ? DB_TYPE_LABELS[upstreamType] ?? upstreamType : upstreamUrlPreview || "Configure an upstream URL"}</div></div>
           </div>

@@ -141,7 +141,7 @@ function ProviderModal({ provider, onClose, onDone, secrets }: {
           </div>
           <p style={{ fontSize: 12, color: C.muted, margin: "0 0 10px" }}>
             Fill these to let apps start login at <code>{`{base_path}/auth/login/{providerId}`}</code> and land back authenticated.
-            Register the callback URL <code>{`{orchestrator}{base_path}/auth/callback/{providerId}`}</code> at the provider.
+            Register the callback URL <code>{`{aplomb-url}{base_path}/auth/callback/{providerId}`}</code> at the provider.
           </p>
           <Field label="Client ID" hint="OAuth client ID from the provider console"><input style={inputStyle} value={form.client_id} onChange={set("client_id")} placeholder="1234567890.apps.googleusercontent.com" /></Field>
           <Field label="Client secret (from vault)" hint="Create the secret under Admin → Secrets, then pick it here. Never stored in provider config.">

@@ -727,7 +727,7 @@ export function UpstreamTab({ appId, endpoint, app, onSaved }: Props) {
             )}
             {forwardedHeaders.some(fh => fh.required) && (
               <div style={{ marginTop: 8, padding: "6px 10px", background: "var(--danger-background)", borderRadius: C.radius, fontSize: 12, color: C.danger }}>
-                Required headers: if the frontend does not send them, the orchestrator returns <code>400 REQUIRED_HEADER_MISSING</code>.
+                Required headers: if the frontend does not send them, Aplomb returns <code>400 REQUIRED_HEADER_MISSING</code>.
               </div>
             )}
           </div>

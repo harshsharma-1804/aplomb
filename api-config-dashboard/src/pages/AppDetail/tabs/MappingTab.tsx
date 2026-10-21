@@ -11,6 +11,14 @@ interface Props { appId: string; endpoint: Endpoint; onSaved: (ep: Endpoint) => 
 // ── Sample path extractor ─────────────────────────────────────────────────────
 
 function extractFlatPaths(obj: unknown, prefix = ""): string[] {
+  // Root-level array (e.g. PostgREST/Supabase): extract from the first item so
+  // paths are item-relative ($.id, $.name) — matches output_array_mode, where
+  // mappings are applied per item.
+  if (Array.isArray(obj)) {
+    return obj.length > 0 && typeof obj[0] === "object" && obj[0] !== null
+      ? extractFlatPaths(obj[0] as object, prefix)
+      : [];
+  }
   if (typeof obj !== "object" || obj === null) return [];
   const paths: string[] = [];
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {

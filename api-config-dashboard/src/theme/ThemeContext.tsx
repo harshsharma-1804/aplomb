@@ -7,7 +7,20 @@ export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "orchestrator-theme";
 const PALETTE_KEY = "orchestrator-palette";
+const OVERRIDE_KEY = "orchestrator-appearance-override";
 const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+/**
+ * Per-browser flag: the user has explicitly picked a theme/palette here
+ * (top-bar toggle or appearance selects). Org defaults no longer override
+ * this browser — personal choice wins, org default applies to fresh browsers.
+ */
+function markOverride() {
+  try { localStorage.setItem(OVERRIDE_KEY, "1"); } catch {}
+}
+function hasOverride(): boolean {
+  try { return localStorage.getItem(OVERRIDE_KEY) === "1"; } catch { return false; }
+}
 
 function systemTheme(): ResolvedTheme {
   return mq?.matches ? "dark" : "light";
@@ -34,12 +47,17 @@ const ThemeContext = createContext<{
 }>({ palette:"current",setPalette:()=>{},choice: "system", theme: "light", setChoice: () => {}, syncFromOrg: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [palette,setPalette]=useState<ColorPalette>(()=>{try {const p=localStorage.getItem(PALETTE_KEY);return p==="coastal" || p==="monochrome" || p==="orchid" ? p : "current";}catch{return "current";}});
+  const [palette,setPaletteState]=useState<ColorPalette>(()=>{try {const p=localStorage.getItem(PALETTE_KEY);return p==="coastal" || p==="monochrome" || p==="orchid" ? p : "current";}catch{return "current";}});
   useEffect(()=>{document.documentElement.setAttribute("data-palette",palette);try{localStorage.setItem(PALETTE_KEY,palette);}catch{}},[palette]);
-  const [choice, setChoice] = useState<ThemeChoice>(initialChoice);
+  const [choice, setChoiceState] = useState<ThemeChoice>(initialChoice);
   const [theme, setTheme] = useState<ResolvedTheme>(() =>
     choice === "system" ? systemTheme() : choice as ResolvedTheme,
   );
+
+  // User-facing setters — every explicit pick marks this browser as overridden,
+  // so org defaults stop forcing values here on subsequent loads.
+  const setPalette = (p: ColorPalette) => { markOverride(); setPaletteState(p); };
+  const setChoice  = (c: ThemeChoice)   => { markOverride(); setChoiceState(c); };
 
   useEffect(() => {
     const apply = () => {
@@ -60,19 +78,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [choice]);
 
   /**
-   * Org settings are the source of truth for logged-in users. Called after the
-   * org is fetched — applies the saved theme/palette and mirrors it into
-   * localStorage so the next page load hydrates instantly with the right look.
+   * Apply org-level appearance (server) — the default for fresh browser contexts.
+   * Skipped when the user has personally picked a theme/palette in this browser
+   * (override flag) — personal choice wins, org default seeds new browsers.
    */
   function syncFromOrg(appearance: OrgAppearance | undefined | null) {
-    if (!appearance) return;
+    if (!appearance || hasOverride()) return;
     const { theme: orgTheme, palette: orgPalette } = appearance;
     if (orgTheme === "light" || orgTheme === "dark" || orgTheme === "system") {
-      setChoice(prev => (prev === orgTheme ? prev : orgTheme));
+      setChoiceState(prev => (prev === orgTheme ? prev : orgTheme));
       try { localStorage.setItem(STORAGE_KEY, orgTheme); } catch {}
     }
     if (orgPalette === "current" || orgPalette === "coastal" || orgPalette === "monochrome" || orgPalette === "orchid") {
-      setPalette(prev => (prev === orgPalette ? prev : orgPalette));
+      setPaletteState(prev => (prev === orgPalette ? prev : orgPalette));
       try { localStorage.setItem(PALETTE_KEY, orgPalette); } catch {}
     }
   }

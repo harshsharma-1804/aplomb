@@ -12,7 +12,7 @@ This guide gets a fresh instance of the API Orchestrator running on your machine
 ## 2. Get the code
 
 ```bash
-git clone https://github.com/harshsharma-1804/api-orchestrator.git
+git clone https://github.com/harshsharma-1804/aplomb.git
 cd api-orchestrator
 git checkout sqlite-orchestrator-unification
 git pull

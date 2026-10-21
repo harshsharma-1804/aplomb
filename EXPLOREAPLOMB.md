@@ -141,7 +141,7 @@ flowchart LR
 ## Run locally
 
 ```bash
-git clone https://github.com/harshsharma-1804/api-orchestrator.git
+git clone https://github.com/harshsharma-1804/aplomb.git
 cd api-orchestrator
 
 # build and start the unified container (dashboard + gateway on :3004)

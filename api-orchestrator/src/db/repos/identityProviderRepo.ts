@@ -1,0 +1,92 @@
+import { eq } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { identity_providers } from "../schema.js";
+import type { DrizzleDb } from "./types.js";
+
+const now = () => new Date().toISOString();
+
+function serialize(row: typeof identity_providers.$inferSelect) {
+  return {
+    ...row,
+    _id:            row.id,
+    audience:       JSON.parse(row.audience       ?? "[]"),
+    algorithms:     JSON.parse(row.algorithms     ?? '["RS256"]'),
+    claim_mappings: JSON.parse(row.claim_mappings ?? "{}"),
+    is_active:      Boolean(row.is_active),
+  };
+}
+
+export const identityProviderRepo = {
+  create(db: DrizzleDb, input: Record<string, unknown>) {
+    const id = randomUUID();
+    const t = now();
+    db.insert(identity_providers).values({
+      id,
+      name:                String(input["name"] ?? ""),
+      type:                String(input["type"] ?? "oidc"),
+      issuer:              String(input["issuer"] ?? ""),
+      jwks_uri:            input["jwks_uri"] ? String(input["jwks_uri"]) : null,
+      audience:            JSON.stringify(input["audience"] ?? []),
+      algorithms:          JSON.stringify(input["algorithms"] ?? ["RS256"]),
+      claim_mappings:      JSON.stringify(input["claim_mappings"] ?? { subject: "sub", email: "email", roles: "groups" }),
+      clock_tolerance_sec: Number(input["clock_tolerance_sec"] ?? 60),
+      client_id:           input["client_id"] ? String(input["client_id"]) : null,
+      client_secret_ref:   input["client_secret_ref"] ? String(input["client_secret_ref"]) : null,
+      scopes:              String(input["scopes"] ?? "openid email profile"),
+      is_active:           input["is_active"] !== false,
+      created_by:          input["created_by"] ? String(input["created_by"]) : null,
+      created_at: t,
+      updated_at: t,
+    }).run();
+    return serialize(db.select().from(identity_providers).where(eq(identity_providers.id, id)).get()!);
+  },
+
+  findById(db: DrizzleDb, id: string) {
+    const row = db.select().from(identity_providers).where(eq(identity_providers.id, id)).get();
+    return row ? serialize(row) : null;
+  },
+
+  /** Returns the first provider for this issuer (legacy — prefer findAllByIssuer). */
+  findByIssuer(db: DrizzleDb, issuer: string) {
+    const row = db.select().from(identity_providers).where(eq(identity_providers.issuer, issuer)).get();
+    return row ? serialize(row) : null;
+  },
+
+  /** Returns ALL providers for this issuer (multiple clients are now allowed). */
+  findAllByIssuer(db: DrizzleDb, issuer: string) {
+    return db.select().from(identity_providers)
+      .where(eq(identity_providers.issuer, issuer))
+      .all()
+      .map(serialize);
+  },
+
+  listActive(db: DrizzleDb) {
+    return db.select().from(identity_providers).all()
+      .filter(r => r.is_active)
+      .map(serialize);
+  },
+
+  list(db: DrizzleDb) {
+    return db.select().from(identity_providers).all().map(serialize);
+  },
+
+  update(db: DrizzleDb, id: string, input: Record<string, unknown>) {
+    const patch: Record<string, unknown> = { updated_at: now() };
+    if (input["name"]                !== undefined) patch["name"]                = String(input["name"]);
+    if (input["jwks_uri"]            !== undefined) patch["jwks_uri"]            = input["jwks_uri"] ? String(input["jwks_uri"]) : null;
+    if (input["audience"]            !== undefined) patch["audience"]            = JSON.stringify(input["audience"]);
+    if (input["algorithms"]          !== undefined) patch["algorithms"]          = JSON.stringify(input["algorithms"]);
+    if (input["claim_mappings"]      !== undefined) patch["claim_mappings"]      = JSON.stringify(input["claim_mappings"]);
+    if (input["clock_tolerance_sec"] !== undefined) patch["clock_tolerance_sec"] = Number(input["clock_tolerance_sec"]);
+    if (input["client_id"]           !== undefined) patch["client_id"]           = input["client_id"] ? String(input["client_id"]) : null;
+    if (input["client_secret_ref"]   !== undefined) patch["client_secret_ref"]   = input["client_secret_ref"] ? String(input["client_secret_ref"]) : null;
+    if (input["scopes"]              !== undefined) patch["scopes"]              = String(input["scopes"]);
+    if (input["is_active"]           !== undefined) patch["is_active"]           = Boolean(input["is_active"]);
+    db.update(identity_providers).set(patch).where(eq(identity_providers.id, id)).run();
+    return identityProviderRepo.findById(db, id);
+  },
+
+  delete(db: DrizzleDb, id: string) {
+    db.delete(identity_providers).where(eq(identity_providers.id, id)).run();
+  },
+};

@@ -1,0 +1,87 @@
+services:
+  api-orchestrator-sqlite:
+    build:
+      context: ./api-orchestrator
+      dockerfile: Dockerfile.sqlite
+    image: orchestrator-sqlite-api:latest
+    restart: unless-stopped
+    ports:
+      - "3003:3002"
+    volumes:
+      - ./data/sqlite:/app/data
+    environment:
+      DB_PATH: /app/data/orchestrator.db
+      PORT: "3002"
+      NODE_ENV: ${NODE_ENV:-development}
+      SESSION_SECRET: ${SESSION_SECRET:-orchestrator-sqlite-dev-secret}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-00000000000000000000000000000000}
+      UPSTREAM_HOST_ALLOWLIST: ${UPSTREAM_HOST_ALLOWLIST:-mock-server,localhost,host.docker.internal}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-Admin@1234567890}
+      CORS_ALLOWED_ORIGINS: http://localhost:5001,http://api-config-dashboard-sqlite:5000
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/__health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  api-config-dashboard-sqlite:
+    build:
+      context: ./api-config-dashboard
+      dockerfile: Dockerfile.sqlite
+    image: orchestrator-sqlite-dashboard:latest
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    depends_on:
+      api-orchestrator-sqlite:
+        condition: service_healthy
+
+  orchestrator-unified:
+    build:
+      context: .
+      dockerfile: api-orchestrator/Dockerfile.unified
+    image: orchestrator-unified:latest
+    restart: unless-stopped
+    ports:
+      - "3004:3002"
+    volumes:
+      - ./data/sqlite-unified:/app/data
+    environment:
+      DB_PATH: /app/data/orchestrator.db
+      PORT: "3002"
+      NODE_ENV: ${NODE_ENV:-development}
+      SESSION_SECRET: ${SESSION_SECRET:-orchestrator-sqlite-dev-secret}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-00000000000000000000000000000000}
+      UPSTREAM_HOST_ALLOWLIST: ${UPSTREAM_HOST_ALLOWLIST:-mock-server,localhost,host.docker.internal}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-Admin@1234567890}
+      AI_ENABLED: ${AI_ENABLED:-true}
+      # Public base URL for IdP callback redirect URIs (identity-provider login).
+      # Empty = derived per-request from proto+host (fine for localhost dev).
+      ORCH_PUBLIC_BASE_URL: ${ORCH_PUBLIC_BASE_URL:-}
+      # No CORS_ALLOWED_ORIGINS needed — dashboard is same-origin in unified mode
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/__health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    # Pull functiongemma (~301 MB) on first start; cached in ./data/ollama after that.
+    # The orchestrator starts independently — unreachable Ollama returns AI_PROVIDER_ERROR.
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 3 && ollama pull functiongemma && wait"]
+
+volumes: {}
+
+networks:
+  default:
+    name: orchestrator-sqlite-net

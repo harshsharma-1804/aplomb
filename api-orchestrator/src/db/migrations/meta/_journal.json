@@ -1,0 +1,153 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788526531442,
+      "tag": "0000_worthless_starhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788526531443,
+      "tag": "0001_add_folder_and_cors_origins",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788526531444,
+      "tag": "0002_ai_layer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788526531445,
+      "tag": "0003_ai_bot_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788526531446,
+      "tag": "0004_ai_provider_secret_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788526531447,
+      "tag": "0005_drop_embedded_provider_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788526531448,
+      "tag": "0006_bot_rules_limits_persona",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788526531449,
+      "tag": "0007_bot_app_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788526531450,
+      "tag": "0008_app_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788526531451,
+      "tag": "0009_app_users_auth_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788526531452,
+      "tag": "0010_endpoint_identity_args",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790598548889,
+      "tag": "0011_identity_provider_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790598548890,
+      "tag": "0012_mail_senders_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790598548891,
+      "tag": "0013_backfill_gateway_email_verified",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1790598548892,
+      "tag": "0014_two_factor_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1790598548893,
+      "tag": "0015_multi_client_per_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1790598548894,
+      "tag": "0016_app_user_lockout",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1790598548895,
+      "tag": "0017_app_frontend_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1790598548896,
+      "tag": "0018_app_db_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791721268730,
+      "tag": "0019_endpoint_array_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792571157968,
+      "tag": "0020_org_appearance",
+      "breakpoints": true
+    }
+  ]
+}

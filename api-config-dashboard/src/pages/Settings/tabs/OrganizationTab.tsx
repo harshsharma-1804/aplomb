@@ -49,15 +49,22 @@ export function OrganizationTab() {
     finally { setSaving(false); }
   }
 
-  function updateAppearance(patch: OrgAppearance) {
+  // Appearance saves immediately on change — it's an org-wide setting and must
+  // reach every browser without depending on the name/slug Save flow.
+  async function updateAppearance(patch: OrgAppearance) {
     const next = { ...appearance, ...patch };
     setAppearance(next);
-    // Apply live — feel the change instantly; persisted on Save
+    // Apply live in this browser instantly — feel the change
     if (patch.theme)   setChoice(patch.theme);
     if (patch.palette) setPalette(patch.palette);
+    if (!can("manage:users")) return;
+    try {
+      const updated = await api.put<Organization>("/__config/admin/organization", { appearance: next });
+      setAppearance(updated.appearance ?? {});
+    } catch (e) { setError(String(e)); }
   }
 
-  usePageSave({name,slug,appearance},save,{enabled:can("manage:users"),ready:!loading && !!org,disabled:saving || !name.trim() || !slug.trim()});
+  usePageSave({name,slug},save,{enabled:can("manage:users"),ready:!loading && !!org,disabled:saving || !name.trim() || !slug.trim()});
 
   if (loading) return <Spinner />;
 
@@ -75,20 +82,23 @@ export function OrganizationTab() {
     {/* ── Appearance ── */}
     <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 8 }}>
-        Appearance — org default for every signed-in user
+        Appearance — org default for every fresh browser; saved immediately
       </div>
       <div className="ui-formgrid">
-        <Field label="Theme" hint="Applied to all users on sign-in; each browser mirrors it locally for instant load">
+        <Field label="Theme" hint="Saved instantly as the org default — new browsers and fresh sign-ins adopt it">
           <select className="ui-select" value={appearance.theme ?? choice} disabled={!can("manage:users")} onChange={e=>updateAppearance({ theme: e.target.value as ThemeChoice })}>
             {THEMES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </Field>
-        <Field label="Palette" hint="Colour scheme applied across the dashboard">
+        <Field label="Palette" hint="Saved instantly as the org default — new browsers and fresh sign-ins adopt it">
           <select className="ui-select" value={appearance.palette ?? palette} disabled={!can("manage:users")} onChange={e=>updateAppearance({ palette: e.target.value as ColorPalette })}>
             {PALETTES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </Field>
       </div>
+      <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0" }}>
+        The top-bar theme toggle is personal to each browser. Browsers where someone picked a theme personally keep their choice; the org default applies everywhere else.
+      </p>
     </div>
 
     {org && <dl className="ui-kv" style={{marginTop:6}}>

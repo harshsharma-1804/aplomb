@@ -87,12 +87,3 @@ orchestrator/
 ├── docker-compose.sqlite.yml   # Current stack: unified (:3004) or split services
 └── docker-compose.yml          # Legacy MongoDB/Redis stack (reference only)
 ```
-
----
-
-## Branch Strategy
-
-| Branch    | Purpose                                      |
-|-----------|----------------------------------------------|
-| `main`    | Stable, production-ready releases only        |
-| `develop` | Active development — all PRs target here     |

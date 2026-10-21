@@ -7,6 +7,8 @@ export const organization = sqliteTable("organization", {
   id:         text("id").primaryKey(),
   name:       text("name").notNull(),
   slug:       text("slug").notNull().unique(),
+  // Org-level dashboard appearance: {"theme":"light|dark|system","palette":"current|coastal|monochrome|orchid"}
+  appearance: text("appearance").notNull().default("{}"),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
 });

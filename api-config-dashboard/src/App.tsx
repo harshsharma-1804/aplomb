@@ -11,14 +11,17 @@ import { SettingsPage } from "./pages/Settings/SettingsPage";
 import { api } from "./api/client";
 import { TopBar } from "./components/TopBar";
 import { Spinner } from "./components";
+import { useTheme } from "./theme/ThemeContext";
+import type { Organization } from "./api/types";
 const NAV = [
   { title: "Workspace", items: [{ label: "Overview", icon: LayoutDashboard, to: null }, { label: "App Registry", icon: Boxes, to: "/apps" }, { label: "Bot Registry", icon: Bot, to: "/bots" }] },
   { title: "Manage", items: [{ label: "Tenant Settings", icon: Settings, to: "/settings" }, { label: "Activity", icon: Activity, to: null }] },
 ];
 function Shell() {
   const { user } = useSession();
+  const { syncFromOrg } = useTheme();
   const [orgName,setOrgName]=useState("");
-  useEffect(()=>{api.get<{name:string}>("/__config/admin/organization").then(o=>setOrgName(o.name)).catch(()=>{});},[]);
+  useEffect(()=>{api.get<Organization>("/__config/admin/organization").then(o=>{setOrgName(o.name);syncFromOrg(o.appearance);}).catch(()=>{});},[]);
   const [collapsed, setCollapsed] = useState(() => {
     try { const stored = localStorage.getItem("orchestrator-sidebar-collapsed"); return stored ? stored === "collapsed" : window.innerWidth < 960; } catch { return window.innerWidth < 960; }
   });

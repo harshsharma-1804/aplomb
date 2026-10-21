@@ -9,6 +9,7 @@ import { randomUUID } from "crypto";
 const DDL = `
   CREATE TABLE IF NOT EXISTS organization (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+    appearance TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS users (

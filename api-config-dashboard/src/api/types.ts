@@ -345,10 +345,17 @@ export interface MailRoute {
 
 // ── Organization ─────────────────────────────────────────────────────────────
 
+/** Org-level dashboard appearance — persisted server-side so it survives browser switches and redeploys */
+export interface OrgAppearance {
+  theme?:   "light" | "dark" | "system";
+  palette?: "current" | "coastal" | "monochrome" | "orchid";
+}
+
 export interface Organization {
   _id: string;
   name: string;
   slug: string;
+  appearance?: OrgAppearance;
   created_at: string;
   updated_at: string;
 }

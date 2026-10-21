@@ -141,6 +141,13 @@
       "when": 1791721268730,
       "tag": "0019_endpoint_array_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792571157968,
+      "tag": "0020_org_appearance",
+      "breakpoints": true
     }
   ]
 }

@@ -49,19 +49,12 @@ export function OrganizationTab() {
     finally { setSaving(false); }
   }
 
-  // Appearance saves immediately on change — it's an org-wide setting and must
-  // reach every browser without depending on the name/slug Save flow.
-  async function updateAppearance(patch: OrgAppearance) {
-    const next = { ...appearance, ...patch };
-    setAppearance(next);
-    // Apply live in this browser instantly — feel the change
+  // Appearance changes apply live and persist org-wide via the theme setters
+  // (which PUT to the organization on every explicit pick).
+  function updateAppearance(patch: OrgAppearance) {
+    setAppearance(prev => ({ ...prev, ...patch }));
     if (patch.theme)   setChoice(patch.theme);
     if (patch.palette) setPalette(patch.palette);
-    if (!can("manage:users")) return;
-    try {
-      const updated = await api.put<Organization>("/__config/admin/organization", { appearance: next });
-      setAppearance(updated.appearance ?? {});
-    } catch (e) { setError(String(e)); }
   }
 
   usePageSave({name,slug},save,{enabled:can("manage:users"),ready:!loading && !!org,disabled:saving || !name.trim() || !slug.trim()});

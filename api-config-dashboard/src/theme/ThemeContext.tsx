@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { OrgAppearance } from "../api/types";
+import { api } from "../api/client";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type ColorPalette = "current" | "coastal" | "monochrome" | "orchid";
@@ -66,10 +67,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // User-facing setters — every explicit pick marks this browser as overridden,
-  // so org defaults stop forcing values here on subsequent loads.
-  const setPalette = (p: ColorPalette) => { markOverride(); setPaletteState(p); };
-  const setChoice  = (c: ThemeChoice)   => { markOverride(); setChoiceState(c); };
+  // User-facing setters — an explicit pick is ORG-WIDE for permitted users
+  // (admins): it persists to the organization so every browser — including
+  // fresh ones on the login page — lands on the same theme. Non-admins get a
+  // personal per-browser choice (the PUT fails 403 and is ignored).
+  const setPalette = (p: ColorPalette) => {
+    markOverride();
+    setPaletteState(p);
+    api.put("/__config/admin/organization", { appearance: { palette: p } }).catch(() => {});
+  };
+  const setChoice  = (c: ThemeChoice)   => {
+    markOverride();
+    setChoiceState(c);
+    api.put("/__config/admin/organization", { appearance: { theme: c } }).catch(() => {});
+  };
 
   useEffect(() => {
     const apply = () => {

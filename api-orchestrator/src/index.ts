@@ -138,6 +138,9 @@ if (config.dashboard.distPath) {
       return next();
     }
     if (getAppByPath(p)) return next();
+    // index.html must always revalidate — hashed asset filenames change on
+    // every deploy, and a cached index.html would pin browsers to a stale bundle
+    res.set("Cache-Control", "no-cache");
     res.sendFile(join(distPath, "index.html"));
   };
 

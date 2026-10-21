@@ -72,6 +72,8 @@ Editing config and running a request is all it takes — there is no build, no r
 
 ### Tenant Settings — one surface for the whole platform
 
+![Walking through Tenant Settings: identity providers, host allowlist, allowed origins, mail/SMTP, AI & MCP providers, and the secrets vault](docs/screenshots/tenant-settings.gif)
+
 | Feature | What it does |
 |---|---|
 | **Organization** | Org name/slug plus the org-wide dashboard theme and palette every fresh browser adopts |
@@ -86,6 +88,8 @@ Editing config and running a request is all it takes — there is no build, no r
 ### Bot Registry — governed AI assistants over your APIs
 
 Bots are chat assistants your frontends embed; each authenticates with its own API key and can only act through the apps it is bound to.
+
+![Walking through the Bot Registry: bot overview with MCP client config, behaviour guardrails, app bindings, limits, and the tool-call audit trail](docs/screenshots/bot-registry.gif)
 
 - **Bindings** — which apps a bot may use, with per-app read/write permissions. Endpoints marked *AI-exposed* automatically become MCP tools for the bot, with their request/response JSON Schemas converted into tool definitions — no separate tool code to write.
 - **Behaviour** — the bot's persona and standing instructions, plus domain-scope rules: a scope description, a topic blocklist, the out-of-scope refusal message, and the classification prompt used as a hard gate.
